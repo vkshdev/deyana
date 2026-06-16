@@ -1,0 +1,19 @@
+{
+  "name": "deyana",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.7.0",
+  "scripts": {
+    "build": "pnpm -r build",
+    "check": "pnpm -r check",
+    "dev": "pnpm --filter @deyana/desktop dev",
+    "desktop:dev": "pnpm --filter @deyana/desktop tauri dev",
+    "desktop:build": "pnpm --filter @deyana/desktop tauri build"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=11.0.0"
+  }
+}
+
