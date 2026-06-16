@@ -5,7 +5,7 @@ use tauri::{
     AppHandle, Manager,
 };
 
-use crate::{settings, window};
+use crate::{process, settings, window};
 
 pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "Show DE'YANA", true, None::<&str>)?;
@@ -13,6 +13,7 @@ pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
     let compact = MenuItem::with_id(app, "compact", "Compact mode", true, None::<&str>)?;
     let expanded = MenuItem::with_id(app, "expanded", "Expanded panel", true, None::<&str>)?;
     let always_on_top = MenuItem::with_id(app, "always_on_top", "Toggle always on top", true, None::<&str>)?;
+    let restart_core = MenuItem::with_id(app, "restart_core", "Restart backend", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
     let menu = Menu::with_items(
@@ -24,6 +25,8 @@ pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
             &compact,
             &expanded,
             &always_on_top,
+            &separator,
+            &restart_core,
             &separator,
             &quit,
         ],
@@ -66,6 +69,10 @@ pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
                     settings.always_on_top = next;
                 });
             }
+            "restart_core" => {
+                let manager = app.state::<process::CoreProcessManager>();
+                let _ = manager.restart(app);
+            }
             "quit" => app.exit(0),
             _ => {}
         })
@@ -104,4 +111,3 @@ fn tray_icon() -> Image<'static> {
 
     Image::new_owned(rgba, SIZE, SIZE)
 }
-

@@ -1,14 +1,19 @@
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, State};
 
-use crate::{settings, window};
+use crate::{process, settings, window};
 
 #[tauri::command]
-pub fn get_phase1_settings(app: AppHandle) -> settings::Phase1Settings {
+pub fn get_desktop_settings(app: AppHandle) -> settings::DesktopSettings {
     settings::read_settings(&app)
 }
 
 #[tauri::command]
-pub fn set_floating_mode(app: AppHandle, mode: String) -> Result<settings::Phase1Settings, String> {
+pub fn get_phase1_settings(app: AppHandle) -> settings::DesktopSettings {
+    settings::read_settings(&app)
+}
+
+#[tauri::command]
+pub fn set_floating_mode(app: AppHandle, mode: String) -> Result<settings::DesktopSettings, String> {
     if mode != "compact" && mode != "expanded" {
         return Err(format!("unsupported floating mode: {mode}"));
     }
@@ -23,7 +28,7 @@ pub fn set_floating_mode(app: AppHandle, mode: String) -> Result<settings::Phase
 pub fn set_always_on_top(
     app: AppHandle,
     always_on_top: bool,
-) -> Result<settings::Phase1Settings, String> {
+) -> Result<settings::DesktopSettings, String> {
     if let Some(window) = app.get_webview_window("main") {
         window
             .set_always_on_top(always_on_top)
@@ -54,3 +59,25 @@ pub fn hide_main_window(app: AppHandle) -> Result<(), String> {
     window.hide().map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+pub fn get_core_status(
+    manager: State<'_, process::CoreProcessManager>,
+) -> process::CoreProcessSnapshot {
+    manager.snapshot()
+}
+
+#[tauri::command]
+pub fn restart_core(
+    app: AppHandle,
+    manager: State<'_, process::CoreProcessManager>,
+) -> Result<process::CoreProcessSnapshot, String> {
+    manager.restart(&app)
+}
+
+#[tauri::command]
+pub fn stop_core(
+    app: AppHandle,
+    manager: State<'_, process::CoreProcessManager>,
+) -> Result<process::CoreProcessSnapshot, String> {
+    manager.stop(&app, "user_requested_stop")
+}
