@@ -7,7 +7,7 @@ use crate::settings::{self, FloatingWindowPosition};
 const COMPACT_WIDTH: f64 = 92.0;
 const COMPACT_HEIGHT: f64 = 144.0;
 const EXPANDED_WIDTH: f64 = 408.0;
-const EXPANDED_HEIGHT: f64 = 624.0;
+const EXPANDED_HEIGHT: f64 = 652.0;
 const DEFAULT_TOP_OFFSET: f64 = 108.0;
 const DEFAULT_RIGHT_OFFSET: f64 = 24.0;
 const MIN_EDGE_PADDING: f64 = 8.0;
