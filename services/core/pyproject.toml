@@ -1,0 +1,27 @@
+[project]
+name = "deyana-core"
+version = "0.1.0"
+description = "Local FastAPI core service for DE'YANA"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "fastapi>=0.115.0,<1.0.0",
+  "pydantic>=2.8.0,<3.0.0",
+  "uvicorn[standard]>=0.30.0,<1.0.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx>=0.27.0,<1.0.0",
+  "pytest>=8.0.0,<9.0.0"
+]
+
+[build-system]
+requires = ["setuptools>=68.0.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
