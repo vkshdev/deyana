@@ -1,14 +1,23 @@
-export const phase1Window = {
+export const desktopWindow = {
   compact: {
     width: 92,
     height: 144
   },
   expanded: {
     width: 408,
-    height: 624
+    height: 652
   },
   defaultTopOffset: 108,
   defaultRightOffset: 24
+} as const;
+
+
+export const coreService = {
+  host: "127.0.0.1",
+  port: 8765,
+  endpoint: "http://127.0.0.1:8765",
+  websocketUrl: "ws://127.0.0.1:8765/ws",
+  heartbeatGraceMs: 12_000
 } as const;
 
 export const modelDefaults = {
@@ -41,4 +50,3 @@ export const designTokens = {
     glow: "0 0 28px rgba(102, 227, 255, 0.24)"
   }
 } as const;
-
