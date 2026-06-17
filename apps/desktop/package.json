@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1 --port 1420",
+    "dev": "vite --host 127.0.0.1 --port 1420 --configLoader runner",
     "build": "tsc -p tsconfig.json --noEmit && vite build",
     "check": "tsc -p tsconfig.json --noEmit",
     "tauri": "tauri"
@@ -13,6 +13,7 @@
     "@deyana/config": "workspace:*",
     "@deyana/schemas": "workspace:*",
     "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
     "framer-motion": "^12.40.0",
     "lucide-react": "^0.544.0",
     "react": "^19.0.0",
@@ -29,4 +30,3 @@
     "vite": "^8.0.16"
   }
 }
-
