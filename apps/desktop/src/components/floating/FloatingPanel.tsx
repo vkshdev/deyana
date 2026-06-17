@@ -1,6 +1,7 @@
 import type { AssistantSnapshot } from "../../stores/assistantStore";
-import { Bell, ChevronRight, Eye, EyeOff, Mic, Settings } from "lucide-react";
+import { Bell, ChevronRight, Eye, EyeOff, Mic, RotateCw, Settings } from "lucide-react";
 import { assistantStore } from "../../stores/assistantStore";
+import { BackendStatusBadge } from "./BackendStatusBadge";
 import { FloatingDockHandle } from "./FloatingDockHandle";
 import { FloatingModelBadge } from "./FloatingModelBadge";
 import { FloatingPrivacyBadge } from "./FloatingPrivacyBadge";
@@ -57,13 +58,21 @@ export function FloatingPanel({ snapshot }: FloatingPanelProps) {
 
       <div className="status-row">
         <FloatingPrivacyBadge />
+        <BackendStatusBadge
+          backend={snapshot.backend}
+          eventStreamConnected={snapshot.backendEventStreamConnected}
+        />
         <FloatingModelBadge status={snapshot.modelStatus} />
         <FloatingSyncIndicator status={snapshot.syncStatus} />
       </div>
 
       <section className="chat-surface" aria-label="Chat">
         <article className="message message-assistant">
-          <span>Local shell ready. Backend core starts in Phase 2.</span>
+          <span>
+            {snapshot.backendEventStreamConnected
+              ? "Backend core connected. Health and events are live."
+              : "Waiting for the local core event stream."}
+          </span>
         </article>
         <article className="message message-user">
           <span>Keep private data local.</span>
@@ -90,6 +99,15 @@ export function FloatingPanel({ snapshot }: FloatingPanelProps) {
         <button
           className="icon-button"
           type="button"
+          title="Restart backend"
+          aria-label="Restart backend"
+          onClick={() => void assistantStore.restartBackend()}
+        >
+          <RotateCw size={17} aria-hidden="true" />
+        </button>
+        <button
+          className="icon-button"
+          type="button"
           title="Notifications"
           aria-label="Notifications"
           onClick={() => assistantStore.setAssistantState("SYNCING")}
@@ -102,4 +120,3 @@ export function FloatingPanel({ snapshot }: FloatingPanelProps) {
     </section>
   );
 }
-

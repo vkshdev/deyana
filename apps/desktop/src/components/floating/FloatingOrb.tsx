@@ -1,5 +1,5 @@
 import type { AssistantSnapshot } from "../../stores/assistantStore";
-import { ChevronLeft, MessageCircle, Power, ShieldCheck } from "lucide-react";
+import { ChevronLeft, MessageCircle, Power, Server, ServerCrash } from "lucide-react";
 import { assistantStore } from "../../stores/assistantStore";
 import { CompactVoiceButton } from "./CompactVoiceButton";
 import { FloatingDockHandle } from "./FloatingDockHandle";
@@ -15,8 +15,12 @@ export function FloatingOrb({ snapshot }: FloatingOrbProps) {
       <FloatingDockHandle />
       <FloatingStatusRing state={snapshot.assistantState} compact />
       <div className="compact-status-stack">
-        <ShieldCheck size={14} aria-hidden="true" />
-        <span>{snapshot.modelStatus === "available" ? "AI" : "!"}</span>
+        {snapshot.backend.lifecycle === "running" ? (
+          <Server size={14} aria-hidden="true" />
+        ) : (
+          <ServerCrash size={14} aria-hidden="true" />
+        )}
+        <span>{snapshot.backend.lifecycle === "running" ? "OK" : "!"}</span>
       </div>
       <div className="compact-actions">
         <button
@@ -51,4 +55,3 @@ export function FloatingOrb({ snapshot }: FloatingOrbProps) {
     </section>
   );
 }
-
