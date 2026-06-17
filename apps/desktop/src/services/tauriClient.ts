@@ -7,6 +7,7 @@ import {
 } from "@deyana/schemas";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { open } from "@tauri-apps/plugin-dialog";
 
 const browserSettingsKey = "deyana.desktop.settings";
 const legacyBrowserSettingsKey = "deyana.phase1.settings";
@@ -139,5 +140,27 @@ export const tauriClient = {
       callback(event.payload);
     });
     return unlisten;
+  },
+
+  async chooseVaultFolder(): Promise<string | null> {
+    if (!isTauriRuntime()) {
+      return window.localStorage.getItem("deyana.browser.vaultPath");
+    }
+
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: "Choose DE'YANA vault folder"
+    });
+
+    return typeof selected === "string" ? selected : null;
+  },
+
+  async openVaultFolder(path: string): Promise<void> {
+    if (!isTauriRuntime()) {
+      return;
+    }
+
+    await invoke("open_vault_folder", { path });
   }
 };

@@ -1,13 +1,22 @@
 import {
   DEFAULT_BACKEND_PROCESS_STATUS,
+  DEFAULT_CORE_APP_SETTINGS,
   DEFAULT_DESKTOP_SETTINGS,
+  DEFAULT_ONBOARDING_STATE,
   type AssistantState,
+  type AppCoreEvent,
   type BackendProcessStatus,
   type BackendStatusResponse,
   type ConnectorPreview,
-  type CoreWebSocketEvent,
+  type CoreAppSettings,
+  type MemoryCreateRequest,
+  type MemoryItem,
+  type ModelProfile,
   type MemoryPreviewItem,
   type ModelStatus,
+  type OnboardingState,
+  type OnboardingStep,
+  type PrivacyMode,
   type DesktopSettings,
   type QuickAction,
   type SyncStatus,
@@ -20,6 +29,11 @@ import { tauriClient } from "../services/tauriClient";
 export interface AssistantSnapshot {
   assistantState: AssistantState;
   settings: DesktopSettings;
+  coreSettings: CoreAppSettings;
+  onboarding: OnboardingState;
+  onboardingStep: OnboardingStep;
+  onboardingVaultPath: string;
+  onboardingBusy: boolean;
   modelStatus: ModelStatus;
   syncStatus: SyncStatus;
   backend: BackendProcessStatus;
@@ -28,6 +42,15 @@ export interface AssistantSnapshot {
   lastBackendEventType?: string;
   connectors: ConnectorPreview[];
   memoryPreview: MemoryPreviewItem[];
+  memoryItems: MemoryItem[];
+  memoryQuery: string;
+  memoryDraft: {
+    title: string;
+    summary: string;
+    contentMarkdown: string;
+  };
+  memoryBusy: boolean;
+  memoryExportedAt?: string;
   quickActions: QuickAction[];
   error?: string;
 }
@@ -35,6 +58,11 @@ export interface AssistantSnapshot {
 const initialSnapshot: AssistantSnapshot = {
   assistantState: "COMPACT_FLOATING",
   settings: DEFAULT_DESKTOP_SETTINGS,
+  coreSettings: DEFAULT_CORE_APP_SETTINGS,
+  onboarding: DEFAULT_ONBOARDING_STATE,
+  onboardingStep: "welcome",
+  onboardingVaultPath: "",
+  onboardingBusy: false,
   modelStatus: "checking",
   syncStatus: "idle",
   backend: DEFAULT_BACKEND_PROCESS_STATUS,
@@ -73,6 +101,14 @@ const initialSnapshot: AssistantSnapshot = {
       updatedLabel: "Local"
     }
   ],
+  memoryItems: [],
+  memoryQuery: "",
+  memoryDraft: {
+    title: "",
+    summary: "",
+    contentMarkdown: ""
+  },
+  memoryBusy: false,
   quickActions: [
     {
       id: "memory",
@@ -210,6 +246,210 @@ class AssistantStore {
     }
   };
 
+  setOnboardingStep = (onboardingStep: OnboardingStep) => {
+    this.setSnapshot({ onboardingStep, assistantState: "ONBOARDING" });
+  };
+
+  setOnboardingPrivacyMode = (privacyMode: PrivacyMode) => {
+    this.setSnapshot({
+      onboarding: {
+        ...this.snapshot.onboarding,
+        selectedPrivacyMode: privacyMode
+      }
+    });
+  };
+
+  setOnboardingModelProfile = (modelProfile: ModelProfile) => {
+    this.setSnapshot({
+      onboarding: {
+        ...this.snapshot.onboarding,
+        selectedModelProfile: modelProfile
+      }
+    });
+  };
+
+  setOnboardingVaultPath = (onboardingVaultPath: string) => {
+    this.setSnapshot({ onboardingVaultPath });
+  };
+
+  chooseVaultFolder = async () => {
+    const selected = await tauriClient.chooseVaultFolder();
+    if (selected) {
+      this.setOnboardingVaultPath(selected);
+    }
+  };
+
+  completeOnboarding = async () => {
+    const vaultPath = this.snapshot.onboardingVaultPath.trim() || this.snapshot.onboarding.selectedVaultPath;
+
+    if (!vaultPath) {
+      this.setSnapshot({ error: "Choose a local vault folder before continuing." });
+      return;
+    }
+
+    this.setSnapshot({ onboardingBusy: true, error: undefined });
+
+    try {
+      await backendClient.selectVault({ path: vaultPath });
+      const result = await backendClient.completeOnboarding({
+        privacyMode: this.snapshot.onboarding.selectedPrivacyMode,
+        modelProfile: this.snapshot.onboarding.selectedModelProfile,
+        vaultPath
+      });
+      this.setSnapshot({
+        onboarding: result.state,
+        coreSettings: result.settings,
+        onboardingStep: "complete",
+        onboardingVaultPath: result.state.selectedVaultPath ?? vaultPath,
+        onboardingBusy: false,
+        assistantState: this.snapshot.settings.uiMode === "expanded" ? "EXPANDED_PANEL" : "COMPACT_FLOATING",
+        memoryPreview: [
+          {
+            id: "vault",
+            title: "Vault created",
+            source: result.state.selectedVaultPath ?? vaultPath,
+            updatedLabel: "Local"
+          },
+          ...this.snapshot.memoryPreview.filter((item) => item.id !== "vault")
+        ]
+      });
+    } catch (error) {
+      this.setSnapshot({
+        onboardingBusy: false,
+        error: error instanceof Error ? error.message : "Unable to complete onboarding"
+      });
+    }
+  };
+
+  setMemoryQuery = (memoryQuery: string) => {
+    this.setSnapshot({ memoryQuery });
+  };
+
+  setMemoryDraft = (patch: Partial<AssistantSnapshot["memoryDraft"]>) => {
+    this.setSnapshot({ memoryDraft: { ...this.snapshot.memoryDraft, ...patch } });
+  };
+
+  loadMemory = async (query = this.snapshot.memoryQuery) => {
+    try {
+      const response = await backendClient.listMemory(query);
+      this.setSnapshot({
+        memoryItems: response.items,
+        memoryPreview: response.items.length
+          ? response.items.slice(0, 2).map((item) => ({
+              id: item.id,
+              title: item.title,
+              source: item.markdownPath ?? item.sourceType,
+              updatedLabel: "Local"
+            }))
+          : this.snapshot.memoryPreview,
+        error: undefined
+      });
+    } catch (error) {
+      this.setSnapshot({
+        error: error instanceof Error ? error.message : "Unable to load memory"
+      });
+    }
+  };
+
+  createMemory = async () => {
+    const draft = this.snapshot.memoryDraft;
+    const title = draft.title.trim();
+    const summary = draft.summary.trim();
+
+    if (!title || !summary) {
+      this.setSnapshot({ error: "Memory needs a title and summary." });
+      return;
+    }
+
+    this.setSnapshot({ memoryBusy: true, error: undefined });
+
+    const request: MemoryCreateRequest = {
+      type: "note",
+      title,
+      summary,
+      contentMarkdown: draft.contentMarkdown.trim() || summary,
+      sourceType: "manual",
+      tags: ["manual"]
+    };
+
+    try {
+      await backendClient.createMemory(request);
+      this.setSnapshot({
+        memoryDraft: { title: "", summary: "", contentMarkdown: "" },
+        memoryBusy: false
+      });
+      await this.loadMemory();
+    } catch (error) {
+      this.setSnapshot({
+        memoryBusy: false,
+        error: error instanceof Error ? error.message : "Unable to create memory"
+      });
+    }
+  };
+
+  deleteMemory = async (id: string) => {
+    this.setSnapshot({ memoryBusy: true, error: undefined });
+    try {
+      await backendClient.deleteMemory(id);
+      this.setSnapshot({
+        memoryItems: this.snapshot.memoryItems.filter((item) => item.id !== id),
+        memoryBusy: false
+      });
+      await this.loadMemory();
+    } catch (error) {
+      this.setSnapshot({
+        memoryBusy: false,
+        error: error instanceof Error ? error.message : "Unable to delete memory"
+      });
+    }
+  };
+
+  reindexMemory = async () => {
+    this.setSnapshot({ memoryBusy: true, error: undefined });
+    try {
+      await backendClient.reindexMemory();
+      this.setSnapshot({ memoryBusy: false });
+      await this.loadMemory();
+    } catch (error) {
+      this.setSnapshot({
+        memoryBusy: false,
+        error: error instanceof Error ? error.message : "Unable to reindex memory"
+      });
+    }
+  };
+
+  exportMemory = async () => {
+    this.setSnapshot({ memoryBusy: true, error: undefined });
+    try {
+      const exported = await backendClient.exportMemory();
+      this.setSnapshot({
+        memoryBusy: false,
+        memoryExportedAt: exported.exportedAt
+      });
+    } catch (error) {
+      this.setSnapshot({
+        memoryBusy: false,
+        error: error instanceof Error ? error.message : "Unable to export memory"
+      });
+    }
+  };
+
+  openVault = async () => {
+    const vaultPath = this.snapshot.coreSettings.vaultPath;
+    if (!vaultPath) {
+      this.setSnapshot({ error: "Choose a vault before opening it." });
+      return;
+    }
+
+    try {
+      await tauriClient.openVaultFolder(vaultPath);
+    } catch (error) {
+      this.setSnapshot({
+        error: error instanceof Error ? error.message : "Unable to open vault"
+      });
+    }
+  };
+
   private subscribeToCoreStatus = async () => {
     if (this.coreStatusUnlisten) {
       return;
@@ -229,18 +469,51 @@ class AssistantStore {
 
   private refreshBackendStatus = async () => {
     try {
-      const backendStatus = await backendClient.getStatus();
+      const [backendStatus, coreSettings, onboarding] = await Promise.all([
+        backendClient.getStatus(),
+        backendClient.getSettings(),
+        backendClient.getOnboardingState()
+      ]);
+      const onboardingVaultPath = onboarding.selectedVaultPath ?? coreSettings.vaultPath ?? "";
+      const memoryPreview = onboarding.completed && onboardingVaultPath
+        ? [
+            {
+              id: "vault",
+              title: "Vault ready",
+              source: onboardingVaultPath,
+              updatedLabel: "Local"
+            },
+            ...this.snapshot.memoryPreview.filter((item) => item.id !== "vault")
+          ]
+        : this.snapshot.memoryPreview;
       this.setSnapshot({
         backendStatus,
+        coreSettings,
+        onboarding,
+        onboardingStep: onboarding.completed ? "complete" : onboarding.currentStep,
+        onboardingVaultPath,
+        memoryPreview,
         backend: {
           ...this.snapshot.backend,
           lifecycle: "running",
           updatedAtMs: Date.now(),
           lastError: undefined
         },
+        assistantState: onboarding.completed
+          ? this.snapshot.settings.uiMode === "expanded"
+            ? "EXPANDED_PANEL"
+            : "COMPACT_FLOATING"
+          : "ONBOARDING",
         modelStatus: backendStatus.featureFlags.models ? "available" : "checking",
         error: undefined
       });
+
+      if (!onboarding.completed && this.snapshot.settings.uiMode !== "expanded") {
+        void this.setFloatingMode("expanded");
+      }
+      if (onboarding.completed) {
+        void this.loadMemory();
+      }
     } catch {
       if (this.snapshot.backend.lifecycle === "running") {
         this.setSnapshot({
@@ -268,7 +541,7 @@ class AssistantStore {
     }
   };
 
-  private handleBackendEvent = (event: CoreWebSocketEvent) => {
+  private handleBackendEvent = (event: AppCoreEvent) => {
     if (event.type === "app.ready") {
       this.setSnapshot({
         backend: {
@@ -311,6 +584,59 @@ class AssistantStore {
         backendEventStreamConnected: true,
         lastBackendEventType: event.type
       });
+      return;
+    }
+
+    if (event.type === "settings.changed") {
+      this.setSnapshot({
+        coreSettings: event.payload.settings,
+        lastBackendEventType: event.type
+      });
+      return;
+    }
+
+    if (event.type === "vault.selected") {
+      this.setSnapshot({
+        coreSettings: event.payload.settings,
+        onboarding: event.payload.state,
+        onboardingVaultPath: event.payload.vaultPath,
+        lastBackendEventType: event.type
+      });
+      return;
+    }
+
+    if (event.type === "onboarding.state.changed") {
+      this.setSnapshot({
+        coreSettings: event.payload.settings,
+        onboarding: event.payload.state,
+        onboardingStep: event.payload.state.currentStep,
+        onboardingVaultPath: event.payload.state.selectedVaultPath ?? "",
+        lastBackendEventType: event.type
+      });
+      return;
+    }
+
+    if (event.type === "memory.item.created" || event.type === "memory.item.updated") {
+      const item = event.payload.item;
+      const existing = this.snapshot.memoryItems.filter((memory) => memory.id !== item.id);
+      this.setSnapshot({
+        memoryItems: [item, ...existing],
+        lastBackendEventType: event.type
+      });
+      return;
+    }
+
+    if (event.type === "memory.item.deleted") {
+      this.setSnapshot({
+        memoryItems: this.snapshot.memoryItems.filter((item) => item.id !== event.payload.id),
+        lastBackendEventType: event.type
+      });
+      return;
+    }
+
+    if (event.type === "memory.reindexed") {
+      this.setSnapshot({ lastBackendEventType: event.type });
+      void this.loadMemory();
       return;
     }
 
