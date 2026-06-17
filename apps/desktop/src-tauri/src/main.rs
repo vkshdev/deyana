@@ -11,6 +11,7 @@ use tauri::Manager;
 fn main() {
     tauri::Builder::default()
         .manage(process::CoreProcessManager::default())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let handle = app.handle().clone();
             settings::ensure_settings_dir(&handle)?;
@@ -30,7 +31,8 @@ fn main() {
             commands::hide_main_window,
             commands::get_core_status,
             commands::restart_core,
-            commands::stop_core
+            commands::stop_core,
+            commands::open_vault_folder
         ])
         .build(tauri::generate_context!())
         .expect("failed to build DE'YANA desktop shell")

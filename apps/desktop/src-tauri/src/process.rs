@@ -63,11 +63,16 @@ impl CoreProcessManager {
 
         let service_dir = service_dir()?;
         let python = python_executable(&service_dir);
-        let log_dir = app
+        let app_config_dir = app
             .path()
             .app_config_dir()
-            .map_err(|error| error.to_string())?
-            .join("logs");
+            .map_err(|error| error.to_string())?;
+        let data_dir = std::env::var("DEYANA_CORE_DATA_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| app_config_dir.clone());
+        let log_dir = std::env::var("DEYANA_CORE_LOG_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| app_config_dir.join("logs"));
         fs::create_dir_all(&log_dir).map_err(|error| error.to_string())?;
 
         let stdout = File::create(log_dir.join("core.stdout.log")).map_err(|error| error.to_string())?;
@@ -80,6 +85,7 @@ impl CoreProcessManager {
             .current_dir(&service_dir)
             .env("DEYANA_CORE_HOST", CORE_HOST)
             .env("DEYANA_CORE_PORT", CORE_PORT.to_string())
+            .env("DEYANA_CORE_DATA_DIR", data_dir.to_string_lossy().to_string())
             .env("DEYANA_CORE_LOG_DIR", log_dir.join("core").to_string_lossy().to_string())
             .env("DEYANA_CORE_HEARTBEAT_SECONDS", "5")
             .stdout(Stdio::from(stdout))

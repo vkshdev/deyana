@@ -1,3 +1,4 @@
+use std::{path::PathBuf, process::Command};
 use tauri::{AppHandle, Manager, State};
 
 use crate::{process, settings, window};
@@ -75,4 +76,36 @@ pub fn stop_core(
     manager: State<'_, process::CoreProcessManager>,
 ) -> Result<process::CoreProcessSnapshot, String> {
     manager.stop(&app, "user_requested_stop")
+}
+
+#[tauri::command]
+pub fn open_vault_folder(path: String) -> Result<(), String> {
+    let vault_path = PathBuf::from(path);
+    if !vault_path.is_dir() {
+        return Err("vault folder does not exist".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut command = Command::new("explorer.exe");
+        command.arg(vault_path);
+        command
+    };
+
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut command = Command::new("open");
+        command.arg(vault_path);
+        command
+    };
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut command = {
+        let mut command = Command::new("xdg-open");
+        command.arg(vault_path);
+        command
+    };
+
+    command.spawn().map_err(|error| error.to_string())?;
+    Ok(())
 }
