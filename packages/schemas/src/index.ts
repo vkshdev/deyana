@@ -129,6 +129,176 @@ export type BackendLifecycleEvent = BackendEvent<
 
 export type CoreWebSocketEvent = AppReadyEvent | BackendHeartbeatEvent | BackendLifecycleEvent;
 
+export const PRIVACY_MODES = ["local_only"] as const;
+export type PrivacyMode = (typeof PRIVACY_MODES)[number];
+
+export const MODEL_PROFILES = ["low_spec", "balanced", "power"] as const;
+export type ModelProfile = (typeof MODEL_PROFILES)[number];
+
+export const SYNC_MODES = ["manual", "low_frequency"] as const;
+export type SyncMode = (typeof SYNC_MODES)[number];
+
+export const ONBOARDING_STEPS = ["welcome", "privacy", "local_ai", "vault", "complete"] as const;
+export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
+
+export type VaultStatus = "not_selected" | "ready" | "missing" | "error";
+export type MemoryType =
+  | "chat"
+  | "note"
+  | "connector_summary"
+  | "file_summary"
+  | "git_summary"
+  | "daily_summary"
+  | "project_summary"
+  | "decision"
+  | "action_item";
+
+export interface CoreAppSettings {
+  privacyMode: PrivacyMode;
+  modelProfile: ModelProfile;
+  syncMode: SyncMode;
+  vaultPath?: string | null;
+  onboardingCompleted: boolean;
+  updatedAt: string;
+}
+
+export interface SettingsPatch {
+  privacyMode?: PrivacyMode;
+  modelProfile?: ModelProfile;
+  syncMode?: SyncMode;
+}
+
+export interface OnboardingState {
+  completed: boolean;
+  completedAt?: string | null;
+  currentStep: OnboardingStep;
+  selectedVaultPath?: string | null;
+  selectedPrivacyMode: PrivacyMode;
+  selectedModelProfile: ModelProfile;
+  vaultStatus: VaultStatus;
+  vaultError?: string | null;
+  vaultFolders: string[];
+}
+
+export interface VaultSelectRequest {
+  path: string;
+}
+
+export interface VaultSelectResponse {
+  state: OnboardingState;
+  settings: CoreAppSettings;
+  vaultPath: string;
+  createdFolders: string[];
+}
+
+export interface OnboardingCompleteRequest {
+  privacyMode: PrivacyMode;
+  modelProfile: ModelProfile;
+  vaultPath?: string | null;
+}
+
+export interface OnboardingCompleteResponse {
+  state: OnboardingState;
+  settings: CoreAppSettings;
+}
+
+export interface MemoryItem {
+  id: string;
+  type: MemoryType;
+  title: string;
+  summary: string;
+  contentMarkdown: string;
+  markdownPath?: string | null;
+  sourceType: string;
+  sourceId?: string | null;
+  sourceUri?: string | null;
+  importance: number;
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+  deletedAt?: string | null;
+}
+
+export interface MemoryCreateRequest {
+  type?: MemoryType;
+  title: string;
+  summary: string;
+  contentMarkdown?: string | null;
+  sourceType?: string;
+  sourceId?: string | null;
+  sourceUri?: string | null;
+  importance?: number;
+  tags?: string[];
+}
+
+export interface MemoryUpdateRequest {
+  title?: string;
+  summary?: string;
+  contentMarkdown?: string;
+  importance?: number;
+  tags?: string[];
+}
+
+export interface MemoryListResponse {
+  items: MemoryItem[];
+  total: number;
+  query?: string | null;
+}
+
+export interface MemoryDeleteResponse {
+  deleted: boolean;
+  id: string;
+}
+
+export interface MemoryReindexResponse {
+  reindexed: number;
+  missingMarkdown: number;
+}
+
+export interface MemoryExportResponse {
+  exportedAt: string;
+  items: MemoryItem[];
+}
+
+export type SettingsChangedEvent = BackendEvent<
+  "settings.changed",
+  {
+    settings: CoreAppSettings;
+  }
+>;
+
+export type VaultSelectedEvent = BackendEvent<
+  "vault.selected",
+  {
+    state: OnboardingState;
+    settings: CoreAppSettings;
+    vaultPath: string;
+    createdFolders: string[];
+  }
+>;
+
+export type OnboardingStateChangedEvent = BackendEvent<
+  "onboarding.state.changed",
+  {
+    state: OnboardingState;
+    settings: CoreAppSettings;
+  }
+>;
+
+export type MemoryItemCreatedEvent = BackendEvent<"memory.item.created", { item: MemoryItem }>;
+export type MemoryItemUpdatedEvent = BackendEvent<"memory.item.updated", { item: MemoryItem }>;
+export type MemoryItemDeletedEvent = BackendEvent<"memory.item.deleted", { id: string; deleted: boolean }>;
+export type MemoryReindexedEvent = BackendEvent<"memory.reindexed", MemoryReindexResponse>;
+
+export type Phase3CoreEvent = SettingsChangedEvent | VaultSelectedEvent | OnboardingStateChangedEvent;
+export type Phase4CoreEvent =
+  | MemoryItemCreatedEvent
+  | MemoryItemUpdatedEvent
+  | MemoryItemDeletedEvent
+  | MemoryReindexedEvent;
+
+export type AppCoreEvent = CoreWebSocketEvent | Phase3CoreEvent | Phase4CoreEvent;
+
 export interface FloatingWindowPosition {
   x: number;
   y: number;
@@ -187,6 +357,40 @@ export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
   alwaysOnTop: true,
   lowPowerMode: true,
   reduceMotion: false
+};
+
+export const DEFAULT_CORE_APP_SETTINGS: CoreAppSettings = {
+  privacyMode: "local_only",
+  modelProfile: "low_spec",
+  syncMode: "manual",
+  vaultPath: null,
+  onboardingCompleted: false,
+  updatedAt: ""
+};
+
+export const DEFAULT_ONBOARDING_STATE: OnboardingState = {
+  completed: false,
+  completedAt: null,
+  currentStep: "welcome",
+  selectedVaultPath: null,
+  selectedPrivacyMode: "local_only",
+  selectedModelProfile: "low_spec",
+  vaultStatus: "not_selected",
+  vaultError: null,
+  vaultFolders: [
+    "Daily",
+    "Projects",
+    "People",
+    "Meetings",
+    "Emails",
+    "GitHub",
+    "Slack",
+    "Tasks",
+    "Decisions",
+    "Stripe",
+    "Sources",
+    "Inbox"
+  ]
 };
 
 
