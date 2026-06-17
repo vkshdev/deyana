@@ -8,7 +8,7 @@ import { FloatingPrivacyBadge } from "./FloatingPrivacyBadge";
 import { FloatingStatusRing } from "./FloatingStatusRing";
 import { FloatingSyncIndicator } from "./FloatingSyncIndicator";
 import { ConnectorStatusList } from "./ConnectorStatusList";
-import { MemoryPreview } from "./MemoryPreview";
+import { MemoryBrowser } from "../memory/MemoryBrowser";
 import { QuickActions } from "./QuickActions";
 
 interface FloatingPanelProps {
@@ -56,35 +56,34 @@ export function FloatingPanel({ snapshot }: FloatingPanelProps) {
         </div>
       </header>
 
-      <div className="status-row">
-        <FloatingPrivacyBadge />
-        <BackendStatusBadge
-          backend={snapshot.backend}
-          eventStreamConnected={snapshot.backendEventStreamConnected}
-        />
-        <FloatingModelBadge status={snapshot.modelStatus} />
-        <FloatingSyncIndicator status={snapshot.syncStatus} />
+      <div className="panel-body">
+        <div className="status-row">
+          <FloatingPrivacyBadge />
+          <BackendStatusBadge
+            backend={snapshot.backend}
+            eventStreamConnected={snapshot.backendEventStreamConnected}
+          />
+          <FloatingModelBadge status={snapshot.modelStatus} />
+          <FloatingSyncIndicator status={snapshot.syncStatus} />
+        </div>
+
+        <section className="chat-surface" aria-label="Chat">
+          <article className="message message-assistant">
+            <span>
+              {snapshot.backendEventStreamConnected
+                ? "Backend core connected. Health and events are live."
+                : "Waiting for the local core event stream."}
+            </span>
+          </article>
+          <article className="message message-user">
+            <span>Keep private data local.</span>
+          </article>
+        </section>
+
+        <QuickActions actions={snapshot.quickActions} />
+        <MemoryBrowser snapshot={snapshot} />
+        <ConnectorStatusList connectors={snapshot.connectors} />
       </div>
-
-      <section className="chat-surface" aria-label="Chat">
-        <article className="message message-assistant">
-          <span>
-            {snapshot.backendEventStreamConnected
-              ? "Backend core connected. Health and events are live."
-              : "Waiting for the local core event stream."}
-          </span>
-        </article>
-        <article className="message message-user">
-          <span>Keep private data local.</span>
-        </article>
-        <article className="message message-assistant">
-          <span>Low-spec mode is active with qwen3:1.7b.</span>
-        </article>
-      </section>
-
-      <QuickActions actions={snapshot.quickActions} />
-      <MemoryPreview items={snapshot.memoryPreview} />
-      <ConnectorStatusList connectors={snapshot.connectors} />
 
       <footer className="panel-footer">
         <button
