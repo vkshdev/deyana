@@ -3,7 +3,22 @@ import type {
   AppCoreEvent,
   BackendHealthResponse,
   BackendStatusResponse,
+  ChatHistoryDeleteResponse,
+  ChatHistoryResponse,
+  ChatMessageRequest,
+  ChatMessageResponse,
+  ConnectorDisconnectResponse,
+  ConnectorItem,
+  ConnectorListResponse,
+  ConnectorOAuthCompleteRequest,
+  ConnectorOAuthStartRequest,
+  ConnectorOAuthStartResponse,
+  ConnectorSettingsPatch,
+  ConnectorSyncRequest,
+  ConnectorSyncResponse,
+  ConnectorSyncRunsResponse,
   CoreAppSettings,
+  LocalModelStatusResponse,
   MemoryCreateRequest,
   MemoryDeleteResponse,
   MemoryExportResponse,
@@ -11,9 +26,18 @@ import type {
   MemoryListResponse,
   MemoryReindexResponse,
   MemoryUpdateRequest,
+  ModelSelectionRequest,
+  ModelSelectionResponse,
+  ModelTestRequest,
+  ModelTestResponse,
   OnboardingCompleteRequest,
   OnboardingCompleteResponse,
   OnboardingState,
+  PrivacyAuditDeleteResponse,
+  PrivacyAuditListResponse,
+  PrivacyCheckRequest,
+  PrivacyCheckResponse,
+  PrivacyStatusResponse,
   SettingsPatch,
   VaultSelectRequest,
   VaultSelectResponse
@@ -205,6 +229,212 @@ export const backendClient = {
       throw new Error(`memory export returned ${response.status}`);
     }
     return response.json() as Promise<MemoryExportResponse>;
+  },
+
+  async getModelStatus(): Promise<LocalModelStatusResponse> {
+    const response = await fetch(`${coreService.endpoint}/models/status`);
+    if (!response.ok) {
+      throw new Error(`model status returned ${response.status}`);
+    }
+    return response.json() as Promise<LocalModelStatusResponse>;
+  },
+
+  async selectModel(request: ModelSelectionRequest): Promise<ModelSelectionResponse> {
+    const response = await fetch(`${coreService.endpoint}/models/selection`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+    if (!response.ok) {
+      const detail = await readErrorDetail(response);
+      throw new Error(detail || `model selection returned ${response.status}`);
+    }
+    return response.json() as Promise<ModelSelectionResponse>;
+  },
+
+  async testModel(request: ModelTestRequest = {}): Promise<ModelTestResponse> {
+    const response = await fetch(`${coreService.endpoint}/model/test`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+    if (!response.ok) {
+      const detail = await readErrorDetail(response);
+      throw new Error(detail || `model test returned ${response.status}`);
+    }
+    return response.json() as Promise<ModelTestResponse>;
+  },
+
+  async getChatHistory(): Promise<ChatHistoryResponse> {
+    const response = await fetch(`${coreService.endpoint}/chat/history`);
+    if (!response.ok) {
+      throw new Error(`chat history returned ${response.status}`);
+    }
+    return response.json() as Promise<ChatHistoryResponse>;
+  },
+
+  async sendChatMessage(request: ChatMessageRequest): Promise<ChatMessageResponse> {
+    const response = await fetch(`${coreService.endpoint}/chat/message`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+    if (!response.ok) {
+      const detail = await readErrorDetail(response);
+      throw new Error(detail || `chat message returned ${response.status}`);
+    }
+    return response.json() as Promise<ChatMessageResponse>;
+  },
+
+  async clearChatHistory(): Promise<ChatHistoryDeleteResponse> {
+    const response = await fetch(`${coreService.endpoint}/chat/history`, {
+      method: "DELETE"
+    });
+    if (!response.ok) {
+      const detail = await readErrorDetail(response);
+      throw new Error(detail || `chat clear returned ${response.status}`);
+    }
+    return response.json() as Promise<ChatHistoryDeleteResponse>;
+  },
+
+  async getPrivacyStatus(): Promise<PrivacyStatusResponse> {
+    const response = await fetch(`${coreService.endpoint}/privacy/status`);
+    if (!response.ok) {
+      throw new Error(`privacy status returned ${response.status}`);
+    }
+    return response.json() as Promise<PrivacyStatusResponse>;
+  },
+
+  async listPrivacyAudit(): Promise<PrivacyAuditListResponse> {
+    const response = await fetch(`${coreService.endpoint}/privacy/audit?limit=20`);
+    if (!response.ok) {
+      throw new Error(`privacy audit returned ${response.status}`);
+    }
+    return response.json() as Promise<PrivacyAuditListResponse>;
+  },
+
+  async checkPrivacyRequest(request: PrivacyCheckRequest): Promise<PrivacyCheckResponse> {
+    const response = await fetch(`${coreService.endpoint}/privacy/check`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+    if (!response.ok) {
+      const detail = await readErrorDetail(response);
+      throw new Error(detail || `privacy check returned ${response.status}`);
+    }
+    return response.json() as Promise<PrivacyCheckResponse>;
+  },
+
+  async clearPrivacyAudit(): Promise<PrivacyAuditDeleteResponse> {
+    const response = await fetch(`${coreService.endpoint}/privacy/audit`, {
+      method: "DELETE"
+    });
+    if (!response.ok) {
+      const detail = await readErrorDetail(response);
+      throw new Error(detail || `privacy audit clear returned ${response.status}`);
+    }
+    return response.json() as Promise<PrivacyAuditDeleteResponse>;
+  },
+
+  async listConnectors(): Promise<ConnectorListResponse> {
+    const response = await fetch(`${coreService.endpoint}/connectors`);
+    if (!response.ok) {
+      throw new Error(`connector list returned ${response.status}`);
+    }
+    return response.json() as Promise<ConnectorListResponse>;
+  },
+
+  async getConnector(connectorId: string): Promise<ConnectorItem> {
+    const response = await fetch(`${coreService.endpoint}/connectors/${connectorId}`);
+    if (!response.ok) {
+      const detail = await readErrorDetail(response);
+      throw new Error(detail || `connector status returned ${response.status}`);
+    }
+    return response.json() as Promise<ConnectorItem>;
+  },
+
+  async updateConnectorSettings(
+    connectorId: string,
+    request: ConnectorSettingsPatch
+  ): Promise<ConnectorItem> {
+    const response = await fetch(`${coreService.endpoint}/connectors/${connectorId}/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+    if (!response.ok) {
+      const detail = await readErrorDetail(response);
+      throw new Error(detail || `connector settings returned ${response.status}`);
+    }
+    return response.json() as Promise<ConnectorItem>;
+  },
+
+  async startConnectorOAuth(
+    connectorId: string,
+    request: ConnectorOAuthStartRequest = {}
+  ): Promise<ConnectorOAuthStartResponse> {
+    const response = await fetch(`${coreService.endpoint}/connectors/${connectorId}/oauth/start`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+    if (!response.ok) {
+      const detail = await readErrorDetail(response);
+      throw new Error(detail || `connector OAuth start returned ${response.status}`);
+    }
+    return response.json() as Promise<ConnectorOAuthStartResponse>;
+  },
+
+  async completeConnectorOAuth(
+    connectorId: string,
+    request: ConnectorOAuthCompleteRequest
+  ): Promise<ConnectorItem> {
+    const response = await fetch(`${coreService.endpoint}/connectors/${connectorId}/oauth/complete`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+    if (!response.ok) {
+      const detail = await readErrorDetail(response);
+      throw new Error(detail || `connector OAuth completion returned ${response.status}`);
+    }
+    return response.json() as Promise<ConnectorItem>;
+  },
+
+  async disconnectConnector(connectorId: string): Promise<ConnectorDisconnectResponse> {
+    const response = await fetch(`${coreService.endpoint}/connectors/${connectorId}/disconnect`, {
+      method: "POST"
+    });
+    if (!response.ok) {
+      const detail = await readErrorDetail(response);
+      throw new Error(detail || `connector disconnect returned ${response.status}`);
+    }
+    return response.json() as Promise<ConnectorDisconnectResponse>;
+  },
+
+  async syncConnector(
+    connectorId: string,
+    request: ConnectorSyncRequest = { reason: "manual" }
+  ): Promise<ConnectorSyncResponse> {
+    const response = await fetch(`${coreService.endpoint}/connectors/${connectorId}/sync`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+    if (!response.ok) {
+      const detail = await readErrorDetail(response);
+      throw new Error(detail || `connector sync returned ${response.status}`);
+    }
+    return response.json() as Promise<ConnectorSyncResponse>;
+  },
+
+  async listConnectorSyncRuns(): Promise<ConnectorSyncRunsResponse> {
+    const response = await fetch(`${coreService.endpoint}/connectors/sync-runs?limit=12`);
+    if (!response.ok) {
+      throw new Error(`connector sync runs returned ${response.status}`);
+    }
+    return response.json() as Promise<ConnectorSyncRunsResponse>;
   }
 };
 

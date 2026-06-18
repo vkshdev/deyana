@@ -7,16 +7,24 @@ import {
   type AppCoreEvent,
   type BackendProcessStatus,
   type BackendStatusResponse,
-  type ConnectorPreview,
+  type ChatMessageItem,
+  type ChatMessageResponse,
+  type ConnectorItem,
+  type ConnectorSyncRun,
   type CoreAppSettings,
+  type LocalModelStatusResponse,
   type MemoryCreateRequest,
   type MemoryItem,
+  type ModelSelectionRequest,
   type ModelProfile,
+  type ModelTestResponse,
   type MemoryPreviewItem,
   type ModelStatus,
   type OnboardingState,
   type OnboardingStep,
+  type PrivacyAuditEvent,
   type PrivacyMode,
+  type PrivacyStatusResponse,
   type DesktopSettings,
   type QuickAction,
   type SyncStatus,
@@ -40,7 +48,9 @@ export interface AssistantSnapshot {
   backendStatus?: BackendStatusResponse;
   backendEventStreamConnected: boolean;
   lastBackendEventType?: string;
-  connectors: ConnectorPreview[];
+  connectors: ConnectorItem[];
+  connectorSyncRuns: ConnectorSyncRun[];
+  connectorBusy: Record<string, boolean>;
   memoryPreview: MemoryPreviewItem[];
   memoryItems: MemoryItem[];
   memoryQuery: string;
@@ -51,9 +61,38 @@ export interface AssistantSnapshot {
   };
   memoryBusy: boolean;
   memoryExportedAt?: string;
+  modelStatusDetail?: LocalModelStatusResponse;
+  modelTestBusy: boolean;
+  modelTestResponse?: ModelTestResponse;
+  chatMessages: ChatMessageItem[];
+  chatDraft: string;
+  chatBusy: boolean;
+  privacyStatus?: PrivacyStatusResponse;
+  privacyAuditEvents: PrivacyAuditEvent[];
+  privacyBusy: boolean;
   quickActions: QuickAction[];
   error?: string;
 }
+
+const defaultConnectors = (): ConnectorItem[] =>
+  [
+    ["gmail", "Gmail"],
+    ["calendar", "Calendar"],
+    ["github", "GitHub"]
+  ].map(([id, name]) => ({
+    id,
+    name,
+    status: "not_connected",
+    enabled: false,
+    scopes: [],
+    syncIntervalMinutes: 360,
+    lastSyncAt: null,
+    nextSyncAt: null,
+    tokenStored: false,
+    tokenUpdatedAt: null,
+    lastError: null,
+    updatedAt: ""
+  }));
 
 const initialSnapshot: AssistantSnapshot = {
   assistantState: "COMPACT_FLOATING",
@@ -67,26 +106,9 @@ const initialSnapshot: AssistantSnapshot = {
   syncStatus: "idle",
   backend: DEFAULT_BACKEND_PROCESS_STATUS,
   backendEventStreamConnected: false,
-  connectors: [
-    {
-      id: "gmail",
-      name: "Gmail",
-      status: "not_connected",
-      lastSyncLabel: "Local sync off"
-    },
-    {
-      id: "calendar",
-      name: "Calendar",
-      status: "not_connected",
-      lastSyncLabel: "Local sync off"
-    },
-    {
-      id: "github",
-      name: "GitHub",
-      status: "not_connected",
-      lastSyncLabel: "Local sync off"
-    }
-  ],
+  connectors: defaultConnectors(),
+  connectorSyncRuns: [],
+  connectorBusy: {},
   memoryPreview: [
     {
       id: "vault",
@@ -109,6 +131,12 @@ const initialSnapshot: AssistantSnapshot = {
     contentMarkdown: ""
   },
   memoryBusy: false,
+  modelTestBusy: false,
+  chatMessages: [],
+  chatDraft: "",
+  chatBusy: false,
+  privacyAuditEvents: [],
+  privacyBusy: false,
   quickActions: [
     {
       id: "memory",
@@ -434,6 +462,289 @@ class AssistantStore {
     }
   };
 
+  loadModelStatus = async () => {
+    try {
+      const modelStatusDetail = await backendClient.getModelStatus();
+      this.setSnapshot({
+        modelStatusDetail,
+        modelStatus: modelStatusDetail.status,
+        error: undefined
+      });
+    } catch (error) {
+      this.setSnapshot({
+        modelStatus: "offline",
+        error: error instanceof Error ? error.message : "Unable to load model status"
+      });
+    }
+  };
+
+  selectModel = async (request: ModelSelectionRequest) => {
+    this.setSnapshot({ modelStatus: "checking", error: undefined });
+    try {
+      const response = await backendClient.selectModel(request);
+      this.setSnapshot({
+        coreSettings: response.settings,
+        modelStatusDetail: response.status,
+        modelStatus: response.status.status
+      });
+    } catch (error) {
+      this.setSnapshot({
+        modelStatus: "missing",
+        error: error instanceof Error ? error.message : "Unable to select model"
+      });
+    }
+  };
+
+  testModel = async () => {
+    this.setSnapshot({ modelTestBusy: true, modelTestResponse: undefined, error: undefined });
+    try {
+      const modelTestResponse = await backendClient.testModel({
+        prompt: "Reply with exactly: DEYANA_READY"
+      });
+      this.setSnapshot({
+        modelTestBusy: false,
+        modelTestResponse,
+        modelStatus: "available"
+      });
+    } catch (error) {
+      this.setSnapshot({
+        modelTestBusy: false,
+        error: error instanceof Error ? error.message : "Unable to test local model"
+      });
+      await this.loadModelStatus();
+    }
+  };
+
+  loadChatHistory = async () => {
+    try {
+      const response = await backendClient.getChatHistory();
+      this.setSnapshot({ chatMessages: response.messages, error: undefined });
+    } catch (error) {
+      this.setSnapshot({
+        error: error instanceof Error ? error.message : "Unable to load chat history"
+      });
+    }
+  };
+
+  setChatDraft = (chatDraft: string) => {
+    this.setSnapshot({ chatDraft });
+  };
+
+  sendChatMessage = async () => {
+    const content = this.snapshot.chatDraft.trim();
+    if (!content) {
+      this.setSnapshot({ error: "Chat message cannot be empty." });
+      return;
+    }
+
+    this.setSnapshot({
+      chatBusy: true,
+      chatDraft: "",
+      assistantState: "THINKING",
+      error: undefined
+    });
+
+    try {
+      const response = await backendClient.sendChatMessage({ content });
+      this.setSnapshot({
+        chatBusy: false,
+        assistantState: this.snapshot.settings.uiMode === "expanded" ? "EXPANDED_PANEL" : "COMPACT_FLOATING",
+        chatMessages: mergeChatResponse(this.snapshot.chatMessages, response)
+      });
+    } catch (error) {
+      this.setSnapshot({
+        chatBusy: false,
+        chatDraft: content,
+        assistantState: this.snapshot.settings.uiMode === "expanded" ? "EXPANDED_PANEL" : "COMPACT_FLOATING",
+        error: error instanceof Error ? error.message : "Unable to send local chat message"
+      });
+      await this.loadModelStatus();
+    }
+  };
+
+  clearChatHistory = async () => {
+    this.setSnapshot({ chatBusy: true, error: undefined });
+    try {
+      await backendClient.clearChatHistory();
+      this.setSnapshot({ chatMessages: [], chatBusy: false });
+    } catch (error) {
+      this.setSnapshot({
+        chatBusy: false,
+        error: error instanceof Error ? error.message : "Unable to clear chat history"
+      });
+    }
+  };
+
+  loadPrivacyAudit = async () => {
+    try {
+      const [privacyStatus, audit] = await Promise.all([
+        backendClient.getPrivacyStatus(),
+        backendClient.listPrivacyAudit()
+      ]);
+      this.setSnapshot({
+        privacyStatus,
+        privacyAuditEvents: audit.events,
+        error: undefined
+      });
+    } catch (error) {
+      this.setSnapshot({
+        error: error instanceof Error ? error.message : "Unable to load privacy audit"
+      });
+    }
+  };
+
+  testPrivacyFirewall = async () => {
+    this.setSnapshot({ privacyBusy: true, error: undefined });
+    try {
+      await backendClient.checkPrivacyRequest({
+        url: "https://api.openai.com/v1/chat/completions",
+        method: "POST",
+        purpose: "cloud_ai",
+        dataCategory: "private_memory",
+        payloadPreview: "Private memory summary"
+      });
+      await this.loadPrivacyAudit();
+      this.setSnapshot({ privacyBusy: false });
+    } catch (error) {
+      this.setSnapshot({
+        privacyBusy: false,
+        error: error instanceof Error ? error.message : "Unable to test privacy firewall"
+      });
+    }
+  };
+
+  clearPrivacyAudit = async () => {
+    this.setSnapshot({ privacyBusy: true, error: undefined });
+    try {
+      await backendClient.clearPrivacyAudit();
+      this.setSnapshot({
+        privacyAuditEvents: [],
+        privacyBusy: false
+      });
+      await this.loadPrivacyAudit();
+    } catch (error) {
+      this.setSnapshot({
+        privacyBusy: false,
+        error: error instanceof Error ? error.message : "Unable to clear privacy audit"
+      });
+    }
+  };
+
+  loadConnectors = async () => {
+    try {
+      const [connectors, syncRuns] = await Promise.all([
+        backendClient.listConnectors(),
+        backendClient.listConnectorSyncRuns()
+      ]);
+      this.setSnapshot({
+        connectors: connectors.items,
+        connectorSyncRuns: syncRuns.items,
+        syncStatus: deriveSyncStatus(connectors.items),
+        error: undefined
+      });
+    } catch (error) {
+      this.setSnapshot({
+        error: error instanceof Error ? error.message : "Unable to load connectors"
+      });
+    }
+  };
+
+  connectConnector = async (connectorId: string) => {
+    this.setConnectorBusy(connectorId, true);
+    try {
+      const started = await backendClient.startConnectorOAuth(connectorId, {
+        redirectUri: "deyana://oauth/callback"
+      });
+      const connector = await backendClient.completeConnectorOAuth(connectorId, {
+        state: started.state,
+        code: `mock-ui-${window.crypto.randomUUID()}`,
+        userApproved: true
+      });
+      const connectors = mergeConnector(this.snapshot.connectors, connector);
+      this.setSnapshot({
+        connectors,
+        syncStatus: deriveSyncStatus(connectors),
+        error: undefined
+      });
+      await this.loadConnectors();
+    } catch (error) {
+      this.setSnapshot({
+        error: error instanceof Error ? error.message : "Unable to connect local connector"
+      });
+    } finally {
+      this.setConnectorBusy(connectorId, false);
+    }
+  };
+
+  disconnectConnector = async (connectorId: string) => {
+    this.setConnectorBusy(connectorId, true);
+    try {
+      const response = await backendClient.disconnectConnector(connectorId);
+      const connectors = mergeConnector(this.snapshot.connectors, response.connector);
+      this.setSnapshot({
+        connectors,
+        syncStatus: deriveSyncStatus(connectors),
+        error: undefined
+      });
+      await this.loadConnectors();
+    } catch (error) {
+      this.setSnapshot({
+        error: error instanceof Error ? error.message : "Unable to disconnect connector"
+      });
+    } finally {
+      this.setConnectorBusy(connectorId, false);
+    }
+  };
+
+  syncConnector = async (connectorId: string) => {
+    this.setConnectorBusy(connectorId, true);
+    this.setSnapshot({ syncStatus: "syncing", assistantState: "SYNCING", error: undefined });
+    try {
+      const response = await backendClient.syncConnector(connectorId, { reason: "manual" });
+      const connectors = mergeConnector(this.snapshot.connectors, response.connector);
+      const syncRuns = mergeSyncRun(this.snapshot.connectorSyncRuns, response.run);
+      this.setSnapshot({
+        connectors,
+        connectorSyncRuns: syncRuns,
+        syncStatus: deriveSyncStatus(connectors),
+        assistantState: this.snapshot.settings.uiMode === "expanded" ? "EXPANDED_PANEL" : "COMPACT_FLOATING",
+        error: undefined
+      });
+      await this.loadConnectors();
+    } catch (error) {
+      this.setSnapshot({
+        syncStatus: "error",
+        assistantState: "CONNECTOR_ERROR",
+        error: error instanceof Error ? error.message : "Unable to sync connector"
+      });
+      await this.loadConnectors();
+    } finally {
+      this.setConnectorBusy(connectorId, false);
+    }
+  };
+
+  updateConnectorSettings = async (
+    connectorId: string,
+    patch: { enabled?: boolean; syncIntervalMinutes?: number }
+  ) => {
+    this.setConnectorBusy(connectorId, true);
+    try {
+      const connector = await backendClient.updateConnectorSettings(connectorId, patch);
+      const connectors = mergeConnector(this.snapshot.connectors, connector);
+      this.setSnapshot({
+        connectors,
+        syncStatus: deriveSyncStatus(connectors),
+        error: undefined
+      });
+    } catch (error) {
+      this.setSnapshot({
+        error: error instanceof Error ? error.message : "Unable to update connector settings"
+      });
+    } finally {
+      this.setConnectorBusy(connectorId, false);
+    }
+  };
+
   openVault = async () => {
     const vaultPath = this.snapshot.coreSettings.vaultPath;
     if (!vaultPath) {
@@ -469,10 +780,26 @@ class AssistantStore {
 
   private refreshBackendStatus = async () => {
     try {
-      const [backendStatus, coreSettings, onboarding] = await Promise.all([
+      const [
+        backendStatus,
+        coreSettings,
+        onboarding,
+        modelStatusDetail,
+        chatHistory,
+        privacyStatus,
+        privacyAudit,
+        connectors,
+        connectorSyncRuns
+      ] = await Promise.all([
         backendClient.getStatus(),
         backendClient.getSettings(),
-        backendClient.getOnboardingState()
+        backendClient.getOnboardingState(),
+        backendClient.getModelStatus(),
+        backendClient.getChatHistory(),
+        backendClient.getPrivacyStatus(),
+        backendClient.listPrivacyAudit(),
+        backendClient.listConnectors(),
+        backendClient.listConnectorSyncRuns()
       ]);
       const onboardingVaultPath = onboarding.selectedVaultPath ?? coreSettings.vaultPath ?? "";
       const memoryPreview = onboarding.completed && onboardingVaultPath
@@ -490,6 +817,14 @@ class AssistantStore {
         backendStatus,
         coreSettings,
         onboarding,
+        modelStatusDetail,
+        modelStatus: modelStatusDetail.status,
+        chatMessages: chatHistory.messages,
+        privacyStatus,
+        privacyAuditEvents: privacyAudit.events,
+        connectors: connectors.items,
+        connectorSyncRuns: connectorSyncRuns.items,
+        syncStatus: deriveSyncStatus(connectors.items),
         onboardingStep: onboarding.completed ? "complete" : onboarding.currentStep,
         onboardingVaultPath,
         memoryPreview,
@@ -504,7 +839,6 @@ class AssistantStore {
             ? "EXPANDED_PANEL"
             : "COMPACT_FLOATING"
           : "ONBOARDING",
-        modelStatus: backendStatus.featureFlags.models ? "available" : "checking",
         error: undefined
       });
 
@@ -640,6 +974,114 @@ class AssistantStore {
       return;
     }
 
+    if (event.type === "models.status.changed") {
+      this.setSnapshot({
+        modelStatusDetail: event.payload,
+        modelStatus: event.payload.status,
+        lastBackendEventType: event.type
+      });
+      return;
+    }
+
+    if (event.type === "models.test.completed") {
+      this.setSnapshot({
+        modelTestResponse: event.payload,
+        modelStatus: "available",
+        lastBackendEventType: event.type
+      });
+      return;
+    }
+
+    if (event.type === "chat.message.created") {
+      this.setSnapshot({
+        chatMessages: mergeChatResponse(this.snapshot.chatMessages, event.payload),
+        lastBackendEventType: event.type
+      });
+      return;
+    }
+
+    if (event.type === "chat.history.deleted") {
+      this.setSnapshot({
+        chatMessages: [],
+        lastBackendEventType: event.type
+      });
+      return;
+    }
+
+    if (event.type === "privacy.request.blocked" || event.type === "privacy.request.allowed") {
+      const existing = this.snapshot.privacyAuditEvents.filter(
+        (item) => item.id !== event.payload.auditEvent.id
+      );
+      const blockedDelta = event.payload.auditEvent.decision === "block" ? 1 : 0;
+      const allowedDelta = event.payload.auditEvent.decision === "allow" ? 1 : 0;
+      this.setSnapshot({
+        privacyAuditEvents: [event.payload.auditEvent, ...existing].slice(0, 20),
+        privacyStatus: this.snapshot.privacyStatus
+          ? {
+              ...this.snapshot.privacyStatus,
+              auditEvents: this.snapshot.privacyStatus.auditEvents + 1,
+              blockedEvents: this.snapshot.privacyStatus.blockedEvents + blockedDelta,
+              allowedEvents: this.snapshot.privacyStatus.allowedEvents + allowedDelta,
+              lastBlocked:
+                event.payload.auditEvent.decision === "block"
+                  ? event.payload.auditEvent
+                  : this.snapshot.privacyStatus.lastBlocked
+            }
+          : this.snapshot.privacyStatus,
+        lastBackendEventType: event.type
+      });
+      return;
+    }
+
+    if (event.type === "privacy.audit.deleted") {
+      this.setSnapshot({
+        privacyAuditEvents: [],
+        privacyStatus: this.snapshot.privacyStatus
+          ? {
+              ...this.snapshot.privacyStatus,
+              auditEvents: 0,
+              blockedEvents: 0,
+              allowedEvents: 0,
+              lastBlocked: null
+            }
+          : this.snapshot.privacyStatus,
+        lastBackendEventType: event.type
+      });
+      return;
+    }
+
+    if (event.type === "connector.oauth.started") {
+      this.setSnapshot({ lastBackendEventType: event.type });
+      return;
+    }
+
+    if (event.type === "connector.status.changed" || event.type === "connector.oauth.completed") {
+      const connectors = mergeConnector(this.snapshot.connectors, event.payload.connector);
+      this.setSnapshot({
+        connectors,
+        syncStatus: deriveSyncStatus(connectors),
+        lastBackendEventType: event.type
+      });
+      return;
+    }
+
+    if (
+      event.type === "connector.sync.started" ||
+      event.type === "connector.sync.completed" ||
+      event.type === "connector.sync.failed" ||
+      event.type === "connector.sync.skipped"
+    ) {
+      const connectors = mergeConnector(this.snapshot.connectors, event.payload.connector);
+      const connectorSyncRuns = mergeSyncRun(this.snapshot.connectorSyncRuns, event.payload.run);
+      this.setSnapshot({
+        connectors,
+        connectorSyncRuns,
+        syncStatus: deriveSyncStatus(connectors),
+        lastBackendEventType: event.type
+      });
+      return;
+    }
+
     const _exhaustive: never = event;
     return _exhaustive;
   };
@@ -677,6 +1119,15 @@ class AssistantStore {
     }, delayMs);
   };
 
+  private setConnectorBusy = (connectorId: string, busy: boolean) => {
+    this.setSnapshot({
+      connectorBusy: {
+        ...this.snapshot.connectorBusy,
+        [connectorId]: busy
+      }
+    });
+  };
+
   private disconnectBackendEvents = () => {
     if (this.backendConnection) {
       this.intentionalBackendDisconnect = true;
@@ -695,3 +1146,47 @@ export const assistantStore = new AssistantStore();
 
 export const useAssistantSnapshot = () =>
   useSyncExternalStore(assistantStore.subscribe, assistantStore.getSnapshot);
+
+const mergeChatResponse = (
+  current: ChatMessageItem[],
+  response: ChatMessageResponse
+): ChatMessageItem[] => {
+  const byId = new Map(current.map((message) => [message.id, message]));
+  byId.set(response.userMessage.id, response.userMessage);
+  byId.set(response.assistantMessage.id, response.assistantMessage);
+  return [...byId.values()].sort(
+    (left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt)
+  );
+};
+
+const mergeConnector = (current: ConnectorItem[], connector: ConnectorItem): ConnectorItem[] => {
+  const byId = new Map(current.map((item) => [item.id, item]));
+  byId.set(connector.id, connector);
+  const preferredOrder = ["gmail", "calendar", "github"];
+  return [...byId.values()].sort((left, right) => {
+    const leftIndex = preferredOrder.indexOf(left.id);
+    const rightIndex = preferredOrder.indexOf(right.id);
+    return (leftIndex === -1 ? 99 : leftIndex) - (rightIndex === -1 ? 99 : rightIndex);
+  });
+};
+
+const mergeSyncRun = (current: ConnectorSyncRun[], run: ConnectorSyncRun): ConnectorSyncRun[] => {
+  const byId = new Map(current.map((item) => [item.id, item]));
+  byId.set(run.id, run);
+  return [...byId.values()]
+    .sort((left, right) => Date.parse(right.startedAt) - Date.parse(left.startedAt))
+    .slice(0, 12);
+};
+
+const deriveSyncStatus = (connectors: ConnectorItem[]): SyncStatus => {
+  if (connectors.some((connector) => connector.status === "syncing")) {
+    return "syncing";
+  }
+  if (connectors.some((connector) => connector.status === "error")) {
+    return "error";
+  }
+  if (connectors.some((connector) => connector.status === "paused")) {
+    return "paused";
+  }
+  return "idle";
+};
