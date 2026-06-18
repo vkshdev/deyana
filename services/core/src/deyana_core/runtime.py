@@ -6,9 +6,14 @@ import uuid
 from datetime import UTC, datetime
 
 from . import __version__
+from .agent import ChatAgent
+from .chat import ChatStore
+from .connectors import ConnectorManager
 from .event_bus import EventBus
+from .local_models import ModelRouter
 from .memory import MemoryStore
 from .models import CoreEvent, DependencyStatus, HealthResponse, StatusResponse
+from .privacy import PrivacyFirewall
 from .runtime_time import utc_timestamp
 from .settings import CoreSettings
 from .storage import CoreStore
@@ -25,6 +30,14 @@ class RuntimeState:
         self.store = CoreStore(settings.data_dir)
         self.memory_store = MemoryStore(settings.data_dir, self.store)
         self.memory_store.initialize()
+        self.chat_store = ChatStore(settings.data_dir)
+        self.chat_store.initialize()
+        self.model_router = ModelRouter(settings.ollama_endpoint, self.store)
+        self.chat_agent = ChatAgent(self.memory_store, self.chat_store, self.model_router)
+        self.privacy_firewall = PrivacyFirewall(settings.data_dir, self.store)
+        self.privacy_firewall.initialize()
+        self.connector_manager = ConnectorManager(settings.data_dir, self.privacy_firewall)
+        self.connector_manager.initialize()
 
     @property
     def uptime_seconds(self) -> float:
@@ -45,6 +58,7 @@ class RuntimeState:
         )
 
     def status(self) -> StatusResponse:
+        ollama_status, ollama_detail = self.model_router.dependency_status()
         return StatusResponse(
             version=self.version,
             lifecycle=self.lifecycle,
@@ -61,13 +75,23 @@ class RuntimeState:
                 ),
                 DependencyStatus(
                     name="sqlite",
-                    status="deferred",
-                    detail="Phase 4 owns structured memory storage.",
+                    status="available",
+                    detail="SQLite memory and chat storage initialized.",
                 ),
                 DependencyStatus(
                     name="ollama",
-                    status="deferred",
-                    detail="Phase 5 owns local model routing.",
+                    status=ollama_status,
+                    detail=ollama_detail,
+                ),
+                DependencyStatus(
+                    name="privacy_firewall",
+                    status="available",
+                    detail="Local-only external request policy and audit log initialized.",
+                ),
+                DependencyStatus(
+                    name="connector_store",
+                    status="available",
+                    detail="Connector registry, encrypted token storage, and sync run logs initialized.",
                 ),
             ],
             feature_flags={
@@ -77,8 +101,14 @@ class RuntimeState:
                 "onboarding": True,
                 "vaultSetup": True,
                 "memory": True,
-                "models": False,
-                "connectors": False,
+                "models": True,
+                "chat": True,
+                "memoryRetrieval": True,
+                "privacyFirewall": True,
+                "privacyAudit": True,
+                "connectors": True,
+                "connectorScheduler": True,
+                "encryptedTokenStorage": True,
                 "voice": False,
             },
             timestamp=self.timestamp(),
