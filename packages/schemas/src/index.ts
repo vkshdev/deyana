@@ -36,6 +36,13 @@ export type ConnectorStatus =
   | "paused"
   | "error";
 
+export type ConnectorSyncRunStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "skipped";
+
 export type ModelStatus =
   | "available"
   | "missing"
@@ -43,6 +50,41 @@ export type ModelStatus =
   | "offline";
 
 export type SyncStatus = "idle" | "syncing" | "paused" | "error";
+export type PrivacyDecision = "allow" | "block";
+export type PrivacyDestinationCategory =
+  | "local"
+  | "public_web"
+  | "oauth_connector"
+  | "cloud_ai"
+  | "hosted_embedding"
+  | "hosted_reranker"
+  | "cloud_stt"
+  | "cloud_tts"
+  | "unknown_external";
+export type PrivacyDataCategory =
+  | "public_query"
+  | "public_content"
+  | "oauth_token"
+  | "connector_metadata"
+  | "private_memory"
+  | "memory_summary"
+  | "embedding_text"
+  | "audio"
+  | "transcript"
+  | "source_code"
+  | "local_file"
+  | "chat_history"
+  | "unknown";
+export type PrivacyRequestPurpose =
+  | "public_web_fetch"
+  | "oauth_api_fetch"
+  | "connector_api_fetch"
+  | "cloud_ai"
+  | "embedding"
+  | "reranking"
+  | "speech_to_text"
+  | "text_to_speech"
+  | "unknown";
 
 export const BACKEND_LIFECYCLES = [
   "starting",
@@ -156,6 +198,8 @@ export type MemoryType =
 export interface CoreAppSettings {
   privacyMode: PrivacyMode;
   modelProfile: ModelProfile;
+  selectedChatModel: string;
+  selectedEmbeddingModel: string;
   syncMode: SyncMode;
   vaultPath?: string | null;
   onboardingCompleted: boolean;
@@ -165,6 +209,8 @@ export interface CoreAppSettings {
 export interface SettingsPatch {
   privacyMode?: PrivacyMode;
   modelProfile?: ModelProfile;
+  selectedChatModel?: string;
+  selectedEmbeddingModel?: string;
   syncMode?: SyncMode;
 }
 
@@ -260,6 +306,252 @@ export interface MemoryExportResponse {
   items: MemoryItem[];
 }
 
+export type LocalModelRole = "chat" | "embedding" | "unknown";
+export type ModelTask =
+  | "chat"
+  | "summarization"
+  | "compression"
+  | "planning"
+  | "classification"
+  | "embedding"
+  | "coding";
+
+export interface LocalModelInfo {
+  name: string;
+  role: LocalModelRole;
+  installed: boolean;
+  recommended: boolean;
+  profile?: ModelProfile | null;
+  sizeBytes?: number | null;
+  detail: string;
+}
+
+export interface LocalModelStatusResponse {
+  provider: "ollama";
+  status: ModelStatus;
+  endpoint: string;
+  selectedChatModel: string;
+  selectedEmbeddingModel: string;
+  recommendedChatModel: string;
+  recommendedEmbeddingModel: string;
+  chatModelAvailable: boolean;
+  embeddingModelAvailable: boolean;
+  availableModels: LocalModelInfo[];
+  setupModels: LocalModelInfo[];
+  maxParallelModelJobs: number;
+  think: boolean;
+  message: string;
+  checkedAt: string;
+}
+
+export interface ModelSelectionRequest {
+  chatModel?: string | null;
+  embeddingModel?: string | null;
+  profile?: ModelProfile | null;
+}
+
+export interface ModelSelectionResponse {
+  settings: CoreAppSettings;
+  status: LocalModelStatusResponse;
+}
+
+export interface ModelTestRequest {
+  prompt?: string;
+}
+
+export interface ModelTestResponse {
+  ok: boolean;
+  model: string;
+  response: string;
+  latencyMs: number;
+  detail: string;
+}
+
+export interface ChatMessageRequest {
+  content: string;
+  useMemory?: boolean;
+}
+
+export interface MemorySourceReference {
+  id: string;
+  title: string;
+  label: string;
+  markdownPath?: string | null;
+  sourceType: string;
+  sourceUri?: string | null;
+  snippet: string;
+  score: number;
+  updatedAt: string;
+}
+
+export interface ChatMessageItem {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  model?: string | null;
+  sourceReferences: MemorySourceReference[];
+  createdAt: string;
+}
+
+export interface ChatRetrievalSummary {
+  query: string;
+  retrieved: number;
+  compressedCharacters: number;
+  contextTokensEstimate: number;
+}
+
+export interface ChatMessageResponse {
+  userMessage: ChatMessageItem;
+  assistantMessage: ChatMessageItem;
+  model: string;
+  latencyMs: number;
+  sources: MemorySourceReference[];
+  retrieval: ChatRetrievalSummary;
+}
+
+export interface ChatHistoryResponse {
+  messages: ChatMessageItem[];
+}
+
+export interface ChatHistoryDeleteResponse {
+  deleted: number;
+}
+
+export interface PrivacyCheckRequest {
+  url: string;
+  method?: string;
+  purpose?: PrivacyRequestPurpose;
+  dataCategory?: PrivacyDataCategory | null;
+  payloadPreview?: string | null;
+  userApproved?: boolean;
+  connectorId?: string | null;
+  externalWrite?: boolean;
+}
+
+export interface PrivacyAuditEvent {
+  id: string;
+  eventType: "privacy.request.blocked" | "privacy.request.allowed" | string;
+  decision: PrivacyDecision;
+  reason: string;
+  destination: string;
+  destinationCategory: PrivacyDestinationCategory;
+  dataCategory: PrivacyDataCategory;
+  purpose: PrivacyRequestPurpose;
+  method: string;
+  userApproved: boolean;
+  connectorId?: string | null;
+  safeAlternative: string;
+  payloadSha256?: string | null;
+  payloadCharacterCount: number;
+  createdAt: string;
+}
+
+export interface PrivacyCheckResponse {
+  allowed: boolean;
+  decision: PrivacyDecision;
+  reason: string;
+  destination: string;
+  destinationCategory: PrivacyDestinationCategory;
+  dataCategory: PrivacyDataCategory;
+  purpose: PrivacyRequestPurpose;
+  safeAlternative: string;
+  auditEvent: PrivacyAuditEvent;
+}
+
+export interface PrivacyAuditListResponse {
+  events: PrivacyAuditEvent[];
+  total: number;
+}
+
+export interface PrivacyStatusResponse {
+  mode: PrivacyMode;
+  enforced: boolean;
+  auditEvents: number;
+  blockedEvents: number;
+  allowedEvents: number;
+  lastBlocked?: PrivacyAuditEvent | null;
+  blockedCategories: PrivacyDestinationCategory[];
+}
+
+export interface PrivacyAuditDeleteResponse {
+  deleted: number;
+}
+
+export interface ConnectorItem {
+  id: string;
+  name: string;
+  status: ConnectorStatus;
+  enabled: boolean;
+  scopes: string[];
+  syncIntervalMinutes: number;
+  lastSyncAt?: string | null;
+  nextSyncAt?: string | null;
+  tokenStored: boolean;
+  tokenUpdatedAt?: string | null;
+  lastError?: string | null;
+  updatedAt: string;
+}
+
+export interface ConnectorListResponse {
+  items: ConnectorItem[];
+}
+
+export interface ConnectorSettingsPatch {
+  enabled?: boolean;
+  syncIntervalMinutes?: number;
+}
+
+export interface ConnectorOAuthStartRequest {
+  redirectUri?: string | null;
+}
+
+export interface ConnectorOAuthStartResponse {
+  connector: ConnectorItem;
+  authorizationUrl: string;
+  state: string;
+  scopes: string[];
+  redirectUri: string;
+  expiresAt: string;
+  mock: boolean;
+}
+
+export interface ConnectorOAuthCompleteRequest {
+  state: string;
+  code: string;
+  userApproved?: boolean;
+}
+
+export interface ConnectorDisconnectResponse {
+  connector: ConnectorItem;
+  tokenDeleted: boolean;
+}
+
+export interface ConnectorSyncRequest {
+  reason?: string;
+}
+
+export interface ConnectorSyncRun {
+  id: string;
+  connectorId: string;
+  status: ConnectorSyncRunStatus;
+  reason: string;
+  startedAt: string;
+  completedAt?: string | null;
+  itemsSeen: number;
+  itemsWritten: number;
+  errorMessage?: string | null;
+}
+
+export interface ConnectorSyncResponse {
+  connector: ConnectorItem;
+  run: ConnectorSyncRun;
+}
+
+export interface ConnectorSyncRunsResponse {
+  items: ConnectorSyncRun[];
+  total: number;
+}
+
 export type SettingsChangedEvent = BackendEvent<
   "settings.changed",
   {
@@ -290,14 +582,85 @@ export type MemoryItemUpdatedEvent = BackendEvent<"memory.item.updated", { item:
 export type MemoryItemDeletedEvent = BackendEvent<"memory.item.deleted", { id: string; deleted: boolean }>;
 export type MemoryReindexedEvent = BackendEvent<"memory.reindexed", MemoryReindexResponse>;
 
+export type ModelsStatusChangedEvent = BackendEvent<"models.status.changed", LocalModelStatusResponse>;
+export type ModelsTestCompletedEvent = BackendEvent<"models.test.completed", ModelTestResponse>;
+export type ChatMessageCreatedEvent = BackendEvent<"chat.message.created", ChatMessageResponse>;
+export type ChatHistoryDeletedEvent = BackendEvent<"chat.history.deleted", ChatHistoryDeleteResponse>;
+export type PrivacyRequestBlockedEvent = BackendEvent<
+  "privacy.request.blocked",
+  {
+    reason: string;
+    destination: string;
+    destinationCategory: PrivacyDestinationCategory;
+    dataType: PrivacyDataCategory;
+    safeAlternative: string;
+    auditEvent: PrivacyAuditEvent;
+  }
+>;
+export type PrivacyRequestAllowedEvent = BackendEvent<
+  "privacy.request.allowed",
+  {
+    reason: string;
+    destination: string;
+    destinationCategory: PrivacyDestinationCategory;
+    dataType: PrivacyDataCategory;
+    safeAlternative: string;
+    auditEvent: PrivacyAuditEvent;
+  }
+>;
+export type PrivacyAuditDeletedEvent = BackendEvent<"privacy.audit.deleted", PrivacyAuditDeleteResponse>;
+export type ConnectorStatusChangedEvent = BackendEvent<
+  "connector.status.changed",
+  {
+    connector: ConnectorItem;
+  }
+>;
+export type ConnectorOAuthStartedEvent = BackendEvent<
+  "connector.oauth.started",
+  ConnectorOAuthStartResponse
+>;
+export type ConnectorOAuthCompletedEvent = BackendEvent<
+  "connector.oauth.completed",
+  {
+    connector: ConnectorItem;
+  }
+>;
+export type ConnectorSyncStartedEvent = BackendEvent<"connector.sync.started", ConnectorSyncResponse>;
+export type ConnectorSyncCompletedEvent = BackendEvent<"connector.sync.completed", ConnectorSyncResponse>;
+export type ConnectorSyncFailedEvent = BackendEvent<"connector.sync.failed", ConnectorSyncResponse>;
+export type ConnectorSyncSkippedEvent = BackendEvent<"connector.sync.skipped", ConnectorSyncResponse>;
+
 export type Phase3CoreEvent = SettingsChangedEvent | VaultSelectedEvent | OnboardingStateChangedEvent;
 export type Phase4CoreEvent =
   | MemoryItemCreatedEvent
   | MemoryItemUpdatedEvent
   | MemoryItemDeletedEvent
   | MemoryReindexedEvent;
+export type Phase5CoreEvent =
+  | ModelsStatusChangedEvent
+  | ModelsTestCompletedEvent
+  | ChatMessageCreatedEvent
+  | ChatHistoryDeletedEvent;
+export type Phase7CoreEvent =
+  | PrivacyRequestBlockedEvent
+  | PrivacyRequestAllowedEvent
+  | PrivacyAuditDeletedEvent;
+export type Phase8CoreEvent =
+  | ConnectorStatusChangedEvent
+  | ConnectorOAuthStartedEvent
+  | ConnectorOAuthCompletedEvent
+  | ConnectorSyncStartedEvent
+  | ConnectorSyncCompletedEvent
+  | ConnectorSyncFailedEvent
+  | ConnectorSyncSkippedEvent;
 
-export type AppCoreEvent = CoreWebSocketEvent | Phase3CoreEvent | Phase4CoreEvent;
+export type AppCoreEvent =
+  | CoreWebSocketEvent
+  | Phase3CoreEvent
+  | Phase4CoreEvent
+  | Phase5CoreEvent
+  | Phase7CoreEvent
+  | Phase8CoreEvent;
 
 export interface FloatingWindowPosition {
   x: number;
@@ -362,6 +725,8 @@ export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
 export const DEFAULT_CORE_APP_SETTINGS: CoreAppSettings = {
   privacyMode: "local_only",
   modelProfile: "low_spec",
+  selectedChatModel: "qwen3:1.7b",
+  selectedEmbeddingModel: "all-minilm:latest",
   syncMode: "manual",
   vaultPath: null,
   onboardingCompleted: false,
