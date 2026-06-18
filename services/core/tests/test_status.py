@@ -18,5 +18,8 @@ def test_status_endpoint_exposes_current_core_capabilities() -> None:
     assert body["featureFlags"]["onboarding"] is True
     assert body["featureFlags"]["vaultSetup"] is True
     assert body["featureFlags"]["memory"] is True
-    assert body["featureFlags"]["models"] is False
+    assert body["featureFlags"]["models"] is True
+    assert body["featureFlags"]["chat"] is True
+    assert body["featureFlags"]["memoryRetrieval"] is True
     assert any(dependency["name"] == "python" for dependency in body["dependencies"])
+    assert any(dependency["name"] == "ollama" for dependency in body["dependencies"])
