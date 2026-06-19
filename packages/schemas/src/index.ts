@@ -248,6 +248,28 @@ export interface OnboardingCompleteResponse {
   settings: CoreAppSettings;
 }
 
+export interface MemoryEntity {
+  id: string;
+  memoryId: string;
+  name: string;
+  entityType: string;
+  sourceText: string;
+  createdAt: string;
+}
+
+export type MemoryInsightType = "action_item" | "decision";
+
+export interface MemoryInsight {
+  id: string;
+  memoryId: string;
+  type: MemoryInsightType;
+  title: string;
+  detail: string;
+  status: string;
+  dueAt?: string | null;
+  createdAt: string;
+}
+
 export interface MemoryItem {
   id: string;
   type: MemoryType;
@@ -260,6 +282,9 @@ export interface MemoryItem {
   sourceUri?: string | null;
   importance: number;
   tags: string[];
+  entities: MemoryEntity[];
+  actionItems: MemoryInsight[];
+  decisions: MemoryInsight[];
   createdAt: string;
   updatedAt: string;
   deletedAt?: string | null;
@@ -268,7 +293,7 @@ export interface MemoryItem {
 export interface MemoryCreateRequest {
   type?: MemoryType;
   title: string;
-  summary: string;
+  summary?: string;
   contentMarkdown?: string | null;
   sourceType?: string;
   sourceId?: string | null;
@@ -299,6 +324,14 @@ export interface MemoryDeleteResponse {
 export interface MemoryReindexResponse {
   reindexed: number;
   missingMarkdown: number;
+}
+
+export interface DailySummaryRequest {
+  date?: string | null;
+}
+
+export interface ProjectSummaryRequest {
+  project: string;
 }
 
 export interface MemoryExportResponse {
@@ -483,6 +516,8 @@ export interface ConnectorItem {
   status: ConnectorStatus;
   enabled: boolean;
   scopes: string[];
+  oauthConfigured: boolean;
+  realSyncSupported: boolean;
   syncIntervalMinutes: number;
   lastSyncAt?: string | null;
   nextSyncAt?: string | null;
@@ -513,6 +548,7 @@ export interface ConnectorOAuthStartResponse {
   redirectUri: string;
   expiresAt: string;
   mock: boolean;
+  oauthConfigured: boolean;
 }
 
 export interface ConnectorOAuthCompleteRequest {
@@ -581,6 +617,13 @@ export type MemoryItemCreatedEvent = BackendEvent<"memory.item.created", { item:
 export type MemoryItemUpdatedEvent = BackendEvent<"memory.item.updated", { item: MemoryItem }>;
 export type MemoryItemDeletedEvent = BackendEvent<"memory.item.deleted", { id: string; deleted: boolean }>;
 export type MemoryReindexedEvent = BackendEvent<"memory.reindexed", MemoryReindexResponse>;
+export type MemorySummaryGeneratedEvent = BackendEvent<
+  "memory.summary.generated",
+  {
+    item: MemoryItem;
+    summaryType: "daily" | "project";
+  }
+>;
 
 export type ModelsStatusChangedEvent = BackendEvent<"models.status.changed", LocalModelStatusResponse>;
 export type ModelsTestCompletedEvent = BackendEvent<"models.test.completed", ModelTestResponse>;
@@ -635,7 +678,8 @@ export type Phase4CoreEvent =
   | MemoryItemCreatedEvent
   | MemoryItemUpdatedEvent
   | MemoryItemDeletedEvent
-  | MemoryReindexedEvent;
+  | MemoryReindexedEvent
+  | MemorySummaryGeneratedEvent;
 export type Phase5CoreEvent =
   | ModelsStatusChangedEvent
   | ModelsTestCompletedEvent
