@@ -109,6 +109,8 @@ async def complete_connector_oauth(
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ConnectorStateError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+    except ConnectorError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
     except PrivacyPolicyError as error:
         await publish_privacy_event(runtime, error.response)
         raise HTTPException(status_code=403, detail=error.response.reason) from error

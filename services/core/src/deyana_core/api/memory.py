@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from ..models import (
+    DailySummaryRequest,
     MemoryCreateRequest,
     MemoryDeleteResponse,
     MemoryExportResponse,
@@ -10,6 +11,7 @@ from ..models import (
     MemoryListResponse,
     MemoryReindexResponse,
     MemoryUpdateRequest,
+    ProjectSummaryRequest,
 )
 
 router = APIRouter(prefix="/memory", tags=["memory"])
@@ -57,6 +59,46 @@ async def reindex_memory(request: Request) -> MemoryReindexResponse:
         )
     )
     return result
+
+
+@router.post("/summaries/daily", response_model=MemoryItem)
+async def generate_daily_summary(
+    request: Request,
+    payload: DailySummaryRequest,
+) -> MemoryItem:
+    runtime = request.app.state.runtime
+    try:
+        item = runtime.memory_store.generate_daily_summary(payload)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+    await runtime.event_bus.publish(
+        runtime.event(
+            "memory.summary.generated",
+            {"item": item.model_dump(mode="json", by_alias=True), "summaryType": "daily"},
+        )
+    )
+    return item
+
+
+@router.post("/summaries/project", response_model=MemoryItem)
+async def generate_project_summary(
+    request: Request,
+    payload: ProjectSummaryRequest,
+) -> MemoryItem:
+    runtime = request.app.state.runtime
+    try:
+        item = runtime.memory_store.generate_project_summary(payload)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+    await runtime.event_bus.publish(
+        runtime.event(
+            "memory.summary.generated",
+            {"item": item.model_dump(mode="json", by_alias=True), "summaryType": "project"},
+        )
+    )
+    return item
 
 
 @router.get("/{memory_id}", response_model=MemoryItem)
