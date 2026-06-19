@@ -18,6 +18,7 @@ import type {
   ConnectorSyncResponse,
   ConnectorSyncRunsResponse,
   CoreAppSettings,
+  DailySummaryRequest,
   LocalModelStatusResponse,
   MemoryCreateRequest,
   MemoryDeleteResponse,
@@ -38,6 +39,7 @@ import type {
   PrivacyCheckRequest,
   PrivacyCheckResponse,
   PrivacyStatusResponse,
+  ProjectSummaryRequest,
   SettingsPatch,
   VaultSelectRequest,
   VaultSelectResponse
@@ -221,6 +223,32 @@ export const backendClient = {
       throw new Error(`memory reindex returned ${response.status}`);
     }
     return response.json() as Promise<MemoryReindexResponse>;
+  },
+
+  async generateDailySummary(request: DailySummaryRequest = {}): Promise<MemoryItem> {
+    const response = await fetch(`${coreService.endpoint}/memory/summaries/daily`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+    if (!response.ok) {
+      const detail = await readErrorDetail(response);
+      throw new Error(detail || `daily summary returned ${response.status}`);
+    }
+    return response.json() as Promise<MemoryItem>;
+  },
+
+  async generateProjectSummary(request: ProjectSummaryRequest): Promise<MemoryItem> {
+    const response = await fetch(`${coreService.endpoint}/memory/summaries/project`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+    if (!response.ok) {
+      const detail = await readErrorDetail(response);
+      throw new Error(detail || `project summary returned ${response.status}`);
+    }
+    return response.json() as Promise<MemoryItem>;
   },
 
   async exportMemory(): Promise<MemoryExportResponse> {

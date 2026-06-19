@@ -51,9 +51,12 @@ export interface AssistantSnapshot {
   connectors: ConnectorItem[];
   connectorSyncRuns: ConnectorSyncRun[];
   connectorBusy: Record<string, boolean>;
+  connectorOAuth: Record<string, { state: string; authorizationUrl: string; expiresAt: string }>;
+  connectorOAuthCodes: Record<string, string>;
   memoryPreview: MemoryPreviewItem[];
   memoryItems: MemoryItem[];
   memoryQuery: string;
+  memoryProjectDraft: string;
   memoryDraft: {
     title: string;
     summary: string;
@@ -85,6 +88,8 @@ const defaultConnectors = (): ConnectorItem[] =>
     status: "not_connected",
     enabled: false,
     scopes: [],
+    oauthConfigured: false,
+    realSyncSupported: true,
     syncIntervalMinutes: 360,
     lastSyncAt: null,
     nextSyncAt: null,
@@ -109,6 +114,8 @@ const initialSnapshot: AssistantSnapshot = {
   connectors: defaultConnectors(),
   connectorSyncRuns: [],
   connectorBusy: {},
+  connectorOAuth: {},
+  connectorOAuthCodes: {},
   memoryPreview: [
     {
       id: "vault",
@@ -125,6 +132,7 @@ const initialSnapshot: AssistantSnapshot = {
   ],
   memoryItems: [],
   memoryQuery: "",
+  memoryProjectDraft: "",
   memoryDraft: {
     title: "",
     summary: "",
@@ -353,6 +361,10 @@ class AssistantStore {
     this.setSnapshot({ memoryQuery });
   };
 
+  setMemoryProjectDraft = (memoryProjectDraft: string) => {
+    this.setSnapshot({ memoryProjectDraft });
+  };
+
   setMemoryDraft = (patch: Partial<AssistantSnapshot["memoryDraft"]>) => {
     this.setSnapshot({ memoryDraft: { ...this.snapshot.memoryDraft, ...patch } });
   };
@@ -383,9 +395,10 @@ class AssistantStore {
     const draft = this.snapshot.memoryDraft;
     const title = draft.title.trim();
     const summary = draft.summary.trim();
+    const contentMarkdown = draft.contentMarkdown.trim();
 
-    if (!title || !summary) {
-      this.setSnapshot({ error: "Memory needs a title and summary." });
+    if (!title || (!summary && !contentMarkdown)) {
+      this.setSnapshot({ error: "Memory needs a title and note body." });
       return;
     }
 
@@ -395,7 +408,7 @@ class AssistantStore {
       type: "note",
       title,
       summary,
-      contentMarkdown: draft.contentMarkdown.trim() || summary,
+      contentMarkdown: contentMarkdown || summary,
       sourceType: "manual",
       tags: ["manual"]
     };
@@ -442,6 +455,48 @@ class AssistantStore {
       this.setSnapshot({
         memoryBusy: false,
         error: error instanceof Error ? error.message : "Unable to reindex memory"
+      });
+    }
+  };
+
+  generateDailySummary = async () => {
+    this.setSnapshot({ memoryBusy: true, error: undefined });
+    try {
+      const item = await backendClient.generateDailySummary();
+      this.setSnapshot({
+        memoryItems: mergeMemoryItem(this.snapshot.memoryItems, item),
+        memoryBusy: false
+      });
+      await this.loadMemory();
+    } catch (error) {
+      this.setSnapshot({
+        memoryBusy: false,
+        error: error instanceof Error ? error.message : "Unable to generate daily summary"
+      });
+    }
+  };
+
+  generateProjectSummary = async () => {
+    const project = this.snapshot.memoryProjectDraft.trim();
+    if (!project) {
+      this.setSnapshot({ error: "Project summary needs a project name." });
+      return;
+    }
+
+    this.setSnapshot({ memoryBusy: true, error: undefined });
+    try {
+      const item = await backendClient.generateProjectSummary({ project });
+      this.setSnapshot({
+        memoryItems: mergeMemoryItem(this.snapshot.memoryItems, item),
+        memoryQuery: project,
+        memoryProjectDraft: "",
+        memoryBusy: false
+      });
+      await this.loadMemory(project);
+    } catch (error) {
+      this.setSnapshot({
+        memoryBusy: false,
+        error: error instanceof Error ? error.message : "Unable to generate project summary"
       });
     }
   };
@@ -655,6 +710,21 @@ class AssistantStore {
       const started = await backendClient.startConnectorOAuth(connectorId, {
         redirectUri: "deyana://oauth/callback"
       });
+      if (!started.mock) {
+        window.open(started.authorizationUrl, "_blank", "noopener,noreferrer");
+        this.setSnapshot({
+          connectorOAuth: {
+            ...this.snapshot.connectorOAuth,
+            [connectorId]: {
+              state: started.state,
+              authorizationUrl: started.authorizationUrl,
+              expiresAt: started.expiresAt
+            }
+          },
+          error: undefined
+        });
+        return;
+      }
       const connector = await backendClient.completeConnectorOAuth(connectorId, {
         state: started.state,
         code: `mock-ui-${window.crypto.randomUUID()}`,
@@ -670,6 +740,50 @@ class AssistantStore {
     } catch (error) {
       this.setSnapshot({
         error: error instanceof Error ? error.message : "Unable to connect local connector"
+      });
+    } finally {
+      this.setConnectorBusy(connectorId, false);
+    }
+  };
+
+  setConnectorOAuthCode = (connectorId: string, code: string) => {
+    this.setSnapshot({
+      connectorOAuthCodes: {
+        ...this.snapshot.connectorOAuthCodes,
+        [connectorId]: code
+      }
+    });
+  };
+
+  completeConnectorOAuth = async (connectorId: string) => {
+    const pending = this.snapshot.connectorOAuth[connectorId];
+    const code = this.snapshot.connectorOAuthCodes[connectorId]?.trim();
+    if (!pending || !code) {
+      this.setSnapshot({ error: "Paste the connector OAuth code before completing setup." });
+      return;
+    }
+
+    this.setConnectorBusy(connectorId, true);
+    try {
+      const connector = await backendClient.completeConnectorOAuth(connectorId, {
+        state: pending.state,
+        code,
+        userApproved: true
+      });
+      const connectors = mergeConnector(this.snapshot.connectors, connector);
+      const { [connectorId]: _pending, ...connectorOAuth } = this.snapshot.connectorOAuth;
+      const { [connectorId]: _code, ...connectorOAuthCodes } = this.snapshot.connectorOAuthCodes;
+      this.setSnapshot({
+        connectors,
+        connectorOAuth,
+        connectorOAuthCodes,
+        syncStatus: deriveSyncStatus(connectors),
+        error: undefined
+      });
+      await this.loadConnectors();
+    } catch (error) {
+      this.setSnapshot({
+        error: error instanceof Error ? error.message : "Unable to complete connector OAuth"
       });
     } finally {
       this.setConnectorBusy(connectorId, false);
@@ -711,6 +825,7 @@ class AssistantStore {
         error: undefined
       });
       await this.loadConnectors();
+      await this.loadMemory();
     } catch (error) {
       this.setSnapshot({
         syncStatus: "error",
@@ -950,11 +1065,14 @@ class AssistantStore {
       return;
     }
 
-    if (event.type === "memory.item.created" || event.type === "memory.item.updated") {
+    if (
+      event.type === "memory.item.created" ||
+      event.type === "memory.item.updated" ||
+      event.type === "memory.summary.generated"
+    ) {
       const item = event.payload.item;
-      const existing = this.snapshot.memoryItems.filter((memory) => memory.id !== item.id);
       this.setSnapshot({
-        memoryItems: [item, ...existing],
+        memoryItems: mergeMemoryItem(this.snapshot.memoryItems, item),
         lastBackendEventType: event.type
       });
       return;
@@ -1157,6 +1275,11 @@ const mergeChatResponse = (
   return [...byId.values()].sort(
     (left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt)
   );
+};
+
+const mergeMemoryItem = (current: MemoryItem[], item: MemoryItem): MemoryItem[] => {
+  const existing = current.filter((memory) => memory.id !== item.id);
+  return [item, ...existing].slice(0, 20);
 };
 
 const mergeConnector = (current: ConnectorItem[], connector: ConnectorItem): ConnectorItem[] => {
