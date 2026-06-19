@@ -337,6 +337,24 @@ button {
   opacity: 0.42;
 }
 
+.inline-text-button {
+  min-width: 44px;
+  height: 24px;
+  border: 1px solid rgba(101, 240, 189, 0.32);
+  border-radius: 7px;
+  padding: 0 8px;
+  color: var(--jade);
+  background: rgba(101, 240, 189, 0.1);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.inline-text-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.44;
+}
+
 .model-available {
   color: var(--cyan);
 }
@@ -714,7 +732,9 @@ button {
 }
 
 .memory-browser-header,
-.memory-tools {
+.memory-tools,
+.memory-summary-tools,
+.memory-extraction-row {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -725,6 +745,7 @@ button {
 }
 
 .memory-search,
+.memory-summary-tools,
 .memory-create {
   display: grid;
   gap: 7px;
@@ -732,6 +753,10 @@ button {
 
 .memory-search {
   grid-template-columns: 1fr 30px;
+}
+
+.memory-summary-tools {
+  grid-template-columns: auto 1fr auto;
 }
 
 .memory-create {
@@ -744,6 +769,7 @@ button {
 }
 
 .memory-search input,
+.memory-summary-tools input,
 .memory-create input,
 .memory-create textarea {
   min-width: 0;
@@ -757,6 +783,7 @@ button {
 }
 
 .memory-search input,
+.memory-summary-tools input,
 .memory-create input {
   height: 32px;
   padding: 0 9px;
@@ -769,6 +796,7 @@ button {
 }
 
 .memory-search input:focus,
+.memory-summary-tools input:focus,
 .memory-create input:focus,
 .memory-create textarea:focus {
   border-color: rgba(102, 227, 255, 0.4);
@@ -797,6 +825,31 @@ button {
 .memory-browser-item span,
 .memory-browser-item small {
   display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memory-extraction-row {
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 4px;
+}
+
+.memory-extraction-row em {
+  min-width: 0;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid rgba(208, 221, 230, 0.1);
+  border-radius: 999px;
+  color: var(--cyan);
+  background: rgba(102, 227, 255, 0.075);
+  font-size: 9px;
+  font-style: normal;
+  line-height: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -890,6 +943,7 @@ button {
 .connector-title-row,
 .connector-meta,
 .connector-settings-row,
+.connector-oauth-row,
 .connector-actions {
   display: flex;
   align-items: center;
@@ -930,6 +984,28 @@ button {
 
 .connector-settings-row {
   justify-content: space-between;
+}
+
+.connector-oauth-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+}
+
+.connector-oauth-row input {
+  min-width: 0;
+  height: 24px;
+  border: 1px solid rgba(208, 221, 230, 0.12);
+  border-radius: 7px;
+  padding: 0 8px;
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--text);
+  font: inherit;
+  font-size: 10px;
+  outline: none;
+}
+
+.connector-oauth-row input:focus {
+  border-color: rgba(102, 227, 255, 0.4);
 }
 
 .connector-toggle {
