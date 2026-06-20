@@ -51,6 +51,38 @@ export interface BackendEventConnection {
   disconnect: () => void;
 }
 
+type MemoryInsightFilterType = "action_item" | "decision";
+
+export interface MemoryEntityListOptions {
+  query?: string;
+  sourceType?: string;
+  sourceId?: string;
+  date?: string;
+  limit?: number;
+}
+
+export interface MemoryInsightListOptions {
+  query?: string;
+  type?: MemoryInsightFilterType;
+  status?: string;
+  sourceType?: string;
+  sourceId?: string;
+  date?: string;
+  limit?: number;
+}
+
+function appendFilterParam(params: URLSearchParams, key: string, value?: string | null): void {
+  const trimmed = value?.trim();
+  if (trimmed) {
+    params.set(key, trimmed);
+  }
+}
+
+function appendListLimit(params: URLSearchParams, limit = 100): void {
+  const boundedLimit = Number.isFinite(limit) ? Math.min(200, Math.max(1, Math.floor(limit))) : 100;
+  params.set("limit", String(boundedLimit));
+}
+
 export const backendClient = {
   async getHealth(timeoutMs = 800): Promise<BackendHealthResponse> {
     const controller = new AbortController();
@@ -261,12 +293,14 @@ export const backendClient = {
     return response.json() as Promise<MemoryExportResponse>;
   },
 
-  async listMemoryEntities(query?: string): Promise<MemoryEntityListResponse> {
+  async listMemoryEntities(options?: string | MemoryEntityListOptions): Promise<MemoryEntityListResponse> {
+    const normalizedOptions = typeof options === "string" ? { query: options } : options ?? {};
     const params = new URLSearchParams();
-    params.set("limit", "100");
-    if (query?.trim()) {
-      params.set("query", query.trim());
-    }
+    appendListLimit(params, normalizedOptions.limit);
+    appendFilterParam(params, "query", normalizedOptions.query);
+    appendFilterParam(params, "sourceType", normalizedOptions.sourceType);
+    appendFilterParam(params, "sourceId", normalizedOptions.sourceId);
+    appendFilterParam(params, "date", normalizedOptions.date);
     const response = await fetch(`${coreService.endpoint}/memory/entities?${params.toString()}`);
     if (!response.ok) {
       throw new Error(`memory entities returned ${response.status}`);
@@ -275,17 +309,27 @@ export const backendClient = {
   },
 
   async listMemoryInsights(
-    type?: "action_item" | "decision",
-    status?: string
+    typeOrOptions?: MemoryInsightFilterType | MemoryInsightListOptions,
+    status?: string,
+    options?: MemoryInsightListOptions
   ): Promise<MemoryInsightListResponse> {
+    const fallbackOptions = options ?? {};
+    const normalizedOptions =
+      typeof typeOrOptions === "object"
+        ? typeOrOptions
+        : {
+            ...fallbackOptions,
+            type: typeOrOptions ?? fallbackOptions.type,
+            status: status ?? fallbackOptions.status
+          };
     const params = new URLSearchParams();
-    params.set("limit", "100");
-    if (type) {
-      params.set("type", type);
-    }
-    if (status?.trim()) {
-      params.set("status", status.trim());
-    }
+    appendListLimit(params, normalizedOptions.limit);
+    appendFilterParam(params, "query", normalizedOptions.query);
+    appendFilterParam(params, "type", normalizedOptions.type);
+    appendFilterParam(params, "status", normalizedOptions.status);
+    appendFilterParam(params, "sourceType", normalizedOptions.sourceType);
+    appendFilterParam(params, "sourceId", normalizedOptions.sourceId);
+    appendFilterParam(params, "date", normalizedOptions.date);
     const response = await fetch(`${coreService.endpoint}/memory/insights?${params.toString()}`);
     if (!response.ok) {
       throw new Error(`memory insights returned ${response.status}`);

@@ -14,6 +14,8 @@ import {
   type CoreAppSettings,
   type LocalModelStatusResponse,
   type MemoryCreateRequest,
+  type MemoryEntity,
+  type MemoryInsight,
   type MemoryItem,
   type ModelSelectionRequest,
   type ModelProfile,
@@ -55,6 +57,10 @@ export interface AssistantSnapshot {
   connectorOAuthCodes: Record<string, string>;
   memoryPreview: MemoryPreviewItem[];
   memoryItems: MemoryItem[];
+  memoryEntities: MemoryEntity[];
+  memoryActionItems: MemoryInsight[];
+  memoryDecisions: MemoryInsight[];
+  memoryExtractionView: MemoryExtractionView;
   memoryQuery: string;
   memoryProjectDraft: string;
   memoryDraft: {
@@ -76,6 +82,8 @@ export interface AssistantSnapshot {
   quickActions: QuickAction[];
   error?: string;
 }
+
+export type MemoryExtractionView = "items" | "actions" | "decisions" | "entities";
 
 const defaultConnectors = (): ConnectorItem[] =>
   [
@@ -131,6 +139,10 @@ const initialSnapshot: AssistantSnapshot = {
     }
   ],
   memoryItems: [],
+  memoryEntities: [],
+  memoryActionItems: [],
+  memoryDecisions: [],
+  memoryExtractionView: "items",
   memoryQuery: "",
   memoryProjectDraft: "",
   memoryDraft: {
@@ -361,6 +373,10 @@ class AssistantStore {
     this.setSnapshot({ memoryQuery });
   };
 
+  setMemoryExtractionView = (memoryExtractionView: MemoryExtractionView) => {
+    this.setSnapshot({ memoryExtractionView });
+  };
+
   setMemoryProjectDraft = (memoryProjectDraft: string) => {
     this.setSnapshot({ memoryProjectDraft });
   };
@@ -371,9 +387,18 @@ class AssistantStore {
 
   loadMemory = async (query = this.snapshot.memoryQuery) => {
     try {
-      const response = await backendClient.listMemory(query);
+      const queryValue = query.trim();
+      const [response, entities, actions, decisions] = await Promise.all([
+        backendClient.listMemory(queryValue),
+        backendClient.listMemoryEntities({ query: queryValue }),
+        backendClient.listMemoryInsights({ query: queryValue, type: "action_item", status: "open" }),
+        backendClient.listMemoryInsights({ query: queryValue, type: "decision" })
+      ]);
       this.setSnapshot({
         memoryItems: response.items,
+        memoryEntities: entities.items,
+        memoryActionItems: actions.items,
+        memoryDecisions: decisions.items,
         memoryPreview: response.items.length
           ? response.items.slice(0, 2).map((item) => ({
               id: item.id,

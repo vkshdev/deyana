@@ -1,5 +1,19 @@
-import type { AssistantSnapshot } from "../../stores/assistantStore";
-import { CalendarDays, Download, FolderKanban, FolderOpen, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
+import type { AssistantSnapshot, MemoryExtractionView } from "../../stores/assistantStore";
+import type { ReactNode } from "react";
+import {
+  CalendarDays,
+  Download,
+  FolderKanban,
+  FolderOpen,
+  List,
+  ListChecks,
+  Plus,
+  RefreshCw,
+  Scale,
+  Search,
+  Tags,
+  Trash2
+} from "lucide-react";
 import { assistantStore } from "../../stores/assistantStore";
 
 interface MemoryBrowserProps {
@@ -101,6 +115,21 @@ export function MemoryBrowser({ snapshot }: MemoryBrowserProps) {
         </button>
       </div>
 
+      <div className="memory-view-tabs" role="tablist" aria-label="Memory views">
+        <MemoryViewTab view="items" activeView={snapshot.memoryExtractionView} label="Items">
+          <List size={13} aria-hidden="true" />
+        </MemoryViewTab>
+        <MemoryViewTab view="actions" activeView={snapshot.memoryExtractionView} label="Actions">
+          <ListChecks size={13} aria-hidden="true" />
+        </MemoryViewTab>
+        <MemoryViewTab view="decisions" activeView={snapshot.memoryExtractionView} label="Decisions">
+          <Scale size={13} aria-hidden="true" />
+        </MemoryViewTab>
+        <MemoryViewTab view="entities" activeView={snapshot.memoryExtractionView} label="Entities">
+          <Tags size={13} aria-hidden="true" />
+        </MemoryViewTab>
+      </div>
+
       <div className="memory-create">
         <input
           value={snapshot.memoryDraft.title}
@@ -131,40 +160,7 @@ export function MemoryBrowser({ snapshot }: MemoryBrowserProps) {
         </button>
       </div>
 
-      <div className="memory-browser-list">
-        {snapshot.memoryItems.length ? (
-          snapshot.memoryItems.map((item) => (
-            <article className="memory-browser-item" key={item.id}>
-              <div>
-                <strong>{item.title}</strong>
-                <span>{item.summary}</span>
-                <small>{memoryDetailLabel(item)}</small>
-                {item.tags.length || item.actionItems.length || item.decisions.length ? (
-                  <div className="memory-extraction-row">
-                    {item.tags.slice(0, 3).map((tag) => (
-                      <em key={tag}>{tag}</em>
-                    ))}
-                    {item.actionItems.length ? <em>{item.actionItems.length} actions</em> : null}
-                    {item.decisions.length ? <em>{item.decisions.length} decisions</em> : null}
-                  </div>
-                ) : null}
-              </div>
-              <button
-                className="icon-button"
-                type="button"
-                title="Delete memory"
-                aria-label={`Delete ${item.title}`}
-                disabled={snapshot.memoryBusy}
-                onClick={() => void assistantStore.deleteMemory(item.id)}
-              >
-                <Trash2 size={15} aria-hidden="true" />
-              </button>
-            </article>
-          ))
-        ) : (
-          <div className="memory-empty">No local memory yet</div>
-        )}
-      </div>
+      {renderMemoryView(snapshot)}
 
       {snapshot.memoryExportedAt ? (
         <div className="memory-export-state">Exported {new Date(snapshot.memoryExportedAt).toLocaleTimeString()}</div>
@@ -173,8 +169,136 @@ export function MemoryBrowser({ snapshot }: MemoryBrowserProps) {
   );
 }
 
+function MemoryViewTab({
+  view,
+  activeView,
+  label,
+  children
+}: {
+  view: MemoryExtractionView;
+  activeView: MemoryExtractionView;
+  label: string;
+  children: ReactNode;
+}) {
+  const selected = view === activeView;
+  return (
+    <button
+      className="memory-view-tab"
+      type="button"
+      role="tab"
+      aria-selected={selected}
+      onClick={() => assistantStore.setMemoryExtractionView(view)}
+    >
+      {children}
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function renderMemoryView(snapshot: AssistantSnapshot) {
+  if (snapshot.memoryExtractionView === "actions") {
+    return renderInsightList(snapshot.memoryActionItems, "No action items extracted");
+  }
+
+  if (snapshot.memoryExtractionView === "decisions") {
+    return renderInsightList(snapshot.memoryDecisions, "No decisions extracted");
+  }
+
+  if (snapshot.memoryExtractionView === "entities") {
+    return renderEntityList(snapshot);
+  }
+
+  return renderMemoryItemList(snapshot);
+}
+
+function renderMemoryItemList(snapshot: AssistantSnapshot) {
+  return (
+    <div className="memory-browser-list">
+      {snapshot.memoryItems.length ? (
+        snapshot.memoryItems.map((item) => (
+          <article className="memory-browser-item" key={item.id}>
+            <div>
+              <strong>{item.title}</strong>
+              <span>{item.summary}</span>
+              <small>{memoryDetailLabel(item)}</small>
+              {item.tags.length || item.actionItems.length || item.decisions.length ? (
+                <div className="memory-extraction-row">
+                  {item.tags.slice(0, 3).map((tag) => (
+                    <em key={tag}>{tag}</em>
+                  ))}
+                  {item.actionItems.length ? <em>{item.actionItems.length} actions</em> : null}
+                  {item.decisions.length ? <em>{item.decisions.length} decisions</em> : null}
+                </div>
+              ) : null}
+            </div>
+            <button
+              className="icon-button"
+              type="button"
+              title="Delete memory"
+              aria-label={`Delete ${item.title}`}
+              disabled={snapshot.memoryBusy}
+              onClick={() => void assistantStore.deleteMemory(item.id)}
+            >
+              <Trash2 size={15} aria-hidden="true" />
+            </button>
+          </article>
+        ))
+      ) : (
+        <div className="memory-empty">No local memory yet</div>
+      )}
+    </div>
+  );
+}
+
+function renderInsightList(items: AssistantSnapshot["memoryActionItems"], emptyLabel: string) {
+  return (
+    <div className="memory-browser-list">
+      {items.length ? (
+        items.map((item) => (
+          <article className="memory-extraction-item" key={item.id}>
+            <strong>{item.title}</strong>
+            <span>{item.detail}</span>
+            <small>{insightDetailLabel(item)}</small>
+          </article>
+        ))
+      ) : (
+        <div className="memory-empty">{emptyLabel}</div>
+      )}
+    </div>
+  );
+}
+
+function renderEntityList(snapshot: AssistantSnapshot) {
+  return (
+    <div className="memory-browser-list">
+      {snapshot.memoryEntities.length ? (
+        snapshot.memoryEntities.map((item) => (
+          <article className="memory-extraction-item" key={item.id}>
+            <strong>{item.name}</strong>
+            <span>{item.entityType}</span>
+            <small>{entityDetailLabel(item)}</small>
+          </article>
+        ))
+      ) : (
+        <div className="memory-empty">No entities extracted</div>
+      )}
+    </div>
+  );
+}
+
 function memoryDetailLabel(item: AssistantSnapshot["memoryItems"][number]) {
   const entityCount = item.entities.length;
   const source = item.markdownPath ?? item.sourceType;
   return entityCount ? `${source} | ${entityCount} entities | importance ${item.importance}` : source;
+}
+
+function insightDetailLabel(item: AssistantSnapshot["memoryActionItems"][number]) {
+  const source = item.memoryTitle ?? item.sourceType ?? "Local memory";
+  const due = item.dueAt ? ` | due ${item.dueAt}` : "";
+  return `${source} | ${item.status}${due}`;
+}
+
+function entityDetailLabel(item: AssistantSnapshot["memoryEntities"][number]) {
+  const source = item.memoryTitle ?? item.sourceType ?? "Local memory";
+  return item.sourceId ? `${source} | ${item.sourceId}` : source;
 }
