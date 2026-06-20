@@ -6,7 +6,10 @@ from ..models import (
     DailySummaryRequest,
     MemoryCreateRequest,
     MemoryDeleteResponse,
+    MemoryEntityListResponse,
     MemoryExportResponse,
+    MemoryInsightType,
+    MemoryInsightListResponse,
     MemoryItem,
     MemoryListResponse,
     MemoryReindexResponse,
@@ -46,6 +49,46 @@ async def create_memory(request: Request, payload: MemoryCreateRequest) -> Memor
 @router.get("/export", response_model=MemoryExportResponse)
 async def export_memory(request: Request) -> MemoryExportResponse:
     return request.app.state.runtime.memory_store.export()
+
+
+@router.get("/entities", response_model=MemoryEntityListResponse)
+async def list_memory_entities(
+    request: Request,
+    query: str | None = Query(default=None),
+    source_type: str | None = Query(default=None, alias="sourceType"),
+    source_id: str | None = Query(default=None, alias="sourceId"),
+    date: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=200),
+) -> MemoryEntityListResponse:
+    return request.app.state.runtime.memory_store.list_entities(
+        query=query,
+        source_type=source_type,
+        source_id=source_id,
+        date=date,
+        limit=limit,
+    )
+
+
+@router.get("/insights", response_model=MemoryInsightListResponse)
+async def list_memory_insights(
+    request: Request,
+    query: str | None = Query(default=None),
+    insight_type: MemoryInsightType | None = Query(default=None, alias="type"),
+    status: str | None = Query(default=None),
+    source_type: str | None = Query(default=None, alias="sourceType"),
+    source_id: str | None = Query(default=None, alias="sourceId"),
+    date: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=200),
+) -> MemoryInsightListResponse:
+    return request.app.state.runtime.memory_store.list_insights(
+        query=query,
+        insight_type=insight_type,
+        status=status,
+        source_type=source_type,
+        source_id=source_id,
+        date=date,
+        limit=limit,
+    )
 
 
 @router.post("/reindex", response_model=MemoryReindexResponse)

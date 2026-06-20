@@ -651,10 +651,21 @@ class MemoryStore:
             ).fetchone()
         return self.row_to_item(row) if row else None
 
-    def list_entities(self, query: str | None = None, limit: int = 100) -> MemoryEntityListResponse:
+    def list_entities(
+        self,
+        query: str | None = None,
+        *,
+        source_type: str | None = None,
+        source_id: str | None = None,
+        date: str | None = None,
+        limit: int = 100,
+    ) -> MemoryEntityListResponse:
         self.initialize()
         limit = max(1, min(limit, 200))
         query_value = (query or "").strip()
+        source_type_value = (source_type or "").strip()
+        source_id_value = (source_id or "").strip()
+        date_value = (date or "").strip()
         where = "items.deleted_at IS NULL"
         params: list[object] = []
 
@@ -662,6 +673,15 @@ class MemoryStore:
             where += " AND (lower(entities.name) LIKE ? OR lower(entities.entity_type) LIKE ?)"
             pattern = f"%{query_value.lower()}%"
             params.extend([pattern, pattern])
+        if source_type_value:
+            where += " AND items.source_type = ?"
+            params.append(source_type_value)
+        if source_id_value:
+            where += " AND items.source_id = ?"
+            params.append(source_id_value)
+        if date_value:
+            where += " AND items.created_at LIKE ?"
+            params.append(f"{date_value}%")
 
         with self.connect() as connection:
             rows = connection.execute(
@@ -694,26 +714,59 @@ class MemoryStore:
             items=[self.row_to_entity(row) for row in rows],
             total=total,
             query=query_value or None,
+            source_type=source_type_value or None,
+            source_id=source_id_value or None,
+            date=date_value or None,
         )
 
     def list_insights(
         self,
         *,
+        query: str | None = None,
         insight_type: MemoryInsightType | None = None,
         status: str | None = None,
+        source_type: str | None = None,
+        source_id: str | None = None,
+        date: str | None = None,
         limit: int = 100,
     ) -> MemoryInsightListResponse:
         self.initialize()
         limit = max(1, min(limit, 200))
+        query_value = (query or "").strip()
+        status_value = (status or "").strip()
+        source_type_value = (source_type or "").strip()
+        source_id_value = (source_id or "").strip()
+        date_value = (date or "").strip()
         where = "items.deleted_at IS NULL"
         params: list[object] = []
 
         if insight_type:
             where += " AND insights.type = ?"
             params.append(insight_type)
-        if status:
+        if query_value:
+            where += """
+              AND (
+                lower(insights.title) LIKE ?
+                OR lower(insights.detail) LIKE ?
+                OR lower(items.title) LIKE ?
+                OR lower(items.summary) LIKE ?
+                OR lower(COALESCE(items.source_id, '')) LIKE ?
+              )
+            """
+            pattern = f"%{query_value.lower()}%"
+            params.extend([pattern, pattern, pattern, pattern, pattern])
+        if status_value:
             where += " AND insights.status = ?"
-            params.append(status)
+            params.append(status_value)
+        if source_type_value:
+            where += " AND items.source_type = ?"
+            params.append(source_type_value)
+        if source_id_value:
+            where += " AND items.source_id = ?"
+            params.append(source_id_value)
+        if date_value:
+            where += " AND items.created_at LIKE ?"
+            params.append(f"{date_value}%")
 
         with self.connect() as connection:
             rows = connection.execute(
@@ -745,8 +798,12 @@ class MemoryStore:
         return MemoryInsightListResponse(
             items=[self.row_to_insight(row) for row in rows],
             total=total,
+            query=query_value or None,
             type=insight_type,
-            status=status,
+            status=status_value or None,
+            source_type=source_type_value or None,
+            source_id=source_id_value or None,
+            date=date_value or None,
         )
 
     def require_vault_root(self) -> Path:

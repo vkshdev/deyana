@@ -206,13 +206,20 @@ class MemoryEntityListResponse(ApiModel):
     items: list[MemoryEntity]
     total: int
     query: str | None = None
+    source_type: str | None = None
+    source_id: str | None = None
+    date: str | None = None
 
 
 class MemoryInsightListResponse(ApiModel):
     items: list[MemoryInsight]
     total: int
+    query: str | None = None
     type: MemoryInsightType | None = None
     status: str | None = None
+    source_type: str | None = None
+    source_id: str | None = None
+    date: str | None = None
 
 
 class DailySummaryRequest(ApiModel):

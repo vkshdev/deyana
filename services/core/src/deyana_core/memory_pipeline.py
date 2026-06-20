@@ -54,6 +54,11 @@ DATE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 CAPITALIZED_ENTITY_PATTERN = re.compile(r"\b(?:[A-Z][a-zA-Z0-9'&.-]+(?:\s+|$)){2,4}")
+EXTRACTION_SECTION_HEADINGS = {
+    "## extracted action items",
+    "## extracted decisions",
+    "## extracted entities",
+}
 
 
 @dataclass(frozen=True)
@@ -92,8 +97,9 @@ def analyze_memory(
     existing_tags: list[str],
     existing_importance: int,
 ) -> MemoryAnalysis:
-    body = (content_markdown or summary or title).strip()
-    text = normalize_text(f"{title}\n{summary}\n{strip_markdown(body)}")
+    body = strip_generated_extraction_sections((content_markdown or summary or title).strip())
+    text_source = body or summary or title
+    text = normalize_text(f"{title}\n{summary}\n{strip_markdown(text_source)}")
     sentences = split_sentences(text)
     useful_summary = choose_summary(summary=summary, title=title, sentences=sentences)
     entities = extract_entities(text)
@@ -250,9 +256,7 @@ def append_extraction_sections(
     action_items: tuple[InsightCandidate, ...],
     decisions: tuple[InsightCandidate, ...],
 ) -> str:
-    base = content.strip()
-    if "## Extracted action items" in base or "## Extracted decisions" in base:
-        return base
+    base = strip_generated_extraction_sections(content).strip()
     sections: list[str] = [base]
     if action_items:
         sections.extend(["", "## Extracted action items", ""])
@@ -264,6 +268,31 @@ def append_extraction_sections(
         sections.extend(["", "## Extracted entities", ""])
         sections.extend(f"- {entity.entity_type}: {entity.name}" for entity in entities[:16])
     return "\n".join(sections).strip()
+
+
+def strip_generated_extraction_sections(content: str) -> str:
+    lines = content.splitlines()
+    kept: list[str] = []
+    skipping_generated_section = False
+
+    for line in lines:
+        normalized_heading = line.strip().lower()
+        is_generated_heading = normalized_heading in EXTRACTION_SECTION_HEADINGS
+        is_next_user_section = skipping_generated_section and normalized_heading.startswith("## ") and not is_generated_heading
+
+        if is_next_user_section:
+            skipping_generated_section = False
+
+        if is_generated_heading:
+            skipping_generated_section = True
+            continue
+
+        if skipping_generated_section:
+            continue
+
+        kept.append(line)
+
+    return "\n".join(kept).strip()
 
 
 def build_daily_summary(date: str, items: list[object]) -> tuple[str, str, str, list[str]]:
@@ -288,6 +317,7 @@ def build_daily_summary(date: str, items: list[object]) -> tuple[str, str, str, 
     lines.extend(["### Highlights", ""])
     for item in items[:12]:
         lines.append(f"- **{getattr(item, 'title')}** ({source_label(item)}): {getattr(item, 'summary')}")
+    append_insight_rollup_sections(lines, items)
     return title, summary, "\n".join(lines), tags
 
 
@@ -306,7 +336,35 @@ def build_project_summary(project: str, items: list[object]) -> tuple[str, str, 
     lines = [f"## Project summary: {normalized_project}", "", "### Related memory", ""]
     for item in items[:16]:
         lines.append(f"- **{getattr(item, 'title')}** ({source_label(item)}): {getattr(item, 'summary')}")
+    append_insight_rollup_sections(lines, items)
     return title, summary, "\n".join(lines), tags
+
+
+def append_insight_rollup_sections(lines: list[str], items: list[object]) -> None:
+    action_items = collect_item_insights(items, "action_items")
+    decisions = collect_item_insights(items, "decisions")
+
+    if action_items:
+        lines.extend(["", "### Open action items", ""])
+        for item, insight in action_items[:12]:
+            due = getattr(insight, "due_at", None)
+            due_text = f" Due: {due}." if due else ""
+            lines.append(
+                f"- **{getattr(item, 'title')}** ({source_label(item)}): {getattr(insight, 'detail')}{due_text}"
+            )
+
+    if decisions:
+        lines.extend(["", "### Decisions", ""])
+        for item, insight in decisions[:12]:
+            lines.append(f"- **{getattr(item, 'title')}** ({source_label(item)}): {getattr(insight, 'detail')}")
+
+
+def collect_item_insights(items: list[object], field_name: str) -> list[tuple[object, object]]:
+    collected: list[tuple[object, object]] = []
+    for item in items:
+        for insight in getattr(item, field_name, []):
+            collected.append((item, insight))
+    return collected
 
 
 def source_label(item: object) -> str:
