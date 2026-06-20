@@ -97,8 +97,12 @@ def analyze_memory(
     sentences = split_sentences(text)
     useful_summary = choose_summary(summary=summary, title=title, sentences=sentences)
     entities = extract_entities(text)
-    action_items = extract_action_items(sentences)
-    decisions = extract_decisions(sentences)
+    if memory_type in {"daily_summary", "project_summary"}:
+        action_items: tuple[InsightCandidate, ...] = ()
+        decisions: tuple[InsightCandidate, ...] = ()
+    else:
+        action_items = extract_action_items(sentences)
+        decisions = extract_decisions(sentences)
     tags = derive_tags(
         text=text,
         source_type=source_type,
@@ -283,7 +287,7 @@ def build_daily_summary(date: str, items: list[object]) -> tuple[str, str, str, 
     )
     lines.extend(["### Highlights", ""])
     for item in items[:12]:
-        lines.append(f"- **{getattr(item, 'title')}**: {getattr(item, 'summary')}")
+        lines.append(f"- **{getattr(item, 'title')}** ({source_label(item)}): {getattr(item, 'summary')}")
     return title, summary, "\n".join(lines), tags
 
 
@@ -301,8 +305,16 @@ def build_project_summary(project: str, items: list[object]) -> tuple[str, str, 
     )
     lines = [f"## Project summary: {normalized_project}", "", "### Related memory", ""]
     for item in items[:16]:
-        lines.append(f"- **{getattr(item, 'title')}**: {getattr(item, 'summary')}")
+        lines.append(f"- **{getattr(item, 'title')}** ({source_label(item)}): {getattr(item, 'summary')}")
     return title, summary, "\n".join(lines), tags
+
+
+def source_label(item: object) -> str:
+    source_type = getattr(item, "source_type", "memory")
+    source_id = getattr(item, "source_id", None)
+    if source_id:
+        return f"{source_type}:{source_id}"
+    return source_type
 
 
 def split_sentences(text: str) -> list[str]:

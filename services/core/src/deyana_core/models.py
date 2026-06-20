@@ -128,6 +128,10 @@ class OnboardingCompleteResponse(ApiModel):
 class MemoryEntity(ApiModel):
     id: str
     memory_id: str
+    memory_title: str | None = None
+    source_type: str | None = None
+    source_id: str | None = None
+    source_uri: str | None = None
     name: str
     entity_type: str
     source_text: str
@@ -140,6 +144,10 @@ MemoryInsightType = Literal["action_item", "decision"]
 class MemoryInsight(ApiModel):
     id: str
     memory_id: str
+    memory_title: str | None = None
+    source_type: str | None = None
+    source_id: str | None = None
+    source_uri: str | None = None
     type: MemoryInsightType
     title: str
     detail: str
@@ -192,6 +200,19 @@ class MemoryListResponse(ApiModel):
     items: list[MemoryItem]
     total: int
     query: str | None = None
+
+
+class MemoryEntityListResponse(ApiModel):
+    items: list[MemoryEntity]
+    total: int
+    query: str | None = None
+
+
+class MemoryInsightListResponse(ApiModel):
+    items: list[MemoryInsight]
+    total: int
+    type: MemoryInsightType | None = None
+    status: str | None = None
 
 
 class DailySummaryRequest(ApiModel):

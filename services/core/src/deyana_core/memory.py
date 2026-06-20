@@ -10,8 +10,11 @@ from .models import (
     DailySummaryRequest,
     MemoryCreateRequest,
     MemoryEntity,
+    MemoryEntityListResponse,
     MemoryExportResponse,
     MemoryInsight,
+    MemoryInsightType,
+    MemoryInsightListResponse,
     MemoryItem,
     MemoryListResponse,
     MemoryReindexResponse,
@@ -149,7 +152,9 @@ class MemoryStore:
             summary=analysis.summary,
             content_markdown=content_markdown,
             source_type=request.source_type,
+            source_id=request.source_id,
             source_uri=request.source_uri,
+            importance=analysis.importance,
             tags=list(analysis.tags),
             created_at=timestamp,
             updated_at=timestamp,
@@ -290,7 +295,9 @@ class MemoryStore:
                 summary=summary,
                 content_markdown=content_markdown,
                 source_type=current.source_type,
+                source_id=current.source_id,
                 source_uri=current.source_uri,
+                importance=importance,
                 tags=tags,
                 created_at=current.created_at,
                 updated_at=timestamp,
@@ -532,14 +539,7 @@ class MemoryStore:
                 (memory_id,),
             ).fetchall()
         return [
-            MemoryEntity(
-                id=row["id"],
-                memory_id=row["memory_id"],
-                name=row["name"],
-                entity_type=row["entity_type"],
-                source_text=row["source_text"],
-                created_at=row["created_at"],
-            )
+            self.row_to_entity(row)
             for row in rows
         ]
 
@@ -554,18 +554,41 @@ class MemoryStore:
                 (memory_id, insight_type),
             ).fetchall()
         return [
-            MemoryInsight(
-                id=row["id"],
-                memory_id=row["memory_id"],
-                type=row["type"],
-                title=row["title"],
-                detail=row["detail"],
-                status=row["status"],
-                due_at=row["due_at"],
-                created_at=row["created_at"],
-            )
+            self.row_to_insight(row)
             for row in rows
         ]
+
+    @staticmethod
+    def row_to_entity(row: sqlite3.Row) -> MemoryEntity:
+        return MemoryEntity(
+            id=row["id"],
+            memory_id=row["memory_id"],
+            memory_title=optional_row_value(row, "memory_title"),
+            source_type=optional_row_value(row, "source_type"),
+            source_id=optional_row_value(row, "source_id"),
+            source_uri=optional_row_value(row, "source_uri"),
+            name=row["name"],
+            entity_type=row["entity_type"],
+            source_text=row["source_text"],
+            created_at=row["created_at"],
+        )
+
+    @staticmethod
+    def row_to_insight(row: sqlite3.Row) -> MemoryInsight:
+        return MemoryInsight(
+            id=row["id"],
+            memory_id=row["memory_id"],
+            memory_title=optional_row_value(row, "memory_title"),
+            source_type=optional_row_value(row, "source_type"),
+            source_id=optional_row_value(row, "source_id"),
+            source_uri=optional_row_value(row, "source_uri"),
+            type=row["type"],
+            title=row["title"],
+            detail=row["detail"],
+            status=row["status"],
+            due_at=row["due_at"],
+            created_at=row["created_at"],
+        )
 
     def items_for_date(self, target_date: str) -> list[MemoryItem]:
         self.initialize()
@@ -575,7 +598,8 @@ class MemoryStore:
                 SELECT * FROM memory_items
                 WHERE deleted_at IS NULL
                   AND created_at LIKE ?
-                  AND type != 'daily_summary'
+                  AND type NOT IN ('daily_summary', 'project_summary')
+                  AND source_type NOT LIKE 'memory_pipeline_%'
                 ORDER BY updated_at DESC
                 LIMIT 80
                 """,
@@ -591,7 +615,8 @@ class MemoryStore:
                 """
                 SELECT * FROM memory_items
                 WHERE deleted_at IS NULL
-                  AND type != 'project_summary'
+                  AND type NOT IN ('daily_summary', 'project_summary')
+                  AND source_type NOT LIKE 'memory_pipeline_%'
                   AND (
                     lower(title) LIKE ?
                     OR lower(summary) LIKE ?
@@ -626,6 +651,104 @@ class MemoryStore:
             ).fetchone()
         return self.row_to_item(row) if row else None
 
+    def list_entities(self, query: str | None = None, limit: int = 100) -> MemoryEntityListResponse:
+        self.initialize()
+        limit = max(1, min(limit, 200))
+        query_value = (query or "").strip()
+        where = "items.deleted_at IS NULL"
+        params: list[object] = []
+
+        if query_value:
+            where += " AND (lower(entities.name) LIKE ? OR lower(entities.entity_type) LIKE ?)"
+            pattern = f"%{query_value.lower()}%"
+            params.extend([pattern, pattern])
+
+        with self.connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT
+                  entities.*,
+                  items.title AS memory_title,
+                  items.source_type AS source_type,
+                  items.source_id AS source_id,
+                  items.source_uri AS source_uri
+                FROM memory_entities AS entities
+                JOIN memory_items AS items ON items.id = entities.memory_id
+                WHERE {where}
+                ORDER BY entities.created_at DESC, entities.name
+                LIMIT ?
+                """,
+                [*params, limit],
+            ).fetchall()
+            total = connection.execute(
+                f"""
+                SELECT COUNT(*) AS count
+                FROM memory_entities AS entities
+                JOIN memory_items AS items ON items.id = entities.memory_id
+                WHERE {where}
+                """,
+                params,
+            ).fetchone()["count"]
+
+        return MemoryEntityListResponse(
+            items=[self.row_to_entity(row) for row in rows],
+            total=total,
+            query=query_value or None,
+        )
+
+    def list_insights(
+        self,
+        *,
+        insight_type: MemoryInsightType | None = None,
+        status: str | None = None,
+        limit: int = 100,
+    ) -> MemoryInsightListResponse:
+        self.initialize()
+        limit = max(1, min(limit, 200))
+        where = "items.deleted_at IS NULL"
+        params: list[object] = []
+
+        if insight_type:
+            where += " AND insights.type = ?"
+            params.append(insight_type)
+        if status:
+            where += " AND insights.status = ?"
+            params.append(status)
+
+        with self.connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT
+                  insights.*,
+                  items.title AS memory_title,
+                  items.source_type AS source_type,
+                  items.source_id AS source_id,
+                  items.source_uri AS source_uri
+                FROM memory_insights AS insights
+                JOIN memory_items AS items ON items.id = insights.memory_id
+                WHERE {where}
+                ORDER BY insights.created_at DESC, insights.title
+                LIMIT ?
+                """,
+                [*params, limit],
+            ).fetchall()
+            total = connection.execute(
+                f"""
+                SELECT COUNT(*) AS count
+                FROM memory_insights AS insights
+                JOIN memory_items AS items ON items.id = insights.memory_id
+                WHERE {where}
+                """,
+                params,
+            ).fetchone()["count"]
+
+        return MemoryInsightListResponse(
+            items=[self.row_to_insight(row) for row in rows],
+            total=total,
+            type=insight_type,
+            status=status,
+        )
+
     def require_vault_root(self) -> Path:
         settings = self.core_store.read_settings()
         if not settings.vault_path:
@@ -652,7 +775,9 @@ class MemoryStore:
         summary: str,
         content_markdown: str,
         source_type: str,
+        source_id: str | None,
         source_uri: str | None,
+        importance: int,
         tags: list[str],
         created_at: str,
         updated_at: str,
@@ -661,7 +786,9 @@ class MemoryStore:
             "id": memory_id,
             "type": memory_type,
             "source_type": source_type,
+            "source_id": source_id,
             "source_uri": source_uri,
+            "importance": importance,
             "tags": tags,
             "created_at": created_at,
             "updated_at": updated_at,
@@ -763,6 +890,10 @@ class MemoryStore:
 def slugify(value: str) -> str:
     slug = re.sub(r"[^a-zA-Z0-9]+", "-", value.strip().lower()).strip("-")
     return slug[:72]
+
+
+def optional_row_value(row: sqlite3.Row, key: str) -> str | None:
+    return row[key] if key in row.keys() else None
 
 
 def folder_for_memory(memory_type: str, source_type: str) -> str:
