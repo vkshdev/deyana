@@ -48,7 +48,10 @@ def test_memory_create_writes_sqlite_and_markdown(tmp_path) -> None:
     assert body["title"] == "Shipping checklist"
     assert body["markdownPath"]
     assert Path(body["markdownPath"]).is_file()
-    assert Path(body["markdownPath"]).read_text(encoding="utf-8").startswith("---")
+    markdown = Path(body["markdownPath"]).read_text(encoding="utf-8")
+    assert markdown.startswith("---")
+    assert 'source_type: "manual"' in markdown
+    assert "importance:" in markdown
 
     database_path = tmp_path / "data" / "memory.sqlite3"
     assert database_path.is_file()
@@ -78,6 +81,10 @@ def test_memory_pipeline_extracts_actions_decisions_entities_and_tags(tmp_path) 
             },
         )
         search = client.get("/memory", params={"query": "founder@example.com"})
+        entities = client.get("/memory/entities", params={"query": "founder"})
+        actions = client.get("/memory/insights", params={"type": "action_item"})
+        decisions = client.get("/memory/insights", params={"type": "decision"})
+        invalid_insight_type = client.get("/memory/insights", params={"type": "reminder"})
 
     assert response.status_code == 200
     body = response.json()
@@ -91,6 +98,16 @@ def test_memory_pipeline_extracts_actions_decisions_entities_and_tags(tmp_path) 
     assert "## Extracted action items" in body["contentMarkdown"]
     assert search.status_code == 200
     assert search.json()["total"] == 1
+    assert entities.status_code == 200
+    assert entities.json()["total"] >= 1
+    assert entities.json()["items"][0]["memoryTitle"] == "DEYANA launch review"
+    assert entities.json()["items"][0]["sourceType"] == "manual"
+    assert actions.status_code == 200
+    assert actions.json()["items"]
+    assert actions.json()["items"][0]["memoryTitle"] == "DEYANA launch review"
+    assert decisions.status_code == 200
+    assert decisions.json()["items"]
+    assert invalid_insight_type.status_code == 422
 
 
 def test_manual_markdown_edit_can_be_reindexed_and_searched(tmp_path) -> None:
@@ -181,6 +198,7 @@ def test_daily_and_project_summaries_are_generated_as_memory(tmp_path) -> None:
     assert "Cipher" in project.json()["title"]
     assert project.json()["markdownPath"]
     assert Path(project.json()["markdownPath"]).is_file()
+    assert "manual" in Path(project.json()["markdownPath"]).read_text(encoding="utf-8")
 
 
 def test_memory_create_requires_vault(tmp_path) -> None:

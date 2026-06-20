@@ -18,6 +18,9 @@ def test_status_endpoint_exposes_current_core_capabilities() -> None:
     assert body["featureFlags"]["onboarding"] is True
     assert body["featureFlags"]["vaultSetup"] is True
     assert body["featureFlags"]["memory"] is True
+    assert body["featureFlags"]["memorySummarization"] is True
+    assert body["featureFlags"]["memoryExtraction"] is True
+    assert body["featureFlags"]["memoryRollups"] is True
     assert body["featureFlags"]["models"] is True
     assert body["featureFlags"]["chat"] is True
     assert body["featureFlags"]["memoryRetrieval"] is True
