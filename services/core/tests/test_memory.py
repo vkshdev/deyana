@@ -73,6 +73,7 @@ def test_memory_pipeline_extracts_actions_decisions_entities_and_tags(tmp_path) 
             json={
                 "type": "note",
                 "title": "DEYANA launch review",
+                "sourceId": "phase10-launch-review",
                 "contentMarkdown": (
                     "Alex approved using local summaries for DEYANA. "
                     "Need to follow up with founder@example.com by 2026-06-30. "
@@ -80,9 +81,31 @@ def test_memory_pipeline_extracts_actions_decisions_entities_and_tags(tmp_path) 
                 ),
             },
         )
+        created_body = response.json()
+        created_date = created_body["createdAt"][:10]
         search = client.get("/memory", params={"query": "founder@example.com"})
         entities = client.get("/memory/entities", params={"query": "founder"})
+        filtered_entities = client.get(
+            "/memory/entities",
+            params={
+                "query": "founder",
+                "sourceType": "manual",
+                "sourceId": "phase10-launch-review",
+                "date": created_date,
+            },
+        )
         actions = client.get("/memory/insights", params={"type": "action_item"})
+        filtered_actions = client.get(
+            "/memory/insights",
+            params={
+                "query": "founder@example.com",
+                "type": "action_item",
+                "status": "open",
+                "sourceType": "manual",
+                "sourceId": "phase10-launch-review",
+                "date": created_date,
+            },
+        )
         decisions = client.get("/memory/insights", params={"type": "decision"})
         invalid_insight_type = client.get("/memory/insights", params={"type": "reminder"})
 
@@ -102,9 +125,22 @@ def test_memory_pipeline_extracts_actions_decisions_entities_and_tags(tmp_path) 
     assert entities.json()["total"] >= 1
     assert entities.json()["items"][0]["memoryTitle"] == "DEYANA launch review"
     assert entities.json()["items"][0]["sourceType"] == "manual"
+    assert filtered_entities.status_code == 200
+    assert filtered_entities.json()["sourceType"] == "manual"
+    assert filtered_entities.json()["sourceId"] == "phase10-launch-review"
+    assert filtered_entities.json()["date"] == body["createdAt"][:10]
+    assert filtered_entities.json()["total"] >= 1
     assert actions.status_code == 200
     assert actions.json()["items"]
     assert actions.json()["items"][0]["memoryTitle"] == "DEYANA launch review"
+    assert filtered_actions.status_code == 200
+    assert filtered_actions.json()["query"] == "founder@example.com"
+    assert filtered_actions.json()["type"] == "action_item"
+    assert filtered_actions.json()["status"] == "open"
+    assert filtered_actions.json()["sourceType"] == "manual"
+    assert filtered_actions.json()["sourceId"] == "phase10-launch-review"
+    assert filtered_actions.json()["date"] == body["createdAt"][:10]
+    assert filtered_actions.json()["items"]
     assert decisions.status_code == 200
     assert decisions.json()["items"]
     assert invalid_insight_type.status_code == 422
@@ -126,7 +162,14 @@ def test_manual_markdown_edit_can_be_reindexed_and_searched(tmp_path) -> None:
         ).json()
         markdown_path = Path(created["markdownPath"])
         markdown_path.write_text(
-            "---\nid: edited\n---\n\n# Edited decision\n\n> Manual vault edit\n\nUpdated hand-edited memory body.\n",
+            (
+                "---\nid: edited\n---\n\n# Edited decision\n\n> Manual vault edit\n\n"
+                "Updated hand-edited memory body.\n\n"
+                "## Extracted action items\n\n"
+                "- Old stale action should be removed.\n\n"
+                "## Notes\n\n"
+                "Keep this user-authored section.\n"
+            ),
             encoding="utf-8",
         )
 
@@ -140,6 +183,8 @@ def test_manual_markdown_edit_can_be_reindexed_and_searched(tmp_path) -> None:
     assert search.json()["total"] == 1
     assert fetched.json()["title"] == "Edited decision"
     assert "Updated hand-edited memory body." in fetched.json()["contentMarkdown"]
+    assert "Old stale action should be removed." not in fetched.json()["contentMarkdown"]
+    assert "Keep this user-authored section." in fetched.json()["contentMarkdown"]
 
 
 def test_memory_export_and_delete(tmp_path) -> None:
@@ -192,12 +237,18 @@ def test_daily_and_project_summaries_are_generated_as_memory(tmp_path) -> None:
     assert daily.json()["type"] == "daily_summary"
     assert daily.json()["markdownPath"]
     assert Path(daily.json()["markdownPath"]).is_file()
+    assert "### Open action items" in daily.json()["contentMarkdown"]
+    assert "update Cipher docs" in daily.json()["contentMarkdown"]
+    assert "### Decisions" in daily.json()["contentMarkdown"]
+    assert "choose local-only memory" in daily.json()["contentMarkdown"]
 
     assert project.status_code == 200
     assert project.json()["type"] == "project_summary"
     assert "Cipher" in project.json()["title"]
     assert project.json()["markdownPath"]
     assert Path(project.json()["markdownPath"]).is_file()
+    assert "### Open action items" in project.json()["contentMarkdown"]
+    assert "### Decisions" in project.json()["contentMarkdown"]
     assert "manual" in Path(project.json()["markdownPath"]).read_text(encoding="utf-8")
 
 
