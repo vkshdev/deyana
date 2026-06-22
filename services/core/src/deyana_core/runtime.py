@@ -17,6 +17,7 @@ from .privacy import PrivacyFirewall
 from .runtime_time import utc_timestamp
 from .settings import CoreSettings
 from .storage import CoreStore
+from .tools import ToolService
 
 
 class RuntimeState:
@@ -36,6 +37,7 @@ class RuntimeState:
         self.chat_agent = ChatAgent(self.memory_store, self.chat_store, self.model_router)
         self.privacy_firewall = PrivacyFirewall(settings.data_dir, self.store)
         self.privacy_firewall.initialize()
+        self.tool_service = ToolService(self.privacy_firewall, self.memory_store)
         self.connector_manager = ConnectorManager(settings.data_dir, self.privacy_firewall, self.memory_store)
         self.connector_manager.initialize()
 
@@ -109,7 +111,14 @@ class RuntimeState:
                 "memoryRollups": True,
                 "privacyFirewall": True,
                 "privacyAudit": True,
+                "tools": True,
+                "webTools": True,
+                "fileTools": True,
+                "gitTools": True,
+                "codingTools": True,
+                "dayPlanner": True,
                 "connectors": True,
+                "expandedConnectors": True,
                 "connectorScheduler": True,
                 "encryptedTokenStorage": True,
                 "voice": False,

@@ -295,6 +295,17 @@ PrivacyRequestPurpose = Literal[
     "text_to_speech",
     "unknown",
 ]
+ToolId = Literal[
+    "web_search",
+    "fetch_page",
+    "read_file",
+    "git_status",
+    "git_diff",
+    "commit_message",
+    "code_task",
+    "day_planner",
+]
+ToolRisk = Literal["low", "public_web", "local_file", "source_code", "dangerous"]
 
 
 class LocalModelInfo(ApiModel):
@@ -456,6 +467,78 @@ class PrivacyStatusResponse(ApiModel):
 
 class PrivacyAuditDeleteResponse(ApiModel):
     deleted: int
+
+
+class ToolManifest(ApiModel):
+    tool_id: ToolId
+    name: str
+    description: str
+    risk: ToolRisk
+    requires_approval: bool
+    dangerous: bool = False
+    applies_changes: bool = False
+
+
+class ToolListResponse(ApiModel):
+    tools: list[ToolManifest]
+
+
+class ToolResultItem(ApiModel):
+    title: str
+    summary: str
+    url: str | None = None
+    source: str | None = None
+
+
+class ToolRunResponse(ApiModel):
+    tool_id: ToolId
+    status: Literal["completed", "permission_required", "confirmation_required", "blocked", "failed"]
+    title: str
+    summary: str
+    content: str
+    items: list[ToolResultItem] = []
+    permission_required: bool = False
+    confirmation_required: bool = False
+    applies_changes: bool = False
+    privacy: PrivacyCheckResponse | None = None
+
+
+class WebSearchRequest(ApiModel):
+    query: str
+    limit: int = Field(default=5, ge=1, le=10)
+    user_approved: bool = False
+
+
+class WebFetchRequest(ApiModel):
+    url: str
+    user_approved: bool = False
+    max_characters: int = Field(default=6000, ge=500, le=20000)
+
+
+class FileReadRequest(ApiModel):
+    path: str
+    allowed_root: str
+    user_approved: bool = False
+    max_characters: int = Field(default=12000, ge=500, le=50000)
+
+
+class GitReadRequest(ApiModel):
+    repo_path: str
+    user_approved: bool = False
+    max_characters: int = Field(default=12000, ge=500, le=50000)
+
+
+class CodeTaskRequest(ApiModel):
+    goal: str
+    context: str = ""
+    user_approved: bool = False
+
+
+class DayPlannerRequest(ApiModel):
+    date: str | None = None
+    commitments: list[str] = []
+    focus: list[str] = []
+    notes: str = ""
 
 
 ConnectorStatus = Literal["not_connected", "connected", "syncing", "paused", "error"]

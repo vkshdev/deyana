@@ -19,6 +19,7 @@ from .api import (
     privacy_router,
     settings_router,
     status_router,
+    tools_router,
     vault_router,
     websocket_router,
 )
@@ -102,6 +103,7 @@ def create_app(runtime: RuntimeState | None = None) -> FastAPI:
     app.include_router(chat_router)
     app.include_router(privacy_router)
     app.include_router(connectors_router)
+    app.include_router(tools_router)
     app.include_router(lifecycle_router)
     app.include_router(websocket_router)
     return app

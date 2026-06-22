@@ -359,6 +359,140 @@ class GitHubConnector(BaseConnector):
         )
 
 
+class DriveConnector(BaseConnector):
+    def __init__(self, definition: ConnectorDefinition) -> None:
+        self.definition = definition
+
+    def sync(self, context: ConnectorSyncContext) -> ConnectorSyncResult:
+        if context.token.get("mock"):
+            return super().sync(context)
+        self.validate_token(context.token)
+        query = urlencode({"pageSize": 20, "fields": "files(id,name,mimeType,modifiedTime,webViewLink)"})
+        response = context.http_client.get_json(
+            f"{self.api_base_url()}/files?{query}",
+            token=context.token,
+            payload_preview="Google Drive file metadata list",
+        )
+        files = response.get("files") if isinstance(response, dict) else []
+        records = [drive_record(item) for item in files if isinstance(item, dict) and isinstance(item.get("id"), str)]
+        return ConnectorSyncResult(items_seen=len(records), records=tuple(records), detail="Google Drive files synced.")
+
+
+class SlackConnector(BaseConnector):
+    def __init__(self, definition: ConnectorDefinition) -> None:
+        self.definition = definition
+
+    def sync(self, context: ConnectorSyncContext) -> ConnectorSyncResult:
+        if context.token.get("mock"):
+            return super().sync(context)
+        self.validate_token(context.token)
+        channels_response = context.http_client.get_json(
+            f"{self.api_base_url()}/conversations.list?{urlencode({'limit': 10, 'types': 'public_channel,private_channel'})}",
+            token=context.token,
+            payload_preview="Slack channel metadata list",
+        )
+        channels = channels_response.get("channels") if isinstance(channels_response, dict) else []
+        records: list[ConnectorRecord] = []
+        for channel in channels if isinstance(channels, list) else []:
+            channel_id = channel.get("id") if isinstance(channel, dict) else None
+            channel_name = channel.get("name") if isinstance(channel, dict) else None
+            if not isinstance(channel_id, str):
+                continue
+            response = context.http_client.get_json(
+                f"{self.api_base_url()}/conversations.history?{urlencode({'channel': channel_id, 'limit': 5})}",
+                token=context.token,
+                payload_preview="Slack message metadata list",
+            )
+            messages = response.get("messages") if isinstance(response, dict) else []
+            records.extend(
+                slack_record(item, channel_name if isinstance(channel_name, str) else channel_id)
+                for item in messages
+                if isinstance(item, dict) and item.get("ts")
+            )
+        return ConnectorSyncResult(items_seen=len(records), records=tuple(records), detail="Slack messages synced.")
+
+
+class NotionConnector(BaseConnector):
+    def __init__(self, definition: ConnectorDefinition) -> None:
+        self.definition = definition
+
+    def sync(self, context: ConnectorSyncContext) -> ConnectorSyncResult:
+        if context.token.get("mock"):
+            return super().sync(context)
+        self.validate_token(context.token)
+        response = context.http_client.post_json(
+            f"{self.api_base_url()}/search",
+            {"page_size": 20},
+            token=context.token,
+            payload_preview="Notion page metadata search",
+            headers={"notion-version": "2022-06-28"},
+        )
+        results = response.get("results") if isinstance(response, dict) else []
+        records = [notion_record(item) for item in results if isinstance(item, dict) and isinstance(item.get("id"), str)]
+        return ConnectorSyncResult(items_seen=len(records), records=tuple(records), detail="Notion pages synced.")
+
+
+class JiraConnector(BaseConnector):
+    def __init__(self, definition: ConnectorDefinition) -> None:
+        self.definition = definition
+
+    def sync(self, context: ConnectorSyncContext) -> ConnectorSyncResult:
+        if context.token.get("mock"):
+            return super().sync(context)
+        self.validate_token(context.token)
+        query = urlencode({"jql": "updated >= -14d ORDER BY updated DESC", "maxResults": 20})
+        response = context.http_client.get_json(
+            f"{self.api_base_url()}/search?{query}",
+            token=context.token,
+            payload_preview="Jira issue metadata search",
+        )
+        issues = response.get("issues") if isinstance(response, dict) else []
+        records = [jira_record(item, self.api_base_url()) for item in issues if isinstance(item, dict) and item.get("id")]
+        return ConnectorSyncResult(items_seen=len(records), records=tuple(records), detail="Jira issues synced.")
+
+
+class LinearConnector(BaseConnector):
+    def __init__(self, definition: ConnectorDefinition) -> None:
+        self.definition = definition
+
+    def sync(self, context: ConnectorSyncContext) -> ConnectorSyncResult:
+        if context.token.get("mock"):
+            return super().sync(context)
+        self.validate_token(context.token)
+        response = context.http_client.post_json(
+            self.api_base_url(),
+            {
+                "query": (
+                    "query DeyanaIssues { issues(first: 20, orderBy: updatedAt) "
+                    "{ nodes { id identifier title url updatedAt state { name } assignee { name } } } }"
+                )
+            },
+            token=context.token,
+            payload_preview="Linear issue metadata query",
+        )
+        nodes = response.get("data", {}).get("issues", {}).get("nodes", []) if isinstance(response, dict) else []
+        records = [linear_record(item) for item in nodes if isinstance(item, dict) and isinstance(item.get("id"), str)]
+        return ConnectorSyncResult(items_seen=len(records), records=tuple(records), detail="Linear issues synced.")
+
+
+class StripeConnector(BaseConnector):
+    def __init__(self, definition: ConnectorDefinition) -> None:
+        self.definition = definition
+
+    def sync(self, context: ConnectorSyncContext) -> ConnectorSyncResult:
+        if context.token.get("mock"):
+            return super().sync(context)
+        self.validate_token(context.token)
+        response = context.http_client.get_json(
+            f"{self.api_base_url()}/events?{urlencode({'limit': 20})}",
+            token=context.token,
+            payload_preview="Stripe event metadata list",
+        )
+        events = response.get("data") if isinstance(response, dict) else []
+        records = [stripe_record(item) for item in events if isinstance(item, dict) and isinstance(item.get("id"), str)]
+        return ConnectorSyncResult(items_seen=len(records), records=tuple(records), detail="Stripe events synced.")
+
+
 CONNECTOR_DEFINITIONS = [
     ConnectorDefinition(
         id="gmail",
@@ -399,6 +533,84 @@ CONNECTOR_DEFINITIONS = [
         token_url_env="DEYANA_GITHUB_OAUTH_TOKEN_URL",
         api_base_url_env="DEYANA_GITHUB_API_BASE_URL",
     ),
+    ConnectorDefinition(
+        id="drive",
+        name="Google Drive",
+        scopes=("https://www.googleapis.com/auth/drive.metadata.readonly",),
+        authorization_url="https://accounts.google.com/o/oauth2/v2/auth",
+        token_url="https://oauth2.googleapis.com/token",
+        api_base_url="https://www.googleapis.com/drive/v3",
+        api_probe_path="/files",
+        client_id_env="DEYANA_GOOGLE_OAUTH_CLIENT_ID",
+        client_secret_env="DEYANA_GOOGLE_OAUTH_CLIENT_SECRET",
+        token_url_env="DEYANA_GOOGLE_OAUTH_TOKEN_URL",
+        api_base_url_env="DEYANA_DRIVE_API_BASE_URL",
+    ),
+    ConnectorDefinition(
+        id="slack",
+        name="Slack",
+        scopes=("channels:read", "channels:history"),
+        authorization_url="https://slack.com/oauth/v2/authorize",
+        token_url="https://slack.com/api/oauth.v2.access",
+        api_base_url="https://slack.com/api",
+        api_probe_path="/auth.test",
+        client_id_env="DEYANA_SLACK_OAUTH_CLIENT_ID",
+        client_secret_env="DEYANA_SLACK_OAUTH_CLIENT_SECRET",
+        token_url_env="DEYANA_SLACK_OAUTH_TOKEN_URL",
+        api_base_url_env="DEYANA_SLACK_API_BASE_URL",
+    ),
+    ConnectorDefinition(
+        id="notion",
+        name="Notion",
+        scopes=("read_content",),
+        authorization_url="https://api.notion.com/v1/oauth/authorize",
+        token_url="https://api.notion.com/v1/oauth/token",
+        api_base_url="https://api.notion.com/v1",
+        api_probe_path="/search",
+        client_id_env="DEYANA_NOTION_OAUTH_CLIENT_ID",
+        client_secret_env="DEYANA_NOTION_OAUTH_CLIENT_SECRET",
+        token_url_env="DEYANA_NOTION_OAUTH_TOKEN_URL",
+        api_base_url_env="DEYANA_NOTION_API_BASE_URL",
+    ),
+    ConnectorDefinition(
+        id="jira",
+        name="Jira",
+        scopes=("read:jira-work", "offline_access"),
+        authorization_url="https://auth.atlassian.com/authorize",
+        token_url="https://auth.atlassian.com/oauth/token",
+        api_base_url="https://api.atlassian.com/ex/jira",
+        api_probe_path="/rest/api/3/search",
+        client_id_env="DEYANA_JIRA_OAUTH_CLIENT_ID",
+        client_secret_env="DEYANA_JIRA_OAUTH_CLIENT_SECRET",
+        token_url_env="DEYANA_JIRA_OAUTH_TOKEN_URL",
+        api_base_url_env="DEYANA_JIRA_API_BASE_URL",
+    ),
+    ConnectorDefinition(
+        id="linear",
+        name="Linear",
+        scopes=("read",),
+        authorization_url="https://linear.app/oauth/authorize",
+        token_url="https://api.linear.app/oauth/token",
+        api_base_url="https://api.linear.app/graphql",
+        api_probe_path="",
+        client_id_env="DEYANA_LINEAR_OAUTH_CLIENT_ID",
+        client_secret_env="DEYANA_LINEAR_OAUTH_CLIENT_SECRET",
+        token_url_env="DEYANA_LINEAR_OAUTH_TOKEN_URL",
+        api_base_url_env="DEYANA_LINEAR_API_BASE_URL",
+    ),
+    ConnectorDefinition(
+        id="stripe",
+        name="Stripe",
+        scopes=("read_only",),
+        authorization_url="https://connect.stripe.com/oauth/authorize",
+        token_url="https://connect.stripe.com/oauth/token",
+        api_base_url="https://api.stripe.com/v1",
+        api_probe_path="/events",
+        client_id_env="DEYANA_STRIPE_OAUTH_CLIENT_ID",
+        client_secret_env="DEYANA_STRIPE_OAUTH_CLIENT_SECRET",
+        token_url_env="DEYANA_STRIPE_OAUTH_TOKEN_URL",
+        api_base_url_env="DEYANA_STRIPE_API_BASE_URL",
+    ),
 ]
 
 
@@ -406,6 +618,12 @@ CONNECTOR_CLASSES = {
     "gmail": GmailConnector,
     "calendar": CalendarConnector,
     "github": GitHubConnector,
+    "drive": DriveConnector,
+    "slack": SlackConnector,
+    "notion": NotionConnector,
+    "jira": JiraConnector,
+    "linear": LinearConnector,
+    "stripe": StripeConnector,
 }
 
 
@@ -466,6 +684,34 @@ class ConnectorHttpClient:
         )
         if not isinstance(response, dict):
             raise ConnectorHttpError("OAuth provider returned an invalid response.")
+        return response
+
+    def post_json(
+        self,
+        url: str,
+        data: dict[str, object],
+        *,
+        token: dict[str, object],
+        payload_preview: str,
+        headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        response = self._request_json(
+            "POST",
+            url,
+            body=json.dumps(data).encode("utf-8"),
+            purpose="connector_api_fetch",
+            data_category="connector_metadata",
+            payload_preview=payload_preview,
+            user_approved=True,
+            headers={
+                "content-type": "application/json",
+                "accept": "application/json",
+                "authorization": f"Bearer {token.get('accessToken', '')}",
+                **(headers or {}),
+            },
+        )
+        if not isinstance(response, dict):
+            raise ConnectorHttpError("Connector returned an invalid JSON response.")
         return response
 
     def _request_json(
@@ -633,6 +879,162 @@ def github_record(payload: dict[str, Any]) -> ConnectorRecord:
             "updatedAt": updated_at,
         },
     )
+
+
+def drive_record(payload: dict[str, Any]) -> ConnectorRecord:
+    file_id = str(payload["id"])
+    name = str(payload.get("name") or f"Drive file {file_id}")
+    mime_type = str(payload.get("mimeType") or "unknown")
+    modified = payload.get("modifiedTime") if isinstance(payload.get("modifiedTime"), str) else None
+    summary = compact_sentence(f"Google Drive file {name} has type {mime_type} and was modified {modified or 'at an unknown time'}.")
+    return ConnectorRecord(
+        external_id=file_id,
+        title=f"Drive: {name}",
+        summary=summary,
+        content_markdown="\n".join(
+            [
+                "## Google Drive file summary",
+                "",
+                f"- File: {name}",
+                f"- MIME type: {mime_type}",
+                f"- Modified: {modified or 'Unknown'}",
+            ]
+        ),
+        source_uri=payload.get("webViewLink") if isinstance(payload.get("webViewLink"), str) else None,
+        item_timestamp=modified,
+        tags=("connector", "drive", "file"),
+        normalized={"fileId": file_id, "name": name, "mimeType": mime_type, "modifiedTime": modified},
+    )
+
+
+def slack_record(payload: dict[str, Any], channel: str) -> ConnectorRecord:
+    timestamp = str(payload.get("ts"))
+    text = str(payload.get("text") or "").strip()
+    user = str(payload.get("user") or payload.get("username") or "unknown")
+    summary = compact_sentence(f"Slack message in {channel} from {user}: {text or 'No message text returned.'}")
+    return ConnectorRecord(
+        external_id=f"{channel}:{timestamp}",
+        title=f"Slack: {channel} - {compact_sentence(text or timestamp, 80)}",
+        summary=summary,
+        content_markdown="\n".join(
+            ["## Slack message summary", "", f"- Channel: {channel}", f"- User: {user}", f"- Timestamp: {timestamp}", "", text]
+        ),
+        source_uri=None,
+        item_timestamp=timestamp,
+        tags=("connector", "slack", "message"),
+        normalized={"timestamp": timestamp, "channel": channel, "user": user, "text": text},
+    )
+
+
+def notion_record(payload: dict[str, Any]) -> ConnectorRecord:
+    page_id = str(payload["id"])
+    title = notion_title(payload) or f"Notion page {page_id}"
+    updated = payload.get("last_edited_time") if isinstance(payload.get("last_edited_time"), str) else None
+    object_type = str(payload.get("object") or "page")
+    summary = compact_sentence(f"Notion {object_type} {title} was last edited {updated or 'at an unknown time'}.")
+    return ConnectorRecord(
+        external_id=page_id,
+        title=f"Notion: {title}",
+        summary=summary,
+        content_markdown="\n".join(
+            ["## Notion summary", "", f"- Title: {title}", f"- Type: {object_type}", f"- Last edited: {updated or 'Unknown'}"]
+        ),
+        source_uri=payload.get("url") if isinstance(payload.get("url"), str) else None,
+        item_timestamp=updated,
+        tags=("connector", "notion", object_type),
+        normalized={"pageId": page_id, "title": title, "lastEditedTime": updated, "object": object_type},
+    )
+
+
+def jira_record(payload: dict[str, Any], api_base_url: str) -> ConnectorRecord:
+    issue_id = str(payload.get("id") or payload.get("key"))
+    key = str(payload.get("key") or issue_id)
+    fields = payload.get("fields") if isinstance(payload.get("fields"), dict) else {}
+    title = str(fields.get("summary") or f"Jira issue {key}")
+    status = nested_name(fields.get("status")) or "Unknown"
+    updated = fields.get("updated") if isinstance(fields.get("updated"), str) else None
+    summary = compact_sentence(f"Jira issue {key} is {status}: {title}")
+    return ConnectorRecord(
+        external_id=issue_id,
+        title=f"Jira: {key} {title}",
+        summary=summary,
+        content_markdown="\n".join(["## Jira issue summary", "", f"- Issue: {key}", f"- Status: {status}", f"- Updated: {updated or 'Unknown'}", "", title]),
+        source_uri=jira_issue_url(api_base_url, key),
+        item_timestamp=updated,
+        tags=("connector", "jira", "issue", status.lower().replace(" ", "-")),
+        normalized={"issueId": issue_id, "key": key, "summary": title, "status": status, "updated": updated},
+    )
+
+
+def linear_record(payload: dict[str, Any]) -> ConnectorRecord:
+    issue_id = str(payload["id"])
+    identifier = str(payload.get("identifier") or issue_id)
+    title = str(payload.get("title") or f"Linear issue {identifier}")
+    status = nested_name(payload.get("state")) or "Unknown"
+    assignee = nested_name(payload.get("assignee")) or "Unassigned"
+    updated = payload.get("updatedAt") if isinstance(payload.get("updatedAt"), str) else None
+    summary = compact_sentence(f"Linear issue {identifier} is {status}, assigned to {assignee}: {title}")
+    return ConnectorRecord(
+        external_id=issue_id,
+        title=f"Linear: {identifier} {title}",
+        summary=summary,
+        content_markdown="\n".join(["## Linear issue summary", "", f"- Issue: {identifier}", f"- Status: {status}", f"- Assignee: {assignee}", f"- Updated: {updated or 'Unknown'}", "", title]),
+        source_uri=payload.get("url") if isinstance(payload.get("url"), str) else None,
+        item_timestamp=updated,
+        tags=("connector", "linear", "issue", status.lower().replace(" ", "-")),
+        normalized={"issueId": issue_id, "identifier": identifier, "title": title, "status": status, "assignee": assignee, "updatedAt": updated},
+    )
+
+
+def stripe_record(payload: dict[str, Any]) -> ConnectorRecord:
+    event_id = str(payload["id"])
+    event_type = str(payload.get("type") or "event")
+    created = str(payload.get("created") or "")
+    livemode = bool(payload.get("livemode"))
+    summary = compact_sentence(f"Stripe event {event_type} ({event_id}) was received in {'live' if livemode else 'test'} mode.")
+    return ConnectorRecord(
+        external_id=event_id,
+        title=f"Stripe: {event_type}",
+        summary=summary,
+        content_markdown="\n".join(["## Stripe event summary", "", f"- Event: {event_type}", f"- ID: {event_id}", f"- Mode: {'live' if livemode else 'test'}", f"- Created: {created or 'Unknown'}"]),
+        source_uri=f"https://dashboard.stripe.com/events/{event_id}",
+        item_timestamp=created or None,
+        tags=("connector", "stripe", "event", event_type.replace(".", "-")),
+        normalized={"eventId": event_id, "type": event_type, "created": created, "livemode": livemode},
+    )
+
+
+def notion_title(payload: dict[str, Any]) -> str | None:
+    properties = payload.get("properties")
+    if not isinstance(properties, dict):
+        return None
+    for value in properties.values():
+        if not isinstance(value, dict) or value.get("type") != "title":
+            continue
+        title_items = value.get("title")
+        if not isinstance(title_items, list):
+            continue
+        parts = [
+            item.get("plain_text")
+            for item in title_items
+            if isinstance(item, dict) and isinstance(item.get("plain_text"), str)
+        ]
+        title = " ".join(parts).strip()
+        if title:
+            return title
+    return None
+
+
+def nested_name(value: object) -> str | None:
+    if isinstance(value, dict) and isinstance(value.get("name"), str):
+        return value["name"]
+    return None
+
+
+def jira_issue_url(api_base_url: str, key: str) -> str | None:
+    if "/rest/api/" not in api_base_url:
+        return None
+    return f"{api_base_url.split('/rest/api/', 1)[0]}/browse/{key}"
 
 
 def headers_by_name(payload: dict[str, Any]) -> dict[str, str]:

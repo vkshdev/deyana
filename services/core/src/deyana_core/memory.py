@@ -41,6 +41,12 @@ CONNECTOR_SOURCE_TO_FOLDER = {
     "gmail": "Emails",
     "calendar": "Meetings",
     "github": "GitHub",
+    "drive": "Sources",
+    "slack": "Slack",
+    "notion": "Sources",
+    "jira": "Tasks",
+    "linear": "Tasks",
+    "stripe": "Stripe",
 }
 
 
@@ -386,6 +392,21 @@ class MemoryStore:
                         existing_tags=existing_tags,
                         existing_importance=row["importance"],
                     )
+                    sanitized_markdown = self.render_markdown(
+                        memory_id=row["id"],
+                        memory_type=row["type"],
+                        title=title,
+                        summary=analysis.summary,
+                        content_markdown=analysis.content_markdown,
+                        source_type=row["source_type"],
+                        source_id=row["source_id"],
+                        source_uri=row["source_uri"],
+                        importance=analysis.importance,
+                        tags=list(analysis.tags),
+                        created_at=row["created_at"],
+                        updated_at=timestamp,
+                    )
+                    path.write_text(sanitized_markdown, encoding="utf-8")
                     connection.execute(
                         """
                         UPDATE memory_items

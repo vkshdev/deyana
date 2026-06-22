@@ -99,6 +99,12 @@ OAUTH_CONNECTOR_HOSTS = {
     "slack.com",
     "api.slack.com",
     "api.notion.com",
+    "auth.atlassian.com",
+    "api.atlassian.com",
+    "linear.app",
+    "api.linear.app",
+    "connect.stripe.com",
+    "api.stripe.com",
 }
 
 LOCAL_HOSTS = {
