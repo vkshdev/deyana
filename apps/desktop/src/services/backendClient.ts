@@ -7,6 +7,7 @@ import type {
   ChatHistoryResponse,
   ChatMessageRequest,
   ChatMessageResponse,
+  CodeTaskRequest,
   ConnectorDisconnectResponse,
   ConnectorItem,
   ConnectorListResponse,
@@ -19,6 +20,9 @@ import type {
   ConnectorSyncRunsResponse,
   CoreAppSettings,
   DailySummaryRequest,
+  DayPlannerRequest,
+  FileReadRequest,
+  GitReadRequest,
   LocalModelStatusResponse,
   MemoryCreateRequest,
   MemoryDeleteResponse,
@@ -43,8 +47,12 @@ import type {
   PrivacyStatusResponse,
   ProjectSummaryRequest,
   SettingsPatch,
+  ToolListResponse,
+  ToolRunResponse,
   VaultSelectRequest,
-  VaultSelectResponse
+  VaultSelectResponse,
+  WebFetchRequest,
+  WebSearchRequest
 } from "@deyana/schemas";
 
 export interface BackendEventConnection {
@@ -118,6 +126,46 @@ export const backendClient = {
     } finally {
       window.clearTimeout(timeout);
     }
+  },
+
+  async listTools(): Promise<ToolListResponse> {
+    const response = await fetch(`${coreService.endpoint}/tools`);
+    if (!response.ok) {
+      throw new Error(`tools list returned ${response.status}`);
+    }
+    return response.json() as Promise<ToolListResponse>;
+  },
+
+  async webSearch(request: WebSearchRequest): Promise<ToolRunResponse> {
+    return postTool("/tools/web-search", request);
+  },
+
+  async fetchPage(request: WebFetchRequest): Promise<ToolRunResponse> {
+    return postTool("/tools/fetch-page", request);
+  },
+
+  async readFileTool(request: FileReadRequest): Promise<ToolRunResponse> {
+    return postTool("/tools/read-file", request);
+  },
+
+  async gitStatusTool(request: GitReadRequest): Promise<ToolRunResponse> {
+    return postTool("/tools/git/status", request);
+  },
+
+  async gitDiffTool(request: GitReadRequest): Promise<ToolRunResponse> {
+    return postTool("/tools/git/diff", request);
+  },
+
+  async commitMessageTool(request: GitReadRequest): Promise<ToolRunResponse> {
+    return postTool("/tools/git/commit-message", request);
+  },
+
+  async codeTaskTool(request: CodeTaskRequest): Promise<ToolRunResponse> {
+    return postTool("/tools/code/task", request);
+  },
+
+  async dayPlannerTool(request: DayPlannerRequest): Promise<ToolRunResponse> {
+    return postTool("/tools/day-planner", request);
   },
 
   connectEvents(
@@ -542,6 +590,19 @@ export const backendClient = {
     }
     return response.json() as Promise<ConnectorSyncRunsResponse>;
   }
+};
+
+const postTool = async (path: string, request: object): Promise<ToolRunResponse> => {
+  const response = await fetch(`${coreService.endpoint}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(request)
+  });
+  if (!response.ok) {
+    const detail = await readErrorDetail(response);
+    throw new Error(detail || `${path} returned ${response.status}`);
+  }
+  return response.json() as Promise<ToolRunResponse>;
 };
 
 const readErrorDetail = async (response: Response) => {

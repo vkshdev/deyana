@@ -30,6 +30,8 @@ import {
   type DesktopSettings,
   type QuickAction,
   type SyncStatus,
+  type ToolId,
+  type ToolRunResponse,
   type UiMode
 } from "@deyana/schemas";
 import { useSyncExternalStore } from "react";
@@ -79,6 +81,11 @@ export interface AssistantSnapshot {
   privacyStatus?: PrivacyStatusResponse;
   privacyAuditEvents: PrivacyAuditEvent[];
   privacyBusy: boolean;
+  toolActive: ToolId;
+  toolInput: string;
+  toolApproved: boolean;
+  toolBusy: boolean;
+  toolResult?: ToolRunResponse;
   quickActions: QuickAction[];
   error?: string;
 }
@@ -89,7 +96,13 @@ const defaultConnectors = (): ConnectorItem[] =>
   [
     ["gmail", "Gmail"],
     ["calendar", "Calendar"],
-    ["github", "GitHub"]
+    ["github", "GitHub"],
+    ["drive", "Google Drive"],
+    ["slack", "Slack"],
+    ["notion", "Notion"],
+    ["jira", "Jira"],
+    ["linear", "Linear"],
+    ["stripe", "Stripe"]
   ].map(([id, name]) => ({
     id,
     name,
@@ -157,6 +170,10 @@ const initialSnapshot: AssistantSnapshot = {
   chatBusy: false,
   privacyAuditEvents: [],
   privacyBusy: false,
+  toolActive: "web_search",
+  toolInput: "",
+  toolApproved: false,
+  toolBusy: false,
   quickActions: [
     {
       id: "memory",
@@ -384,6 +401,64 @@ class AssistantStore {
   setMemoryDraft = (patch: Partial<AssistantSnapshot["memoryDraft"]>) => {
     this.setSnapshot({ memoryDraft: { ...this.snapshot.memoryDraft, ...patch } });
   };
+
+  setToolActive = (toolActive: ToolId) => {
+    this.setSnapshot({ toolActive, toolResult: undefined, error: undefined });
+  };
+
+  setToolInput = (toolInput: string) => {
+    this.setSnapshot({ toolInput });
+  };
+
+  setToolApproved = (toolApproved: boolean) => {
+    this.setSnapshot({ toolApproved });
+  };
+
+  runActiveTool = async () => {
+    const input = this.snapshot.toolInput.trim();
+    const userApproved = this.snapshot.toolApproved;
+    if (!input && this.snapshot.toolActive !== "day_planner") {
+      this.setSnapshot({ error: "Tool input is required." });
+      return;
+    }
+
+    this.setSnapshot({ toolBusy: true, error: undefined });
+    try {
+      const repoPath = this.coreRepoPath();
+      const result = await this.executeTool(this.snapshot.toolActive, input, userApproved, repoPath);
+      this.setSnapshot({ toolResult: result, toolBusy: false });
+    } catch (error) {
+      this.setSnapshot({
+        toolBusy: false,
+        error: error instanceof Error ? error.message : "Unable to run tool"
+      });
+    }
+  };
+
+  private executeTool = async (tool: ToolId, input: string, userApproved: boolean, repoPath: string) => {
+    switch (tool) {
+      case "web_search":
+        return backendClient.webSearch({ query: input, userApproved });
+      case "fetch_page":
+        return backendClient.fetchPage({ url: input, userApproved });
+      case "read_file":
+        return backendClient.readFileTool({ path: input, allowedRoot: approvedRootFromPath(input), userApproved });
+      case "git_status":
+        return backendClient.gitStatusTool({ repoPath: input || repoPath, userApproved });
+      case "git_diff":
+        return backendClient.gitDiffTool({ repoPath: input || repoPath, userApproved });
+      case "commit_message":
+        return backendClient.commitMessageTool({ repoPath: input || repoPath, userApproved });
+      case "code_task":
+        return backendClient.codeTaskTool({ goal: input, userApproved });
+      case "day_planner":
+        return backendClient.dayPlannerTool({ focus: input ? [input] : [] });
+      default:
+        return backendClient.webSearch({ query: input, userApproved });
+    }
+  };
+
+  private coreRepoPath = () => this.snapshot.coreSettings.vaultPath ?? "D:\\de'yana";
 
   loadMemory = async (query = this.snapshot.memoryQuery) => {
     try {
@@ -1193,6 +1268,18 @@ class AssistantStore {
       return;
     }
 
+    if (
+      event.type === "tool.completed" ||
+      event.type === "tool.failed" ||
+      event.type === "tool.permission.required"
+    ) {
+      this.setSnapshot({
+        toolResult: event.payload,
+        lastBackendEventType: event.type
+      });
+      return;
+    }
+
     if (event.type === "connector.oauth.started") {
       this.setSnapshot({ lastBackendEventType: event.type });
       return;
@@ -1307,10 +1394,16 @@ const mergeMemoryItem = (current: MemoryItem[], item: MemoryItem): MemoryItem[] 
   return [item, ...existing].slice(0, 20);
 };
 
+const approvedRootFromPath = (path: string): string => {
+  const normalized = path.trim();
+  const index = Math.max(normalized.lastIndexOf("\\"), normalized.lastIndexOf("/"));
+  return index > 0 ? normalized.slice(0, index) : ".";
+};
+
 const mergeConnector = (current: ConnectorItem[], connector: ConnectorItem): ConnectorItem[] => {
   const byId = new Map(current.map((item) => [item.id, item]));
   byId.set(connector.id, connector);
-  const preferredOrder = ["gmail", "calendar", "github"];
+  const preferredOrder = ["gmail", "calendar", "github", "drive", "slack", "notion", "jira", "linear", "stripe"];
   return [...byId.values()].sort((left, right) => {
     const leftIndex = preferredOrder.indexOf(left.id);
     const rightIndex = preferredOrder.indexOf(right.id);
