@@ -85,6 +85,17 @@ export type PrivacyRequestPurpose =
   | "speech_to_text"
   | "text_to_speech"
   | "unknown";
+export type ToolId =
+  | "web_search"
+  | "fetch_page"
+  | "read_file"
+  | "git_status"
+  | "git_diff"
+  | "commit_message"
+  | "code_task"
+  | "day_planner";
+export type ToolRisk = "low" | "public_web" | "local_file" | "source_code" | "dangerous";
+export type ToolRunStatus = "completed" | "permission_required" | "confirmation_required" | "blocked" | "failed";
 
 export const BACKEND_LIFECYCLES = [
   "starting",
@@ -328,13 +339,20 @@ export interface MemoryEntityListResponse {
   items: MemoryEntity[];
   total: number;
   query?: string | null;
+  sourceType?: string | null;
+  sourceId?: string | null;
+  date?: string | null;
 }
 
 export interface MemoryInsightListResponse {
   items: MemoryInsight[];
   total: number;
+  query?: string | null;
   type?: MemoryInsightType | null;
   status?: string | null;
+  sourceType?: string | null;
+  sourceId?: string | null;
+  date?: string | null;
 }
 
 export interface MemoryDeleteResponse {
@@ -531,6 +549,78 @@ export interface PrivacyAuditDeleteResponse {
   deleted: number;
 }
 
+export interface ToolManifest {
+  toolId: ToolId;
+  name: string;
+  description: string;
+  risk: ToolRisk;
+  requiresApproval: boolean;
+  dangerous: boolean;
+  appliesChanges: boolean;
+}
+
+export interface ToolListResponse {
+  tools: ToolManifest[];
+}
+
+export interface ToolResultItem {
+  title: string;
+  summary: string;
+  url?: string | null;
+  source?: string | null;
+}
+
+export interface ToolRunResponse {
+  toolId: ToolId;
+  status: ToolRunStatus;
+  title: string;
+  summary: string;
+  content: string;
+  items: ToolResultItem[];
+  permissionRequired: boolean;
+  confirmationRequired: boolean;
+  appliesChanges: boolean;
+  privacy?: PrivacyCheckResponse | null;
+}
+
+export interface WebSearchRequest {
+  query: string;
+  limit?: number;
+  userApproved?: boolean;
+}
+
+export interface WebFetchRequest {
+  url: string;
+  userApproved?: boolean;
+  maxCharacters?: number;
+}
+
+export interface FileReadRequest {
+  path: string;
+  allowedRoot: string;
+  userApproved?: boolean;
+  maxCharacters?: number;
+}
+
+export interface GitReadRequest {
+  repoPath: string;
+  userApproved?: boolean;
+  maxCharacters?: number;
+}
+
+export interface CodeTaskRequest {
+  goal: string;
+  context?: string;
+  userApproved?: boolean;
+}
+
+export interface DayPlannerRequest {
+  date?: string | null;
+  commitments?: string[];
+  focus?: string[];
+  notes?: string;
+}
+
 export interface ConnectorItem {
   id: string;
   name: string;
@@ -693,6 +783,9 @@ export type ConnectorSyncStartedEvent = BackendEvent<"connector.sync.started", C
 export type ConnectorSyncCompletedEvent = BackendEvent<"connector.sync.completed", ConnectorSyncResponse>;
 export type ConnectorSyncFailedEvent = BackendEvent<"connector.sync.failed", ConnectorSyncResponse>;
 export type ConnectorSyncSkippedEvent = BackendEvent<"connector.sync.skipped", ConnectorSyncResponse>;
+export type ToolCompletedEvent = BackendEvent<"tool.completed", ToolRunResponse>;
+export type ToolFailedEvent = BackendEvent<"tool.failed", ToolRunResponse>;
+export type ToolPermissionRequiredEvent = BackendEvent<"tool.permission.required", ToolRunResponse>;
 
 export type Phase3CoreEvent = SettingsChangedEvent | VaultSelectedEvent | OnboardingStateChangedEvent;
 export type Phase4CoreEvent =
@@ -718,6 +811,7 @@ export type Phase8CoreEvent =
   | ConnectorSyncCompletedEvent
   | ConnectorSyncFailedEvent
   | ConnectorSyncSkippedEvent;
+export type Phase11CoreEvent = ToolCompletedEvent | ToolFailedEvent | ToolPermissionRequiredEvent;
 
 export type AppCoreEvent =
   | CoreWebSocketEvent
@@ -725,7 +819,8 @@ export type AppCoreEvent =
   | Phase4CoreEvent
   | Phase5CoreEvent
   | Phase7CoreEvent
-  | Phase8CoreEvent;
+  | Phase8CoreEvent
+  | Phase11CoreEvent;
 
 export interface FloatingWindowPosition {
   x: number;
