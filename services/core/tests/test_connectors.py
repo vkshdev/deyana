@@ -176,7 +176,17 @@ def test_connectors_register_and_show_initial_status(tmp_path) -> None:
 
     assert response.status_code == 200
     connectors = response.json()["items"]
-    assert [connector["id"] for connector in connectors] == ["gmail", "calendar", "github"]
+    assert [connector["id"] for connector in connectors] == [
+        "gmail",
+        "calendar",
+        "github",
+        "drive",
+        "slack",
+        "notion",
+        "jira",
+        "linear",
+        "stripe",
+    ]
     assert {connector["status"] for connector in connectors} == {"not_connected"}
     assert all(connector["tokenStored"] is False for connector in connectors)
     assert status.json()["featureFlags"]["connectors"] is True
