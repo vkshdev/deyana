@@ -8,6 +8,7 @@ from .onboarding import router as onboarding_router
 from .privacy import router as privacy_router
 from .settings import router as settings_router
 from .status import router as status_router
+from .tools import router as tools_router
 from .vault import router as vault_router
 from .websocket import router as websocket_router
 
@@ -22,6 +23,7 @@ __all__ = [
     "privacy_router",
     "settings_router",
     "status_router",
+    "tools_router",
     "vault_router",
     "websocket_router",
 ]
