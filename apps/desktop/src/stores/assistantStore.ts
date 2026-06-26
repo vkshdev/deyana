@@ -27,12 +27,24 @@ import {
   type PrivacyAuditEvent,
   type PrivacyMode,
   type PrivacyStatusResponse,
+  type ConnectorHealthResponse,
+  type CrashRecoveryResponse,
   type DesktopSettings,
+  type PerformanceProfileResponse,
   type QuickAction,
+  type ReleaseLogListResponse,
+  type ReleaseLogReadResponse,
+  type ReleasePrivacyExportResponse,
+  type ReleaseReadinessResponse,
+  type ReleaseUpdatePlanResponse,
   type SyncStatus,
   type ToolId,
   type ToolRunResponse,
-  type UiMode
+  type UiMode,
+  type VoiceSettings,
+  type VoiceSettingsPatch,
+  type VoiceStatusResponse,
+  type VoiceTranscriptResponse
 } from "@deyana/schemas";
 import { useSyncExternalStore } from "react";
 import { backendClient, type BackendEventConnection } from "../services/backendClient";
@@ -86,6 +98,21 @@ export interface AssistantSnapshot {
   toolApproved: boolean;
   toolBusy: boolean;
   toolResult?: ToolRunResponse;
+  voiceSettings?: VoiceSettings;
+  voiceStatus?: VoiceStatusResponse;
+  voiceTranscript?: VoiceTranscriptResponse;
+  voiceBusy: boolean;
+  releaseReadiness?: ReleaseReadinessResponse;
+  releaseUpdatePlan?: ReleaseUpdatePlanResponse;
+  releaseLogs?: ReleaseLogListResponse;
+  releaseSelectedLog?: ReleaseLogReadResponse;
+  releasePrivacyExport?: ReleasePrivacyExportResponse;
+  releaseConnectorHealth?: ConnectorHealthResponse;
+  releasePerformance?: PerformanceProfileResponse;
+  releaseCrashRecovery?: CrashRecoveryResponse;
+  releaseDeletePhrase: string;
+  releaseDeleteIncludeVault: boolean;
+  releaseBusy: boolean;
   quickActions: QuickAction[];
   error?: string;
 }
@@ -174,6 +201,10 @@ const initialSnapshot: AssistantSnapshot = {
   toolInput: "",
   toolApproved: false,
   toolBusy: false,
+  voiceBusy: false,
+  releaseDeletePhrase: "",
+  releaseDeleteIncludeVault: false,
+  releaseBusy: false,
   quickActions: [
     {
       id: "memory",
@@ -273,6 +304,49 @@ class AssistantStore {
     } catch (error) {
       this.setSnapshot({
         error: error instanceof Error ? error.message : "Unable to update window preference"
+      });
+    }
+  };
+
+  setLowPowerMode = async (lowPowerMode: boolean) => {
+    this.setSnapshot({
+      settings: { ...this.snapshot.settings, lowPowerMode },
+      error: undefined
+    });
+
+    try {
+      const settings = await tauriClient.setLowPowerMode(lowPowerMode);
+      this.setSnapshot({ settings });
+    } catch (error) {
+      this.setSnapshot({
+        error: error instanceof Error ? error.message : "Unable to update low-power mode"
+      });
+    }
+  };
+
+  setReduceMotion = async (reduceMotion: boolean) => {
+    this.setSnapshot({
+      settings: { ...this.snapshot.settings, reduceMotion },
+      error: undefined
+    });
+
+    try {
+      const settings = await tauriClient.setReduceMotion(reduceMotion);
+      this.setSnapshot({ settings });
+    } catch (error) {
+      this.setSnapshot({
+        error: error instanceof Error ? error.message : "Unable to update motion preference"
+      });
+    }
+  };
+
+  dockFloatingWindow = async (edge: "left" | "right") => {
+    try {
+      const settings = await tauriClient.dockFloatingWindow(edge);
+      this.setSnapshot({ settings, error: undefined });
+    } catch (error) {
+      this.setSnapshot({
+        error: error instanceof Error ? error.message : "Unable to dock floating window"
       });
     }
   };
@@ -459,6 +533,9 @@ class AssistantStore {
   };
 
   private coreRepoPath = () => this.snapshot.coreSettings.vaultPath ?? "D:\\de'yana";
+
+  private restingAssistantState = (): AssistantState =>
+    this.snapshot.settings.uiMode === "expanded" ? "EXPANDED_PANEL" : "COMPACT_FLOATING";
 
   loadMemory = async (query = this.snapshot.memoryQuery) => {
     try {
@@ -692,6 +769,209 @@ class AssistantStore {
       return;
     }
 
+    try {
+      await this.sendChatContent(content, true);
+    } catch {
+      // sendChatContent already restores UI state and records the user-facing error.
+    }
+  };
+
+  loadVoice = async () => {
+    try {
+      const [voiceSettings, voiceStatus] = await Promise.all([
+        backendClient.getVoiceSettings(),
+        backendClient.getVoiceStatus()
+      ]);
+      this.setSnapshot({ voiceSettings, voiceStatus, error: undefined });
+    } catch (error) {
+      this.setSnapshot({
+        error: error instanceof Error ? error.message : "Unable to load local voice status"
+      });
+    }
+  };
+
+  patchVoiceSettings = async (patch: VoiceSettingsPatch) => {
+    try {
+      const voiceSettings = await backendClient.patchVoiceSettings(patch);
+      const voiceStatus = await backendClient.getVoiceStatus();
+      this.setSnapshot({ voiceSettings, voiceStatus, error: undefined });
+    } catch (error) {
+      this.setSnapshot({
+        error: error instanceof Error ? error.message : "Unable to update local voice settings"
+      });
+    }
+  };
+
+  runPushToTalk = async () => {
+    if (this.snapshot.voiceBusy) {
+      return;
+    }
+
+    this.setSnapshot({
+      voiceBusy: true,
+      voiceTranscript: undefined,
+      assistantState: "LISTENING",
+      error: undefined
+    });
+
+    try {
+      const voiceTranscript = await backendClient.transcribeVoice({
+        listenSeconds: this.snapshot.voiceSettings?.listenSeconds
+      });
+      const transcript = voiceTranscript.transcript.trim();
+      this.setSnapshot({
+        voiceTranscript,
+        assistantState: "TRANSCRIBING"
+      });
+
+      if (!transcript) {
+        this.setSnapshot({
+          voiceBusy: false,
+          assistantState: this.restingAssistantState(),
+          error: "No local speech was recognized."
+        });
+        return;
+      }
+
+      const response = await this.sendChatContent(transcript, false);
+      if (this.snapshot.voiceSettings?.ttsEnabled && response.assistantMessage.content.trim()) {
+        this.setSnapshot({ assistantState: "SPEAKING" });
+        await backendClient.speakVoice({ text: response.assistantMessage.content });
+      }
+
+      this.setSnapshot({
+        voiceBusy: false,
+        assistantState: this.restingAssistantState()
+      });
+    } catch (error) {
+      this.setSnapshot({
+        voiceBusy: false,
+        assistantState: this.restingAssistantState(),
+        error: error instanceof Error ? error.message : "Unable to run local voice"
+      });
+      await this.loadVoice();
+    }
+  };
+
+  speakLastAssistantMessage = async () => {
+    const message = [...this.snapshot.chatMessages].reverse().find((item) => item.role === "assistant");
+    if (!message?.content.trim()) {
+      this.setSnapshot({ error: "No assistant response is available for speech." });
+      return;
+    }
+
+    this.setSnapshot({ voiceBusy: true, assistantState: "SPEAKING", error: undefined });
+    try {
+      await backendClient.speakVoice({ text: message.content });
+      this.setSnapshot({ voiceBusy: false, assistantState: this.restingAssistantState() });
+    } catch (error) {
+      this.setSnapshot({
+        voiceBusy: false,
+        assistantState: this.restingAssistantState(),
+        error: error instanceof Error ? error.message : "Unable to speak locally"
+      });
+      await this.loadVoice();
+    }
+  };
+
+  loadReleaseQuality = async () => {
+    this.setSnapshot({ releaseBusy: true, error: undefined });
+    try {
+      const [
+        releaseReadiness,
+        releaseUpdatePlan,
+        releaseLogs,
+        releasePrivacyExport,
+        releaseConnectorHealth,
+        releasePerformance,
+        releaseCrashRecovery
+      ] = await Promise.all([
+        backendClient.getReleaseReadiness(),
+        backendClient.getReleaseUpdatePlan(),
+        backendClient.listReleaseLogs(),
+        backendClient.getPrivacyExport(),
+        backendClient.getConnectorHealth(),
+        backendClient.getPerformanceProfile(),
+        backendClient.getCrashRecovery()
+      ]);
+      this.setSnapshot({
+        releaseReadiness,
+        releaseUpdatePlan,
+        releaseLogs,
+        releasePrivacyExport,
+        releaseConnectorHealth,
+        releasePerformance,
+        releaseCrashRecovery,
+        releaseBusy: false,
+        error: undefined
+      });
+    } catch (error) {
+      this.setSnapshot({
+        releaseBusy: false,
+        error: error instanceof Error ? error.message : "Unable to load release quality status"
+      });
+    }
+  };
+
+  readReleaseLog = async (path: string) => {
+    this.setSnapshot({ releaseBusy: true, error: undefined });
+    try {
+      const releaseSelectedLog = await backendClient.readReleaseLog(path);
+      this.setSnapshot({ releaseSelectedLog, releaseBusy: false });
+    } catch (error) {
+      this.setSnapshot({
+        releaseBusy: false,
+        error: error instanceof Error ? error.message : "Unable to read release log"
+      });
+    }
+  };
+
+  setReleaseDeletePhrase = (releaseDeletePhrase: string) => {
+    this.setSnapshot({ releaseDeletePhrase });
+  };
+
+  setReleaseDeleteIncludeVault = (releaseDeleteIncludeVault: boolean) => {
+    this.setSnapshot({ releaseDeleteIncludeVault });
+  };
+
+  deleteLocalData = async () => {
+    this.setSnapshot({ releaseBusy: true, error: undefined });
+    try {
+      await backendClient.deleteLocalData({
+        confirmationPhrase: this.snapshot.releaseDeletePhrase,
+        includeVault: this.snapshot.releaseDeleteIncludeVault
+      });
+      this.setSnapshot({
+        releaseBusy: false,
+        releaseDeletePhrase: "",
+        releaseDeleteIncludeVault: false,
+        memoryItems: [],
+        memoryEntities: [],
+        memoryActionItems: [],
+        memoryDecisions: [],
+        chatMessages: [],
+        privacyAuditEvents: [],
+        connectors: defaultConnectors(),
+        connectorSyncRuns: [],
+        onboarding: DEFAULT_ONBOARDING_STATE,
+        coreSettings: DEFAULT_CORE_APP_SETTINGS,
+        onboardingStep: "welcome"
+      });
+      await this.loadReleaseQuality();
+    } catch (error) {
+      this.setSnapshot({
+        releaseBusy: false,
+        error: error instanceof Error ? error.message : "Unable to delete local data"
+      });
+    }
+  };
+
+  private sendChatContent = async (content: string, restoreDraftOnError: boolean): Promise<ChatMessageResponse> => {
+    const trimmed = content.trim();
+    if (!trimmed) {
+      throw new Error("Chat message cannot be empty.");
+    }
+
     this.setSnapshot({
       chatBusy: true,
       chatDraft: "",
@@ -700,20 +980,22 @@ class AssistantStore {
     });
 
     try {
-      const response = await backendClient.sendChatMessage({ content });
+      const response = await backendClient.sendChatMessage({ content: trimmed });
       this.setSnapshot({
         chatBusy: false,
-        assistantState: this.snapshot.settings.uiMode === "expanded" ? "EXPANDED_PANEL" : "COMPACT_FLOATING",
+        assistantState: this.restingAssistantState(),
         chatMessages: mergeChatResponse(this.snapshot.chatMessages, response)
       });
+      return response;
     } catch (error) {
       this.setSnapshot({
         chatBusy: false,
-        chatDraft: content,
-        assistantState: this.snapshot.settings.uiMode === "expanded" ? "EXPANDED_PANEL" : "COMPACT_FLOATING",
+        chatDraft: restoreDraftOnError ? trimmed : this.snapshot.chatDraft,
+        assistantState: this.restingAssistantState(),
         error: error instanceof Error ? error.message : "Unable to send local chat message"
       });
       await this.loadModelStatus();
+      throw error;
     }
   };
 
@@ -1004,7 +1286,9 @@ class AssistantStore {
         privacyStatus,
         privacyAudit,
         connectors,
-        connectorSyncRuns
+        connectorSyncRuns,
+        voiceSettings,
+        voiceStatus
       ] = await Promise.all([
         backendClient.getStatus(),
         backendClient.getSettings(),
@@ -1014,7 +1298,9 @@ class AssistantStore {
         backendClient.getPrivacyStatus(),
         backendClient.listPrivacyAudit(),
         backendClient.listConnectors(),
-        backendClient.listConnectorSyncRuns()
+        backendClient.listConnectorSyncRuns(),
+        backendClient.getVoiceSettings(),
+        backendClient.getVoiceStatus()
       ]);
       const onboardingVaultPath = onboarding.selectedVaultPath ?? coreSettings.vaultPath ?? "";
       const memoryPreview = onboarding.completed && onboardingVaultPath
@@ -1039,6 +1325,8 @@ class AssistantStore {
         privacyAuditEvents: privacyAudit.events,
         connectors: connectors.items,
         connectorSyncRuns: connectorSyncRuns.items,
+        voiceSettings,
+        voiceStatus,
         syncStatus: deriveSyncStatus(connectors.items),
         onboardingStep: onboarding.completed ? "complete" : onboarding.currentStep,
         onboardingVaultPath,
@@ -1275,6 +1563,95 @@ class AssistantStore {
     ) {
       this.setSnapshot({
         toolResult: event.payload,
+        lastBackendEventType: event.type
+      });
+      return;
+    }
+
+    if (event.type === "voice.settings.updated") {
+      this.setSnapshot({
+        voiceSettings: event.payload,
+        lastBackendEventType: event.type
+      });
+      void this.loadVoice();
+      return;
+    }
+
+    if (event.type === "voice.recording.started") {
+      this.setSnapshot({
+        assistantState: "LISTENING",
+        lastBackendEventType: event.type
+      });
+      return;
+    }
+
+    if (event.type === "voice.recording.stopped" || event.type === "voice.transcription.started") {
+      this.setSnapshot({
+        assistantState: "TRANSCRIBING",
+        lastBackendEventType: event.type
+      });
+      return;
+    }
+
+    if (event.type === "voice.transcription.completed") {
+      this.setSnapshot({
+        voiceTranscript: event.payload,
+        lastBackendEventType: event.type
+      });
+      return;
+    }
+
+    if (event.type === "voice.transcription.failed") {
+      this.setSnapshot({
+        voiceBusy: false,
+        assistantState: this.restingAssistantState(),
+        error: event.payload.reason,
+        lastBackendEventType: event.type
+      });
+      return;
+    }
+
+    if (event.type === "tts.started") {
+      this.setSnapshot({
+        assistantState: "SPEAKING",
+        lastBackendEventType: event.type
+      });
+      return;
+    }
+
+    if (event.type === "tts.completed") {
+      this.setSnapshot({
+        assistantState: this.restingAssistantState(),
+        lastBackendEventType: event.type
+      });
+      return;
+    }
+
+    if (event.type === "tts.failed") {
+      this.setSnapshot({
+        voiceBusy: false,
+        assistantState: this.restingAssistantState(),
+        error: event.payload.reason,
+        lastBackendEventType: event.type
+      });
+      return;
+    }
+
+    if (event.type === "release.local_data.deleted") {
+      this.setSnapshot({
+        memoryItems: [],
+        memoryEntities: [],
+        memoryActionItems: [],
+        memoryDecisions: [],
+        chatMessages: [],
+        privacyAuditEvents: [],
+        connectors: defaultConnectors(),
+        connectorSyncRuns: [],
+        onboarding: DEFAULT_ONBOARDING_STATE,
+        coreSettings: DEFAULT_CORE_APP_SETTINGS,
+        onboardingStep: "welcome",
+        releaseDeletePhrase: "",
+        releaseDeleteIncludeVault: false,
         lastBackendEventType: event.type
       });
       return;
