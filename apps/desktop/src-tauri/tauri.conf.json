@@ -32,6 +32,13 @@
     }
   },
   "bundle": {
-    "active": false
+    "active": true,
+    "targets": ["msi"],
+    "icon": ["icons/icon.ico"],
+    "resources": {
+      "../../../services/core/src": "services/core/src",
+      "../../../services/core/pyproject.toml": "services/core/pyproject.toml",
+      "../../../services/core/README.md": "services/core/README.md"
+    }
   }
 }
