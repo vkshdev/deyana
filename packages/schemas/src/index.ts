@@ -96,6 +96,9 @@ export type ToolId =
   | "day_planner";
 export type ToolRisk = "low" | "public_web" | "local_file" | "source_code" | "dangerous";
 export type ToolRunStatus = "completed" | "permission_required" | "confirmation_required" | "blocked" | "failed";
+export type VoiceEngineStatus = "available" | "disabled" | "muted" | "unsupported" | "missing" | "error";
+export type ReleaseCheckStatus = "ready" | "warning" | "missing" | "blocked";
+export type ConnectorHealthStatus = "healthy" | "not_connected" | "paused" | "syncing" | "error" | "attention";
 
 export const BACKEND_LIFECYCLES = [
   "starting",
@@ -621,6 +624,72 @@ export interface DayPlannerRequest {
   notes?: string;
 }
 
+export interface VoiceSettings {
+  enabled: boolean;
+  muted: boolean;
+  ttsEnabled: boolean;
+  transcriptRetention: "none" | "memory";
+  sttEngine: "windows_speech";
+  ttsEngine: "windows_speech";
+  language: string;
+  listenSeconds: number;
+  ttsVoice?: string | null;
+  ttsRate: number;
+  ttsVolume: number;
+  updatedAt: string;
+}
+
+export interface VoiceSettingsPatch {
+  enabled?: boolean;
+  muted?: boolean;
+  ttsEnabled?: boolean;
+  transcriptRetention?: "none" | "memory";
+  language?: string;
+  listenSeconds?: number;
+  ttsVoice?: string | null;
+  ttsRate?: number;
+  ttsVolume?: number;
+}
+
+export interface VoiceStatusResponse {
+  enabled: boolean;
+  muted: boolean;
+  ttsEnabled: boolean;
+  sttStatus: VoiceEngineStatus;
+  ttsStatus: VoiceEngineStatus;
+  sttEngine: string;
+  ttsEngine: string;
+  language: string;
+  rawAudioStored: boolean;
+  detail: string;
+  checkedAt: string;
+}
+
+export interface VoiceTranscriptRequest {
+  listenSeconds?: number | null;
+}
+
+export interface VoiceTranscriptResponse {
+  transcript: string;
+  engine: string;
+  language: string;
+  durationSeconds: number;
+  rawAudioStored: boolean;
+  createdAt: string;
+}
+
+export interface VoiceSpeakRequest {
+  text: string;
+}
+
+export interface VoiceSpeakResponse {
+  spoken: boolean;
+  engine: string;
+  characters: number;
+  rawAudioStored: boolean;
+  createdAt: string;
+}
+
 export interface ConnectorItem {
   id: string;
   name: string;
@@ -697,6 +766,114 @@ export interface ConnectorSyncResponse {
 export interface ConnectorSyncRunsResponse {
   items: ConnectorSyncRun[];
   total: number;
+}
+
+export interface ReleaseReadinessItem {
+  id: string;
+  label: string;
+  status: ReleaseCheckStatus;
+  detail: string;
+}
+
+export interface ReleaseReadinessResponse {
+  installerReady: boolean;
+  updatePlanReady: boolean;
+  checkedAt: string;
+  items: ReleaseReadinessItem[];
+}
+
+export interface ReleaseUpdatePlanResponse {
+  currentVersion: string;
+  channel: "manual";
+  automaticUpdatesEnabled: boolean;
+  plan: string[];
+  checkedAt: string;
+}
+
+export interface ReleaseLogFile {
+  path: string;
+  name: string;
+  sizeBytes: number;
+  modifiedAt: string;
+}
+
+export interface ReleaseLogListResponse {
+  files: ReleaseLogFile[];
+  total: number;
+}
+
+export interface ReleaseLogReadResponse {
+  path: string;
+  content: string;
+  truncated: boolean;
+  sizeBytes: number;
+  modifiedAt: string;
+}
+
+export interface ReleasePrivacyExportResponse {
+  exportedAt: string;
+  schemaVersion: number;
+  sections: Record<string, unknown>;
+  counts: Record<string, number>;
+  notes: string[];
+}
+
+export interface DeleteLocalDataRequest {
+  confirmationPhrase: string;
+  includeVault?: boolean;
+}
+
+export interface DeleteLocalDataResponse {
+  deleted: boolean;
+  deletedPaths: string[];
+  vaultDeleted: boolean;
+  recreatedStores: string[];
+  restartRecommended: boolean;
+  detail: string;
+}
+
+export interface ConnectorHealthItem {
+  connectorId: string;
+  name: string;
+  health: ConnectorHealthStatus;
+  status: ConnectorStatus;
+  enabled: boolean;
+  tokenStored: boolean;
+  oauthConfigured: boolean;
+  lastSyncAt?: string | null;
+  nextSyncAt?: string | null;
+  lastError?: string | null;
+  detail: string;
+}
+
+export interface ConnectorHealthResponse {
+  checkedAt: string;
+  items: ConnectorHealthItem[];
+  healthy: number;
+  attention: number;
+  errors: number;
+}
+
+export interface PerformanceMetric {
+  name: string;
+  value: number;
+  unit: string;
+  detail: string;
+}
+
+export interface PerformanceProfileResponse {
+  capturedAt: string;
+  uptimeSeconds: number;
+  metrics: PerformanceMetric[];
+}
+
+export interface CrashRecoveryResponse {
+  currentSessionId: string;
+  previousCrashDetected: boolean;
+  startedAt: string;
+  lastStartedAt?: string | null;
+  lastCleanShutdownAt?: string | null;
+  recoveryActions: string[];
 }
 
 export type SettingsChangedEvent = BackendEvent<
@@ -786,6 +963,19 @@ export type ConnectorSyncSkippedEvent = BackendEvent<"connector.sync.skipped", C
 export type ToolCompletedEvent = BackendEvent<"tool.completed", ToolRunResponse>;
 export type ToolFailedEvent = BackendEvent<"tool.failed", ToolRunResponse>;
 export type ToolPermissionRequiredEvent = BackendEvent<"tool.permission.required", ToolRunResponse>;
+export type VoiceSettingsUpdatedEvent = BackendEvent<"voice.settings.updated", VoiceSettings>;
+export type VoiceRecordingStartedEvent = BackendEvent<"voice.recording.started", { rawAudioStored: boolean }>;
+export type VoiceRecordingStoppedEvent = BackendEvent<"voice.recording.stopped", { rawAudioStored: boolean }>;
+export type VoiceTranscriptionStartedEvent = BackendEvent<"voice.transcription.started", { engine: string }>;
+export type VoiceTranscriptionCompletedEvent = BackendEvent<"voice.transcription.completed", VoiceTranscriptResponse>;
+export type VoiceTranscriptionFailedEvent = BackendEvent<
+  "voice.transcription.failed",
+  { reason: string; rawAudioStored: boolean }
+>;
+export type TtsStartedEvent = BackendEvent<"tts.started", { engine: string }>;
+export type TtsCompletedEvent = BackendEvent<"tts.completed", VoiceSpeakResponse>;
+export type TtsFailedEvent = BackendEvent<"tts.failed", { reason: string; rawAudioStored: boolean }>;
+export type ReleaseLocalDataDeletedEvent = BackendEvent<"release.local_data.deleted", DeleteLocalDataResponse>;
 
 export type Phase3CoreEvent = SettingsChangedEvent | VaultSelectedEvent | OnboardingStateChangedEvent;
 export type Phase4CoreEvent =
@@ -812,6 +1002,17 @@ export type Phase8CoreEvent =
   | ConnectorSyncFailedEvent
   | ConnectorSyncSkippedEvent;
 export type Phase11CoreEvent = ToolCompletedEvent | ToolFailedEvent | ToolPermissionRequiredEvent;
+export type Phase13CoreEvent =
+  | VoiceSettingsUpdatedEvent
+  | VoiceRecordingStartedEvent
+  | VoiceRecordingStoppedEvent
+  | VoiceTranscriptionStartedEvent
+  | VoiceTranscriptionCompletedEvent
+  | VoiceTranscriptionFailedEvent
+  | TtsStartedEvent
+  | TtsCompletedEvent
+  | TtsFailedEvent;
+export type Phase15CoreEvent = ReleaseLocalDataDeletedEvent;
 
 export type AppCoreEvent =
   | CoreWebSocketEvent
@@ -820,7 +1021,9 @@ export type AppCoreEvent =
   | Phase5CoreEvent
   | Phase7CoreEvent
   | Phase8CoreEvent
-  | Phase11CoreEvent;
+  | Phase11CoreEvent
+  | Phase13CoreEvent
+  | Phase15CoreEvent;
 
 export interface FloatingWindowPosition {
   x: number;
