@@ -306,6 +306,7 @@ ToolId = Literal[
     "day_planner",
 ]
 ToolRisk = Literal["low", "public_web", "local_file", "source_code", "dangerous"]
+VoiceEngineStatus = Literal["available", "disabled", "muted", "unsupported", "missing", "error"]
 
 
 class LocalModelInfo(ApiModel):
@@ -541,8 +542,76 @@ class DayPlannerRequest(ApiModel):
     notes: str = ""
 
 
+class VoiceSettings(ApiModel):
+    enabled: bool = False
+    muted: bool = True
+    tts_enabled: bool = False
+    transcript_retention: Literal["none", "memory"] = "none"
+    stt_engine: Literal["windows_speech"] = "windows_speech"
+    tts_engine: Literal["windows_speech"] = "windows_speech"
+    language: str = "en-US"
+    listen_seconds: int = Field(default=6, ge=2, le=20)
+    tts_voice: str | None = None
+    tts_rate: int = Field(default=0, ge=-10, le=10)
+    tts_volume: int = Field(default=85, ge=0, le=100)
+    updated_at: str
+
+
+class VoiceSettingsPatch(ApiModel):
+    enabled: bool | None = None
+    muted: bool | None = None
+    tts_enabled: bool | None = None
+    transcript_retention: Literal["none", "memory"] | None = None
+    language: str | None = None
+    listen_seconds: int | None = Field(default=None, ge=2, le=20)
+    tts_voice: str | None = None
+    tts_rate: int | None = Field(default=None, ge=-10, le=10)
+    tts_volume: int | None = Field(default=None, ge=0, le=100)
+
+
+class VoiceStatusResponse(ApiModel):
+    enabled: bool
+    muted: bool
+    tts_enabled: bool
+    stt_status: VoiceEngineStatus
+    tts_status: VoiceEngineStatus
+    stt_engine: str
+    tts_engine: str
+    language: str
+    raw_audio_stored: bool = False
+    detail: str
+    checked_at: str
+
+
+class VoiceTranscriptRequest(ApiModel):
+    listen_seconds: int | None = Field(default=None, ge=2, le=20)
+
+
+class VoiceTranscriptResponse(ApiModel):
+    transcript: str
+    engine: str
+    language: str
+    duration_seconds: int
+    raw_audio_stored: bool = False
+    created_at: str
+
+
+class VoiceSpeakRequest(ApiModel):
+    text: str
+
+
+class VoiceSpeakResponse(ApiModel):
+    spoken: bool
+    engine: str
+    characters: int
+    raw_audio_stored: bool = False
+    created_at: str
+
+
 ConnectorStatus = Literal["not_connected", "connected", "syncing", "paused", "error"]
 ConnectorSyncRunStatus = Literal["queued", "running", "completed", "failed", "skipped"]
+ReleaseCheckStatus = Literal["ready", "warning", "missing", "blocked"]
+ConnectorHealthStatus = Literal["healthy", "not_connected", "paused", "syncing", "error", "attention"]
 
 
 class ConnectorItem(ApiModel):
@@ -621,3 +690,111 @@ class ConnectorSyncResponse(ApiModel):
 class ConnectorSyncRunsResponse(ApiModel):
     items: list[ConnectorSyncRun]
     total: int
+
+
+class ReleaseReadinessItem(ApiModel):
+    id: str
+    label: str
+    status: ReleaseCheckStatus
+    detail: str
+
+
+class ReleaseReadinessResponse(ApiModel):
+    installer_ready: bool
+    update_plan_ready: bool
+    checked_at: str
+    items: list[ReleaseReadinessItem]
+
+
+class ReleaseUpdatePlanResponse(ApiModel):
+    current_version: str
+    channel: Literal["manual"] = "manual"
+    automatic_updates_enabled: bool = False
+    plan: list[str]
+    checked_at: str
+
+
+class ReleaseLogFile(ApiModel):
+    path: str
+    name: str
+    size_bytes: int
+    modified_at: str
+
+
+class ReleaseLogListResponse(ApiModel):
+    files: list[ReleaseLogFile]
+    total: int
+
+
+class ReleaseLogReadResponse(ApiModel):
+    path: str
+    content: str
+    truncated: bool
+    size_bytes: int
+    modified_at: str
+
+
+class ReleasePrivacyExportResponse(ApiModel):
+    exported_at: str
+    schema_version: int = 1
+    sections: dict[str, Any]
+    counts: dict[str, int]
+    notes: list[str]
+
+
+class DeleteLocalDataRequest(ApiModel):
+    confirmation_phrase: str
+    include_vault: bool = False
+
+
+class DeleteLocalDataResponse(ApiModel):
+    deleted: bool
+    deleted_paths: list[str]
+    vault_deleted: bool = False
+    recreated_stores: list[str]
+    restart_recommended: bool
+    detail: str
+
+
+class ConnectorHealthItem(ApiModel):
+    connector_id: str
+    name: str
+    health: ConnectorHealthStatus
+    status: ConnectorStatus
+    enabled: bool
+    token_stored: bool
+    oauth_configured: bool
+    last_sync_at: str | None = None
+    next_sync_at: str | None = None
+    last_error: str | None = None
+    detail: str
+
+
+class ConnectorHealthResponse(ApiModel):
+    checked_at: str
+    items: list[ConnectorHealthItem]
+    healthy: int
+    attention: int
+    errors: int
+
+
+class PerformanceMetric(ApiModel):
+    name: str
+    value: float
+    unit: str
+    detail: str
+
+
+class PerformanceProfileResponse(ApiModel):
+    captured_at: str
+    uptime_seconds: float
+    metrics: list[PerformanceMetric]
+
+
+class CrashRecoveryResponse(ApiModel):
+    current_session_id: str
+    previous_crash_detected: bool
+    started_at: str
+    last_started_at: str | None = None
+    last_clean_shutdown_at: str | None = None
+    recovery_actions: list[str]
