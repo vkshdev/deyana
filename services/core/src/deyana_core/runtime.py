@@ -14,10 +14,12 @@ from .local_models import ModelRouter
 from .memory import MemoryStore
 from .models import CoreEvent, DependencyStatus, HealthResponse, StatusResponse
 from .privacy import PrivacyFirewall
+from .release import ReleaseService
 from .runtime_time import utc_timestamp
 from .settings import CoreSettings
 from .storage import CoreStore
 from .tools import ToolService
+from .voice import LocalVoiceService
 
 
 class RuntimeState:
@@ -38,8 +40,20 @@ class RuntimeState:
         self.privacy_firewall = PrivacyFirewall(settings.data_dir, self.store)
         self.privacy_firewall.initialize()
         self.tool_service = ToolService(self.privacy_firewall, self.memory_store)
+        self.voice_service = LocalVoiceService(settings.data_dir)
         self.connector_manager = ConnectorManager(settings.data_dir, self.privacy_firewall, self.memory_store)
         self.connector_manager.initialize()
+        self.release_service = ReleaseService(
+            settings=settings,
+            store=self.store,
+            memory_store=self.memory_store,
+            chat_store=self.chat_store,
+            privacy_firewall=self.privacy_firewall,
+            connector_manager=self.connector_manager,
+            model_router=self.model_router,
+            voice_service=self.voice_service,
+        )
+        self.release_service.mark_startup()
 
     @property
     def uptime_seconds(self) -> float:
@@ -95,6 +109,16 @@ class RuntimeState:
                     status="available",
                     detail="Connector registry, encrypted token storage, and sync run logs initialized.",
                 ),
+                DependencyStatus(
+                    name="local_voice",
+                    status="available" if self.voice_service.provider_status() == "available" else "deferred",
+                    detail="Local OS speech engine for push-to-talk and TTS; disabled by default in settings.",
+                ),
+                DependencyStatus(
+                    name="release_readiness",
+                    status="available",
+                    detail="Logs, privacy export, data deletion, connector health, profiling, and crash recovery are available.",
+                ),
             ],
             feature_flags={
                 "websocketEvents": True,
@@ -121,7 +145,21 @@ class RuntimeState:
                 "expandedConnectors": True,
                 "connectorScheduler": True,
                 "encryptedTokenStorage": True,
-                "voice": False,
+                "voice": True,
+                "localStt": True,
+                "localTts": True,
+                "voiceSettings": True,
+                "floatingUiPolish": True,
+                "reduceMotion": True,
+                "lowPowerMode": True,
+                "multiMonitorPositioning": True,
+                "releaseQuality": True,
+                "logsViewer": True,
+                "privacyExport": True,
+                "deleteLocalData": True,
+                "connectorHealth": True,
+                "performanceProfiling": True,
+                "crashRecovery": True,
             },
             timestamp=self.timestamp(),
         )

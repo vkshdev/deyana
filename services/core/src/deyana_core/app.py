@@ -17,10 +17,12 @@ from .api import (
     models_router,
     onboarding_router,
     privacy_router,
+    release_router,
     settings_router,
     status_router,
     tools_router,
     vault_router,
+    voice_router,
     websocket_router,
 )
 from .runtime import RuntimeState
@@ -42,6 +44,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         runtime.mark_stopping("lifespan_shutdown")
+        runtime.release_service.mark_clean_shutdown()
         await runtime.event_bus.publish(
             runtime.event(
                 "backend.lifecycle.changed",
@@ -102,8 +105,10 @@ def create_app(runtime: RuntimeState | None = None) -> FastAPI:
     app.include_router(models_router)
     app.include_router(chat_router)
     app.include_router(privacy_router)
+    app.include_router(release_router)
     app.include_router(connectors_router)
     app.include_router(tools_router)
+    app.include_router(voice_router)
     app.include_router(lifecycle_router)
     app.include_router(websocket_router)
     return app
