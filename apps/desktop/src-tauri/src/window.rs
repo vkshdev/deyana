@@ -46,6 +46,45 @@ pub fn set_mode(app: &AppHandle, mode: &str) -> Result<(), String> {
     record_current_position(app, &window)
 }
 
+pub fn dock_to_edge(app: &AppHandle, edge: &str) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window is not registered".to_string())?;
+    let mode = settings::read_settings(app).ui_mode;
+    let (width, _) = dimensions_for_mode(&mode)?;
+    let monitor = active_monitor(&window)?;
+    let scale = monitor.as_ref().map(|monitor| monitor.scale_factor()).unwrap_or(1.0);
+    let width_px = (width * scale).round() as i32;
+    let edge_padding = (MIN_EDGE_PADDING * scale).round() as i32;
+    let right_offset = (DEFAULT_RIGHT_OFFSET * scale).round() as i32;
+    let top_offset = (DEFAULT_TOP_OFFSET * scale).round() as i32;
+    let current_y = window.outer_position().map(|position| position.y).unwrap_or_else(|_| {
+        monitor
+            .as_ref()
+            .map(|monitor| monitor.position().y + top_offset)
+            .unwrap_or(top_offset)
+    });
+
+    let x = if let Some(monitor) = monitor {
+        match edge {
+            "left" => monitor.position().x + edge_padding,
+            "right" => monitor.position().x + monitor.size().width as i32 - width_px - right_offset,
+            _ => return Err(format!("unsupported dock edge: {edge}")),
+        }
+    } else {
+        match edge {
+            "left" => edge_padding,
+            "right" => right_offset,
+            _ => return Err(format!("unsupported dock edge: {edge}")),
+        }
+    };
+
+    window
+        .set_position(Position::Physical(PhysicalPosition::new(x, current_y)))
+        .map_err(|error| error.to_string())?;
+    record_current_position(app, &window)
+}
+
 pub fn attach_position_persistence(app: &AppHandle, window: &WebviewWindow) {
     let app = app.clone();
     let observed_window = window.clone();
