@@ -4,6 +4,7 @@ import { assistantStore } from "../../stores/assistantStore";
 import { BackendStatusBadge } from "./BackendStatusBadge";
 import { FloatingDockHandle } from "./FloatingDockHandle";
 import { FloatingModelBadge } from "./FloatingModelBadge";
+import { FloatingPreferences } from "./FloatingPreferences";
 import { FloatingPrivacyBadge } from "./FloatingPrivacyBadge";
 import { FloatingStatusRing } from "./FloatingStatusRing";
 import { FloatingSyncIndicator } from "./FloatingSyncIndicator";
@@ -13,7 +14,9 @@ import { MemoryBrowser } from "../memory/MemoryBrowser";
 import { ModelSetupPanel } from "./ModelSetupPanel";
 import { PrivacyAuditPanel } from "./PrivacyAuditPanel";
 import { QuickActions } from "./QuickActions";
+import { ReleaseQualityPanel } from "./ReleaseQualityPanel";
 import { ToolPanel } from "./ToolPanel";
+import { VoicePanel } from "./VoicePanel";
 
 interface FloatingPanelProps {
   snapshot: AssistantSnapshot;
@@ -74,9 +77,12 @@ export function FloatingPanel({ snapshot }: FloatingPanelProps) {
           <FloatingSyncIndicator status={snapshot.syncStatus} />
         </div>
 
+        <FloatingPreferences snapshot={snapshot} />
         <ModelSetupPanel snapshot={snapshot} />
+        <VoicePanel snapshot={snapshot} />
         <LocalChat snapshot={snapshot} />
         <PrivacyAuditPanel snapshot={snapshot} />
+        <ReleaseQualityPanel snapshot={snapshot} />
 
         <QuickActions actions={snapshot.quickActions} />
         <ToolPanel snapshot={snapshot} />
@@ -89,10 +95,11 @@ export function FloatingPanel({ snapshot }: FloatingPanelProps) {
           className="voice-control"
           type="button"
           title="Voice"
-          onClick={() => assistantStore.setAssistantState("LISTENING")}
+          disabled={snapshot.voiceBusy}
+          onClick={() => void assistantStore.runPushToTalk()}
         >
           <Mic size={17} aria-hidden="true" />
-          <span>Push to talk</span>
+          <span>{snapshot.voiceBusy ? snapshot.assistantState.replaceAll("_", " ") : "Push to talk"}</span>
         </button>
         <button
           className="icon-button"

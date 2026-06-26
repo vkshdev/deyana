@@ -8,10 +8,9 @@ export function CompactVoiceButton() {
       type="button"
       title="Voice"
       aria-label="Voice"
-      onClick={() => assistantStore.setAssistantState("LISTENING")}
+      onClick={() => void assistantStore.runPushToTalk()}
     >
       <Mic size={18} aria-hidden="true" />
     </button>
   );
 }
-
