@@ -9,10 +9,11 @@
     "check": "pnpm -r check",
     "core:install": "python -m venv services/core/.venv && services\\core\\.venv\\Scripts\\python.exe -m pip install -e \"services/core[dev]\"",
     "core:dev": "services\\core\\.venv\\Scripts\\python.exe -m deyana_core",
-    "core:test": "services\\core\\.venv\\Scripts\\python.exe -m pytest services/core/tests",
+    "core:test": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$base = Join-Path (Get-Location) ('.tmp\\\\pytest-' + $PID); New-Item -ItemType Directory -Force -Path $base | Out-Null; services\\\\core\\\\.venv\\\\Scripts\\\\python.exe -m pytest services/core/tests --basetemp $base\"",
     "dev": "pnpm --filter @deyana/desktop dev",
     "desktop:dev": "pnpm --filter @deyana/desktop tauri dev",
-    "desktop:build": "pnpm --filter @deyana/desktop tauri build"
+    "desktop:build": "pnpm --filter @deyana/desktop tauri build",
+    "release:check": "pnpm check && pnpm core:test && cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml && pnpm --filter @deyana/desktop build"
   },
   "engines": {
     "node": ">=22.0.0",
