@@ -46,11 +46,28 @@ import type {
   PrivacyCheckResponse,
   PrivacyStatusResponse,
   ProjectSummaryRequest,
+  ConnectorHealthResponse,
+  DeleteLocalDataRequest,
+  DeleteLocalDataResponse,
+  CrashRecoveryResponse,
+  PerformanceProfileResponse,
+  ReleaseLogListResponse,
+  ReleaseLogReadResponse,
+  ReleasePrivacyExportResponse,
+  ReleaseReadinessResponse,
+  ReleaseUpdatePlanResponse,
   SettingsPatch,
   ToolListResponse,
   ToolRunResponse,
   VaultSelectRequest,
   VaultSelectResponse,
+  VoiceSettings,
+  VoiceSettingsPatch,
+  VoiceSpeakRequest,
+  VoiceSpeakResponse,
+  VoiceStatusResponse,
+  VoiceTranscriptRequest,
+  VoiceTranscriptResponse,
   WebFetchRequest,
   WebSearchRequest
 } from "@deyana/schemas";
@@ -166,6 +183,140 @@ export const backendClient = {
 
   async dayPlannerTool(request: DayPlannerRequest): Promise<ToolRunResponse> {
     return postTool("/tools/day-planner", request);
+  },
+
+  async getVoiceSettings(): Promise<VoiceSettings> {
+    const response = await fetch(`${coreService.endpoint}/voice/settings`);
+    if (!response.ok) {
+      throw new Error(`voice settings returned ${response.status}`);
+    }
+    return response.json() as Promise<VoiceSettings>;
+  },
+
+  async patchVoiceSettings(request: VoiceSettingsPatch): Promise<VoiceSettings> {
+    const response = await fetch(`${coreService.endpoint}/voice/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+    if (!response.ok) {
+      const detail = await readErrorDetail(response);
+      throw new Error(detail || `voice settings update returned ${response.status}`);
+    }
+    return response.json() as Promise<VoiceSettings>;
+  },
+
+  async getVoiceStatus(): Promise<VoiceStatusResponse> {
+    const response = await fetch(`${coreService.endpoint}/voice/status`);
+    if (!response.ok) {
+      throw new Error(`voice status returned ${response.status}`);
+    }
+    return response.json() as Promise<VoiceStatusResponse>;
+  },
+
+  async transcribeVoice(request: VoiceTranscriptRequest): Promise<VoiceTranscriptResponse> {
+    const response = await fetch(`${coreService.endpoint}/voice/transcribe`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+    if (!response.ok) {
+      const detail = await readErrorDetail(response);
+      throw new Error(detail || `voice transcription returned ${response.status}`);
+    }
+    return response.json() as Promise<VoiceTranscriptResponse>;
+  },
+
+  async speakVoice(request: VoiceSpeakRequest): Promise<VoiceSpeakResponse> {
+    const response = await fetch(`${coreService.endpoint}/voice/speak`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+    if (!response.ok) {
+      const detail = await readErrorDetail(response);
+      throw new Error(detail || `voice speech returned ${response.status}`);
+    }
+    return response.json() as Promise<VoiceSpeakResponse>;
+  },
+
+  async getReleaseReadiness(): Promise<ReleaseReadinessResponse> {
+    const response = await fetch(`${coreService.endpoint}/release/readiness`);
+    if (!response.ok) {
+      throw new Error(`release readiness returned ${response.status}`);
+    }
+    return response.json() as Promise<ReleaseReadinessResponse>;
+  },
+
+  async getReleaseUpdatePlan(): Promise<ReleaseUpdatePlanResponse> {
+    const response = await fetch(`${coreService.endpoint}/release/update-plan`);
+    if (!response.ok) {
+      throw new Error(`release update plan returned ${response.status}`);
+    }
+    return response.json() as Promise<ReleaseUpdatePlanResponse>;
+  },
+
+  async listReleaseLogs(): Promise<ReleaseLogListResponse> {
+    const response = await fetch(`${coreService.endpoint}/release/logs`);
+    if (!response.ok) {
+      throw new Error(`release logs returned ${response.status}`);
+    }
+    return response.json() as Promise<ReleaseLogListResponse>;
+  },
+
+  async readReleaseLog(path: string): Promise<ReleaseLogReadResponse> {
+    const params = new URLSearchParams({ path });
+    const response = await fetch(`${coreService.endpoint}/release/logs/read?${params.toString()}`);
+    if (!response.ok) {
+      const detail = await readErrorDetail(response);
+      throw new Error(detail || `release log read returned ${response.status}`);
+    }
+    return response.json() as Promise<ReleaseLogReadResponse>;
+  },
+
+  async getPrivacyExport(): Promise<ReleasePrivacyExportResponse> {
+    const response = await fetch(`${coreService.endpoint}/release/privacy-export`);
+    if (!response.ok) {
+      throw new Error(`release privacy export returned ${response.status}`);
+    }
+    return response.json() as Promise<ReleasePrivacyExportResponse>;
+  },
+
+  async deleteLocalData(request: DeleteLocalDataRequest): Promise<DeleteLocalDataResponse> {
+    const response = await fetch(`${coreService.endpoint}/release/delete-local-data`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+    if (!response.ok) {
+      const detail = await readErrorDetail(response);
+      throw new Error(detail || `delete local data returned ${response.status}`);
+    }
+    return response.json() as Promise<DeleteLocalDataResponse>;
+  },
+
+  async getConnectorHealth(): Promise<ConnectorHealthResponse> {
+    const response = await fetch(`${coreService.endpoint}/release/connector-health`);
+    if (!response.ok) {
+      throw new Error(`connector health returned ${response.status}`);
+    }
+    return response.json() as Promise<ConnectorHealthResponse>;
+  },
+
+  async getPerformanceProfile(): Promise<PerformanceProfileResponse> {
+    const response = await fetch(`${coreService.endpoint}/release/performance`);
+    if (!response.ok) {
+      throw new Error(`performance profile returned ${response.status}`);
+    }
+    return response.json() as Promise<PerformanceProfileResponse>;
+  },
+
+  async getCrashRecovery(): Promise<CrashRecoveryResponse> {
+    const response = await fetch(`${coreService.endpoint}/release/crash-recovery`);
+    if (!response.ok) {
+      throw new Error(`crash recovery returned ${response.status}`);
+    }
+    return response.json() as Promise<CrashRecoveryResponse>;
   },
 
   connectEvents(

@@ -95,6 +95,34 @@ export const tauriClient = {
     return invoke<DesktopSettings>("set_always_on_top", { alwaysOnTop });
   },
 
+  async setLowPowerMode(lowPowerMode: boolean): Promise<DesktopSettings> {
+    if (!isTauriRuntime()) {
+      const next = { ...readBrowserSettings(), lowPowerMode };
+      writeBrowserSettings(next);
+      return next;
+    }
+
+    return invoke<DesktopSettings>("set_low_power_mode", { lowPowerMode });
+  },
+
+  async setReduceMotion(reduceMotion: boolean): Promise<DesktopSettings> {
+    if (!isTauriRuntime()) {
+      const next = { ...readBrowserSettings(), reduceMotion };
+      writeBrowserSettings(next);
+      return next;
+    }
+
+    return invoke<DesktopSettings>("set_reduce_motion", { reduceMotion });
+  },
+
+  async dockFloatingWindow(edge: "left" | "right"): Promise<DesktopSettings> {
+    if (!isTauriRuntime()) {
+      return readBrowserSettings();
+    }
+
+    return invoke<DesktopSettings>("dock_floating_window", { edge });
+  },
+
   async hideMainWindow(): Promise<void> {
     if (!isTauriRuntime()) {
       return;
