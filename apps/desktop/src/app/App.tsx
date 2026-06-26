@@ -19,6 +19,8 @@ export function App() {
     <MotionConfig reducedMotion={reducedMotion ? "always" : "user"}>
       <motion.main
         className={isExpanded ? "app-shell app-shell-expanded" : "app-shell app-shell-compact"}
+        data-low-power={snapshot.settings.lowPowerMode ? "true" : "false"}
+        data-reduce-motion={snapshot.settings.reduceMotion ? "true" : "false"}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.18, ease: "easeOut" }}
