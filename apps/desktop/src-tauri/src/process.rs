@@ -61,7 +61,7 @@ impl CoreProcessManager {
             return Ok(self.snapshot());
         }
 
-        let service_dir = service_dir()?;
+        let service_dir = service_dir(app)?;
         let python = python_executable(&service_dir);
         let app_config_dir = app
             .path()
@@ -88,6 +88,7 @@ impl CoreProcessManager {
             .env("DEYANA_CORE_DATA_DIR", data_dir.to_string_lossy().to_string())
             .env("DEYANA_CORE_LOG_DIR", log_dir.join("core").to_string_lossy().to_string())
             .env("DEYANA_CORE_HEARTBEAT_SECONDS", "5")
+            .env("PYTHONPATH", service_dir.join("src").to_string_lossy().to_string())
             .stdout(Stdio::from(stdout))
             .stderr(Stdio::from(stderr));
 
@@ -304,7 +305,14 @@ fn python_executable(service_dir: &Path) -> PathBuf {
     }
 }
 
-fn service_dir() -> Result<PathBuf, String> {
+fn service_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let bundled_service_dir = resource_dir.join("services").join("core");
+        if bundled_service_dir.join("src").join("deyana_core").exists() {
+            return Ok(bundled_service_dir);
+        }
+    }
+
     let tauri_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let desktop_dir = tauri_dir
         .parent()

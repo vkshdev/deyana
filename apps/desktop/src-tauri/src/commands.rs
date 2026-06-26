@@ -37,6 +37,39 @@ pub fn set_always_on_top(
 }
 
 #[tauri::command]
+pub fn set_low_power_mode(
+    app: AppHandle,
+    low_power_mode: bool,
+) -> Result<settings::DesktopSettings, String> {
+    settings::update_settings(&app, |settings| {
+        settings.low_power_mode = low_power_mode;
+    })
+}
+
+#[tauri::command]
+pub fn set_reduce_motion(
+    app: AppHandle,
+    reduce_motion: bool,
+) -> Result<settings::DesktopSettings, String> {
+    settings::update_settings(&app, |settings| {
+        settings.reduce_motion = reduce_motion;
+    })
+}
+
+#[tauri::command]
+pub fn dock_floating_window(
+    app: AppHandle,
+    edge: String,
+) -> Result<settings::DesktopSettings, String> {
+    if edge != "left" && edge != "right" {
+        return Err(format!("unsupported dock edge: {edge}"));
+    }
+
+    window::dock_to_edge(&app, &edge)?;
+    Ok(settings::read_settings(&app))
+}
+
+#[tauri::command]
 pub fn show_main_window(app: AppHandle) -> Result<(), String> {
     let window = app
         .get_webview_window("main")
