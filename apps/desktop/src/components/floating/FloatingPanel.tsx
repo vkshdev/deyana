@@ -1,4 +1,5 @@
 import type { AssistantSnapshot } from "../../stores/assistantStore";
+import { productIdentity } from "@deyana/config";
 import { Bell, ChevronRight, Eye, EyeOff, Mic, RotateCw, Settings } from "lucide-react";
 import { assistantStore } from "../../stores/assistantStore";
 import { BackendStatusBadge } from "./BackendStatusBadge";
@@ -24,13 +25,13 @@ interface FloatingPanelProps {
 
 export function FloatingPanel({ snapshot }: FloatingPanelProps) {
   return (
-    <section className="floating-panel" aria-label="DE'YANA assistant panel">
+    <section className="floating-panel" aria-label={`${productIdentity.name} assistant panel`}>
       <header className="panel-header">
         <FloatingDockHandle />
         <div className="brand-mark" data-tauri-drag-region>
           <FloatingStatusRing state={snapshot.assistantState} />
           <div data-tauri-drag-region>
-            <strong>DE'YANA</strong>
+            <strong>{productIdentity.brand}</strong>
             <span>{snapshot.assistantState.replaceAll("_", " ")}</span>
           </div>
         </div>

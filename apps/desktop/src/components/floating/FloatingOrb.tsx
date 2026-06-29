@@ -1,4 +1,5 @@
 import type { AssistantSnapshot } from "../../stores/assistantStore";
+import { productIdentity } from "@deyana/config";
 import { ChevronLeft, MessageCircle, Power, Server, ServerCrash } from "lucide-react";
 import { assistantStore } from "../../stores/assistantStore";
 import { CompactVoiceButton } from "./CompactVoiceButton";
@@ -11,7 +12,7 @@ interface FloatingOrbProps {
 
 export function FloatingOrb({ snapshot }: FloatingOrbProps) {
   return (
-    <section className="floating-orb" aria-label="DE'YANA compact assistant">
+    <section className="floating-orb" aria-label={`${productIdentity.name} compact assistant`}>
       <FloatingDockHandle />
       <FloatingStatusRing state={snapshot.assistantState} compact />
       <div className="compact-status-stack">
