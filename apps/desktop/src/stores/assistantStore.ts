@@ -498,8 +498,8 @@ class AssistantStore {
 
     this.setSnapshot({ toolBusy: true, error: undefined });
     try {
-      const repoPath = this.coreRepoPath();
-      const result = await this.executeTool(this.snapshot.toolActive, input, userApproved, repoPath);
+
+      const result = await this.executeTool(this.snapshot.toolActive, input, userApproved);
       this.setSnapshot({ toolResult: result, toolBusy: false });
     } catch (error) {
       this.setSnapshot({
@@ -509,7 +509,7 @@ class AssistantStore {
     }
   };
 
-  private executeTool = async (tool: ToolId, input: string, userApproved: boolean, repoPath: string) => {
+  private executeTool = async (tool: ToolId, input: string, userApproved: boolean) => {
     switch (tool) {
       case "web_search":
         return backendClient.webSearch({ query: input, userApproved });
@@ -518,11 +518,11 @@ class AssistantStore {
       case "read_file":
         return backendClient.readFileTool({ path: input, allowedRoot: approvedRootFromPath(input), userApproved });
       case "git_status":
-        return backendClient.gitStatusTool({ repoPath: input || repoPath, userApproved });
+        return backendClient.gitStatusTool({ repoPath: input, userApproved });
       case "git_diff":
-        return backendClient.gitDiffTool({ repoPath: input || repoPath, userApproved });
+        return backendClient.gitDiffTool({ repoPath: input, userApproved });
       case "commit_message":
-        return backendClient.commitMessageTool({ repoPath: input || repoPath, userApproved });
+        return backendClient.commitMessageTool({ repoPath: input, userApproved });
       case "code_task":
         return backendClient.codeTaskTool({ goal: input, userApproved });
       case "day_planner":
@@ -532,7 +532,7 @@ class AssistantStore {
     }
   };
 
-  private coreRepoPath = () => this.snapshot.coreSettings.vaultPath ?? "D:\\de'yana";
+
 
   private restingAssistantState = (): AssistantState =>
     this.snapshot.settings.uiMode === "expanded" ? "EXPANDED_PANEL" : "COMPACT_FLOATING";

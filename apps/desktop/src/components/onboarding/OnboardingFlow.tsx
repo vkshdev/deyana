@@ -1,4 +1,5 @@
 import type { AssistantSnapshot } from "../../stores/assistantStore";
+import { productIdentity } from "@deyana/config";
 import { Brain, Check, ChevronRight, FolderOpen, HardDrive, ShieldCheck } from "lucide-react";
 import { assistantStore } from "../../stores/assistantStore";
 import { FloatingDockHandle } from "../floating/FloatingDockHandle";
@@ -25,11 +26,11 @@ export function OnboardingFlow({ snapshot }: OnboardingFlowProps) {
   const step = snapshot.onboardingStep;
 
   return (
-    <section className="floating-panel onboarding-panel" aria-label="DE'YANA onboarding">
+    <section className="floating-panel onboarding-panel" aria-label={`${productIdentity.name} onboarding`}>
       <FloatingDockHandle />
       <header className="onboarding-header">
         <div>
-          <strong>DE'YANA</strong>
+          <strong>{productIdentity.brand}</strong>
           <span>{step === "complete" ? "Ready" : "Private desktop setup"}</span>
         </div>
         <div className="onboarding-progress" aria-label="Onboarding progress">
@@ -60,7 +61,7 @@ function WelcomeStep() {
       </div>
       <div className="onboarding-copy">
         <h1>Private assistant, local first.</h1>
-        <p>DE'YANA keeps the desktop shell, backend, settings, and vault on this computer.</p>
+        <p>{productIdentity.name} keeps the desktop shell, backend, settings, and vault on this computer.</p>
       </div>
       <button
         className="primary-action"
@@ -85,10 +86,11 @@ function PrivacyStep() {
         <p>Connector content, local files, source code, notes, transcripts, memory, and summaries stay local.</p>
       </div>
       <div className="mode-row" role="radiogroup" aria-label="Privacy mode">
-        <button className="mode-option mode-option-selected" type="button" role="radio" aria-checked="true">
+        <label className="mode-option mode-option-selected">
+          <input className="sr-only" type="radio" name="privacy-mode" value="local_only" checked readOnly />
           <ShieldCheck size={15} aria-hidden="true" />
           <span>Local only</span>
-        </button>
+        </label>
       </div>
       <button
         className="primary-action"
@@ -113,33 +115,41 @@ function LocalAiStep({ snapshot }: OnboardingFlowProps) {
         <p>Optimized for this 8 GB laptop with conservative sync and local models.</p>
       </div>
       <div className="mode-row" role="radiogroup" aria-label="Model profile">
-        <button
+        <label
           className={
             snapshot.onboarding.selectedModelProfile === "low_spec"
               ? "mode-option mode-option-selected"
               : "mode-option"
           }
-          type="button"
-          role="radio"
-          aria-checked={snapshot.onboarding.selectedModelProfile === "low_spec"}
-          onClick={() => assistantStore.setOnboardingModelProfile("low_spec")}
         >
+          <input
+            className="sr-only"
+            type="radio"
+            name="model-profile"
+            value="low_spec"
+            checked={snapshot.onboarding.selectedModelProfile === "low_spec"}
+            onChange={() => assistantStore.setOnboardingModelProfile("low_spec")}
+          />
           <Brain size={15} aria-hidden="true" />
           <span>Low spec</span>
-        </button>
-        <button
+        </label>
+        <label
           className={
             snapshot.onboarding.selectedModelProfile === "balanced"
               ? "mode-option mode-option-selected"
               : "mode-option"
           }
-          type="button"
-          role="radio"
-          aria-checked={snapshot.onboarding.selectedModelProfile === "balanced"}
-          onClick={() => assistantStore.setOnboardingModelProfile("balanced")}
         >
+          <input
+            className="sr-only"
+            type="radio"
+            name="model-profile"
+            value="balanced"
+            checked={snapshot.onboarding.selectedModelProfile === "balanced"}
+            onChange={() => assistantStore.setOnboardingModelProfile("balanced")}
+          />
           <span>Balanced</span>
-        </button>
+        </label>
       </div>
       <button
         className="primary-action"
