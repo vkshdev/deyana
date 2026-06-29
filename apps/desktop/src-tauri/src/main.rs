@@ -38,7 +38,7 @@ fn main() {
             commands::open_vault_folder
         ])
         .build(tauri::generate_context!())
-        .expect("failed to build DE'YANA desktop shell")
+        .expect("failed to build DEYANA desktop shell")
         .run(|app, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 let core_manager = app.state::<process::CoreProcessManager>();
