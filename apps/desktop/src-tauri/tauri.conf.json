@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "DE'YANA",
+  "productName": "DEYANA",
   "version": "0.1.0",
   "identifier": "app.deyana.desktop",
   "build": {
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "DE'YANA",
+        "title": "DEYANA",
         "width": 92,
         "height": 144,
         "visible": false,
