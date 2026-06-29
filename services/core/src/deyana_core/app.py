@@ -25,6 +25,7 @@ from .api import (
     voice_router,
     websocket_router,
 )
+from .identity import PRODUCT_BRAND
 from .runtime import RuntimeState
 
 
@@ -77,7 +78,7 @@ def create_app(runtime: RuntimeState | None = None) -> FastAPI:
 
     runtime = runtime or RuntimeState(CoreSettings.from_env())
     app = FastAPI(
-        title="DE'YANA Core",
+        title=f"{PRODUCT_BRAND} Core",
         version=__version__,
         lifespan=lifespan,
         docs_url=None,

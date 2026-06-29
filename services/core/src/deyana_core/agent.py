@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 
 from .chat import ChatStore
+from .identity import ASSISTANT_IDENTITY
 from .local_models import ModelRouter
 from .memory import MemoryStore
 from .models import (
@@ -89,7 +90,7 @@ class ContextBuilder:
         history_context = render_history_context(recent_history)
         compressed_characters = len(memory_context)
         prompt = (
-            "You are DE'YANA, a local-first private desktop AI assistant.\n"
+            f"You are {ASSISTANT_IDENTITY}, a local-first private desktop AI assistant.\n"
             "Use only the local memory context below when it is relevant. "
             "Do not invent memory that is not present. "
             "Cite memory claims inline with [S1], [S2], etc. "
