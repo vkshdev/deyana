@@ -178,7 +178,7 @@ export const tauriClient = {
     const selected = await open({
       directory: true,
       multiple: false,
-      title: "Choose DE'YANA vault folder"
+      title: "Choose Deyana vault folder"
     });
 
     return typeof selected === "string" ? selected : null;

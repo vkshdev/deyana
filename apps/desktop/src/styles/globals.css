@@ -795,6 +795,48 @@ button {
   flex: 1;
 }
 
+.voice-selector {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.voice-selector span {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.voice-selector select {
+  min-width: 0;
+  height: 30px;
+  border: 1px solid rgba(208, 221, 230, 0.12);
+  border-radius: 8px;
+  padding: 0 8px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.055);
+  outline: none;
+  font: inherit;
+  font-size: 10px;
+}
+
+.voice-selector select:focus {
+  border-color: rgba(102, 227, 255, 0.4);
+}
+
+.voice-selector select:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.voice-selector option {
+  color: var(--text);
+  background: #11161a;
+}
+
 .voice-enabled {
   color: var(--jade);
 }
@@ -1720,6 +1762,7 @@ button {
 
 .mode-option {
   min-height: 36px;
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 7px;
