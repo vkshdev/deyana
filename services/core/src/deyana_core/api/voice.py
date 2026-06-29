@@ -26,7 +26,10 @@ async def get_voice_settings(request: Request) -> VoiceSettings:
 @router.patch("/settings", response_model=VoiceSettings)
 async def patch_voice_settings(request: Request, payload: VoiceSettingsPatch) -> VoiceSettings:
     runtime = request.app.state.runtime
-    settings = runtime.voice_service.patch_settings(payload)
+    try:
+        settings = runtime.voice_service.patch_settings(payload)
+    except VoiceUnavailableError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
     await runtime.event_bus.publish(
         runtime.event(
             "voice.settings.updated",
