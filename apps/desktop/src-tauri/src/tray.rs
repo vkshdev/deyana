@@ -8,7 +8,7 @@ use tauri::{
 use crate::{process, settings, window};
 
 pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
-    let show = MenuItem::with_id(app, "show", "Show DE'YANA", true, None::<&str>)?;
+    let show = MenuItem::with_id(app, "show", "Show DEYANA", true, None::<&str>)?;
     let hide = MenuItem::with_id(app, "hide", "Hide", true, None::<&str>)?;
     let compact = MenuItem::with_id(app, "compact", "Compact mode", true, None::<&str>)?;
     let expanded = MenuItem::with_id(app, "expanded", "Expanded panel", true, None::<&str>)?;
@@ -33,7 +33,7 @@ pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
     )?;
 
     TrayIconBuilder::with_id("main-tray")
-        .tooltip("DE'YANA")
+        .tooltip("DEYANA")
         .icon(tray_icon())
         .menu(&menu)
         .on_menu_event(|app, event| match event.id().as_ref() {
