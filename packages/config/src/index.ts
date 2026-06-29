@@ -1,3 +1,9 @@
+export const productIdentity = {
+  name: "Deyana",
+  brand: "DEYANA",
+  pronunciation: "De-Yana"
+} as const;
+
 export const desktopWindow = {
   compact: {
     width: 92,

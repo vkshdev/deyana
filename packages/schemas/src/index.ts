@@ -651,6 +651,13 @@ export interface VoiceSettingsPatch {
   ttsVolume?: number;
 }
 
+export interface VoiceOption {
+  name: string;
+  gender: "female" | "male" | "neutral" | "unknown";
+  language: string;
+  isSystemDefault: boolean;
+}
+
 export interface VoiceStatusResponse {
   enabled: boolean;
   muted: boolean;
@@ -660,6 +667,8 @@ export interface VoiceStatusResponse {
   sttEngine: string;
   ttsEngine: string;
   language: string;
+  activeTtsVoice?: string | null;
+  availableTtsVoices: VoiceOption[];
   rawAudioStored: boolean;
   detail: string;
   checkedAt: string;
