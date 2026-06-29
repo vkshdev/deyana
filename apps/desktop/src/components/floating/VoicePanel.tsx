@@ -12,6 +12,8 @@ export function VoicePanel({ snapshot }: VoicePanelProps) {
   const enabled = settings?.enabled ?? false;
   const muted = settings?.muted ?? true;
   const ttsEnabled = settings?.ttsEnabled ?? false;
+  const availableVoices = status?.availableTtsVoices ?? [];
+  const selectedVoice = settings?.ttsVoice ?? status?.activeTtsVoice ?? "";
   const canListen = enabled && !muted && !snapshot.voiceBusy;
 
   return (
@@ -78,6 +80,24 @@ export function VoicePanel({ snapshot }: VoicePanelProps) {
         </button>
       </div>
 
+      <label className="voice-selector">
+        <span>Deyana voice</span>
+        <select
+          value={selectedVoice}
+          disabled={!availableVoices.length || snapshot.voiceBusy}
+          onChange={(event) =>
+            void assistantStore.patchVoiceSettings({ ttsVoice: event.currentTarget.value || null })
+          }
+        >
+          {!availableVoices.length ? <option value="">No local voices found</option> : null}
+          {availableVoices.map((voice) => (
+            <option key={voice.name} value={voice.name}>
+              {voice.name} - {formatVoiceGender(voice.gender)} - {voice.language}
+            </option>
+          ))}
+        </select>
+      </label>
+
       {snapshot.voiceTranscript?.transcript ? (
         <div className="voice-transcript">
           <span>{snapshot.voiceTranscript.transcript}</span>
@@ -85,4 +105,8 @@ export function VoicePanel({ snapshot }: VoicePanelProps) {
       ) : null}
     </section>
   );
+}
+
+function formatVoiceGender(gender: "female" | "male" | "neutral" | "unknown") {
+  return gender.charAt(0).toUpperCase() + gender.slice(1);
 }
