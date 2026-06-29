@@ -1,8 +1,8 @@
 [package]
 name = "deyana-desktop"
 version = "0.1.0"
-description = "DE'YANA desktop shell"
-authors = ["DE'YANA"]
+description = "Deyana desktop shell"
+authors = ["DEYANA"]
 edition = "2021"
 
 [build-dependencies]
