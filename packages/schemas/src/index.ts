@@ -653,7 +653,7 @@ export interface VoiceSettingsPatch {
 
 export interface VoiceOption {
   name: string;
-  gender: "female" | "male" | "neutral" | "unknown";
+  gender: "female";
   language: string;
   isSystemDefault: boolean;
 }
