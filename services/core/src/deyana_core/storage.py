@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .identity import PRODUCT_BRAND, PRODUCT_NAME
 from .models import (
     AppSettings,
     ModelProfile,
@@ -180,8 +181,9 @@ def create_vault_template(vault_path: Path) -> list[str]:
     root_readme = vault_path / "README.md"
     if not root_readme.exists():
         root_readme.write_text(
-            "# DE'YANA Vault\n\n"
-            "This vault is user-owned. DE'YANA writes compressed local summaries here, not raw private dumps by default.\n",
+            f"# {PRODUCT_BRAND} Vault\n\n"
+            f"This vault is user-owned. {PRODUCT_NAME} writes compressed local summaries here, "
+            "not raw private dumps by default.\n",
             encoding="utf-8",
         )
 

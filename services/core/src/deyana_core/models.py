@@ -569,6 +569,13 @@ class VoiceSettingsPatch(ApiModel):
     tts_volume: int | None = Field(default=None, ge=0, le=100)
 
 
+class VoiceOption(ApiModel):
+    name: str
+    gender: Literal["female"]
+    language: str
+    is_system_default: bool = False
+
+
 class VoiceStatusResponse(ApiModel):
     enabled: bool
     muted: bool
@@ -578,6 +585,8 @@ class VoiceStatusResponse(ApiModel):
     stt_engine: str
     tts_engine: str
     language: str
+    active_tts_voice: str | None = None
+    available_tts_voices: list[VoiceOption] = Field(default_factory=list)
     raw_audio_stored: bool = False
     detail: str
     checked_at: str
