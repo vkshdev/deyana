@@ -92,7 +92,7 @@ export function VoicePanel({ snapshot }: VoicePanelProps) {
           {!availableVoices.length ? <option value="">No local voices found</option> : null}
           {availableVoices.map((voice) => (
             <option key={voice.name} value={voice.name}>
-              {voice.name} - {formatVoiceGender(voice.gender)} - {voice.language}
+              {voice.name} - Female - {voice.language}
             </option>
           ))}
         </select>
@@ -105,8 +105,4 @@ export function VoicePanel({ snapshot }: VoicePanelProps) {
       ) : null}
     </section>
   );
-}
-
-function formatVoiceGender(gender: "female" | "male" | "neutral" | "unknown") {
-  return gender.charAt(0).toUpperCase() + gender.slice(1);
 }
