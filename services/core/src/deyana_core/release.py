@@ -12,6 +12,7 @@ from typing import Any
 
 from .chat import ChatStore
 from .connectors import ConnectorManager
+from .identity import PRODUCT_NAME
 from .local_models import ModelRouter
 from .memory import MemoryStore
 from .models import (
@@ -322,7 +323,10 @@ class ReleaseService:
             vault_deleted=vault_deleted,
             recreated_stores=recreated,
             restart_recommended=True,
-            detail="Local app data was deleted and empty stores were recreated. Restart DE'YANA before daily use.",
+            detail=(
+                "Local app data was deleted and empty stores were recreated. "
+                f"Restart {PRODUCT_NAME} before daily use."
+            ),
         )
 
     def recreate_empty_stores(self) -> list[str]:
