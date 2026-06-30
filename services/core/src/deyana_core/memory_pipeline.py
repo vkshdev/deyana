@@ -418,7 +418,7 @@ def classify_named_entity(value: str) -> str:
     lowered = value.lower()
     if any(token in lowered for token in ["inc", "llc", "labs", "studio", "company"]):
         return "organization"
-    if any(token in lowered for token in ["project", "app", "assistant", "dash", "de'yana", "deyana"]):
+    if any(token in lowered for token in ["project", "app", "assistant", "dash", "deyana"]):
         return "project"
     return "person_or_org"
 
