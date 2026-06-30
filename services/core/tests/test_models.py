@@ -178,20 +178,20 @@ def test_chat_agent_retrieves_memory_and_persists_source_references(tmp_path) ->
             "/memory",
             json={
                 "type": "decision",
-                "title": "Launch pricing decision",
-                "summary": "DE'YANA launch price is nine dollars per month.",
+                "title": "Local memory storage decision",
+                "summary": "Deyana stores private memory locally by default.",
                 "contentMarkdown": (
-                    "Use a solo-builder friendly launch plan. "
-                    "The launch pricing decision is $9/month with a future yearly discount. "
+                    "Use SQLite for structured private memory. "
+                    "Mirror compressed summaries into the user-owned Markdown vault. "
                     "Keep the private assistant local-first."
                 ),
-                "tags": ["pricing", "launch"],
+                "tags": ["architecture", "privacy"],
             },
         ).json()
 
         response = client.post(
             "/chat/message",
-            json={"content": "What did we decide about launch pricing?"},
+            json={"content": "What did we decide about local memory storage?"},
         )
         history = client.get("/chat/history")
 
@@ -202,21 +202,21 @@ def test_chat_agent_retrieves_memory_and_persists_source_references(tmp_path) ->
     assert body["retrieval"]["contextTokensEstimate"] > 0
     assert body["sources"][0]["id"] == created["id"]
     assert body["sources"][0]["label"] == "S1"
-    assert body["sources"][0]["title"] == "Launch pricing decision"
+    assert body["sources"][0]["title"] == "Local memory storage decision"
     assert body["sources"][0]["markdownPath"].endswith(".md")
-    assert "nine dollars" in body["sources"][0]["snippet"].lower()
-    assert "Sources: [S1] Launch pricing decision" in body["assistantMessage"]["content"]
+    assert "locally" in body["sources"][0]["snippet"].lower()
+    assert "Sources: [S1] Local memory storage decision" in body["assistantMessage"]["content"]
     assert body["assistantMessage"]["sourceReferences"][0]["id"] == created["id"]
 
     prompt = ollama.requests[-1]["prompt"]
     assert "LOCAL MEMORY CONTEXT" in prompt
-    assert "[S1] Launch pricing decision" in prompt
+    assert "[S1] Local memory storage decision" in prompt
     assert "Compressed snippet:" in prompt
     assert "Cite memory claims inline" in prompt
     assert len(prompt) < 4200
 
     assistant_from_history = history.json()["messages"][-1]
-    assert assistant_from_history["sourceReferences"][0]["title"] == "Launch pricing decision"
+    assert assistant_from_history["sourceReferences"][0]["title"] == "Local memory storage decision"
 
 
 def test_chat_agent_can_skip_memory_retrieval(tmp_path) -> None:

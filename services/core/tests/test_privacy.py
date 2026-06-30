@@ -142,7 +142,7 @@ def test_sensitive_payload_to_public_web_and_unapproved_oauth_are_blocked(tmp_pa
                 "method": "GET",
                 "purpose": "public_web_fetch",
                 "dataCategory": "memory_summary",
-                "payloadPreview": "private memory about launch pricing",
+                "payloadPreview": "private memory about the product roadmap",
             },
         )
         unapproved_oauth = client.post(
