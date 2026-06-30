@@ -11,6 +11,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from .models import (
+    VoiceOption,
     VoiceSettings,
     VoiceSettingsPatch,
     VoiceSpeakRequest,
@@ -33,25 +34,35 @@ class CommandResult:
     stderr: str
 
 
+@dataclass(frozen=True)
+class VoiceCatalog:
+    voices: tuple[VoiceOption, ...] = ()
+
+
 class LocalVoiceService:
     def __init__(self, data_dir: Path) -> None:
         self.data_dir = data_dir
         self.settings_path = data_dir / "voice-settings.json"
+        self._voice_catalog: VoiceCatalog | None = None
 
     def read_settings(self) -> VoiceSettings:
+        defaults = self.default_settings()
         try:
             data = json.loads(self.settings_path.read_text(encoding="utf-8"))
         except (FileNotFoundError, json.JSONDecodeError):
-            return self.default_settings()
+            return defaults
 
         try:
-            return VoiceSettings.model_validate({**self.default_settings().model_dump(), **data})
+            settings = VoiceSettings.model_validate({**defaults.model_dump(), **data})
         except ValidationError:
-            return self.default_settings()
+            return defaults
 
+        return self.resolve_voice(settings)
     def patch_settings(self, patch: VoiceSettingsPatch) -> VoiceSettings:
         settings = self.read_settings()
         updates = patch.model_dump(exclude_unset=True)
+        if "tts_voice" in updates:
+            updates["tts_voice"] = self.validate_voice_selection(updates["tts_voice"])
         next_settings = settings.model_copy(update={**updates, "updated_at": utc_timestamp()})
         self.write_settings(next_settings)
         return next_settings
@@ -64,6 +75,7 @@ class LocalVoiceService:
 
     def status(self) -> VoiceStatusResponse:
         settings = self.read_settings()
+        catalog = self.voice_catalog()
         provider_status = self.provider_status()
         stt_status = provider_status
         tts_status = provider_status
@@ -81,6 +93,9 @@ class LocalVoiceService:
 
         if settings.enabled and not settings.tts_enabled:
             tts_status = "disabled"
+        elif settings.enabled and settings.tts_enabled and not settings.tts_voice:
+            tts_status = "missing"
+            detail = "No installed female text-to-speech voice is available."
 
         return VoiceStatusResponse(
             enabled=settings.enabled,
@@ -91,6 +106,8 @@ class LocalVoiceService:
             stt_engine=settings.stt_engine,
             tts_engine=settings.tts_engine,
             language=settings.language,
+            active_tts_voice=settings.tts_voice,
+            available_tts_voices=list(catalog.voices),
             raw_audio_stored=False,
             detail=detail,
             checked_at=utc_timestamp(),
@@ -160,10 +177,125 @@ class LocalVoiceService:
             raise VoiceUnavailableError("Text-to-speech is disabled.")
         if self.provider_status() != "available":
             raise VoiceUnavailableError("A supported local text-to-speech engine is not available.")
+        if not settings.tts_voice:
+            raise VoiceUnavailableError("No installed female text-to-speech voice is available.")
+
+    def default_settings(self) -> VoiceSettings:
+        return VoiceSettings(
+            tts_voice=self.preferred_female_voice(self.voice_catalog()),
+            updated_at=utc_timestamp(),
+        )
+
+    def voice_catalog(self) -> VoiceCatalog:
+        if self._voice_catalog is None:
+            self._voice_catalog = discover_windows_voice_catalog()
+        return self._voice_catalog
+
+    def resolve_voice(self, settings: VoiceSettings) -> VoiceSettings:
+        catalog = self.voice_catalog()
+        if settings.tts_voice:
+            canonical_name = canonical_voice_name(settings.tts_voice, catalog)
+            if canonical_name:
+                return settings.model_copy(update={"tts_voice": canonical_name})
+        return settings.model_copy(update={"tts_voice": self.preferred_female_voice(catalog)})
+
+    def validate_voice_selection(self, requested_voice: str | None) -> str | None:
+        catalog = self.voice_catalog()
+        if not requested_voice or not requested_voice.strip():
+            return self.preferred_female_voice(catalog)
+
+        canonical_name = canonical_voice_name(requested_voice, catalog)
+        if canonical_name:
+            return canonical_name
+        raise VoiceUnavailableError(
+            f"The female local voice '{requested_voice}' is not installed or is not selectable."
+        )
 
     @staticmethod
-    def default_settings() -> VoiceSettings:
-        return VoiceSettings(updated_at=utc_timestamp())
+    def preferred_female_voice(catalog: VoiceCatalog) -> str | None:
+        female_voices = [voice for voice in catalog.voices if voice.gender == "female"]
+        zira = next((voice for voice in female_voices if "zira" in voice.name.casefold()), None)
+        if zira:
+            return zira.name
+
+        english_female = next(
+            (voice for voice in female_voices if voice.language.casefold().startswith("en")),
+            None,
+        )
+        if english_female:
+            return english_female.name
+        return female_voices[0].name if female_voices else None
+
+
+def canonical_voice_name(requested_voice: str, catalog: VoiceCatalog) -> str | None:
+    normalized = requested_voice.strip().casefold()
+    return next((voice.name for voice in catalog.voices if voice.name.casefold() == normalized), None)
+
+
+def discover_windows_voice_catalog() -> VoiceCatalog:
+    if platform.system().lower() != "windows" or not powershell_path():
+        return VoiceCatalog()
+
+    script = r"""
+$ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::UTF8
+Add-Type -AssemblyName System.Speech
+$speaker = New-Object System.Speech.Synthesis.SpeechSynthesizer
+try {
+  $defaultVoice = $speaker.Voice.Name
+  $voices = @(
+    $speaker.GetInstalledVoices() |
+      Where-Object { $_.Enabled } |
+      ForEach-Object {
+        [PSCustomObject]@{
+          name = $_.VoiceInfo.Name
+          gender = $_.VoiceInfo.Gender.ToString()
+          language = $_.VoiceInfo.Culture.Name
+          isSystemDefault = ($_.VoiceInfo.Name -eq $defaultVoice)
+        }
+      }
+  )
+  [PSCustomObject]@{
+    systemDefault = $defaultVoice
+    voices = $voices
+  } | ConvertTo-Json -Depth 4 -Compress
+} finally {
+  $speaker.Dispose()
+}
+"""
+    result = run_powershell(script, {}, timeout=10)
+    if result.returncode != 0 or not result.stdout.strip():
+        return VoiceCatalog()
+
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return VoiceCatalog()
+
+    raw_voices = payload.get("voices", []) if isinstance(payload, dict) else []
+    if isinstance(raw_voices, dict):
+        raw_voices = [raw_voices]
+
+    voices: list[VoiceOption] = []
+    for raw_voice in raw_voices:
+        if not isinstance(raw_voice, dict):
+            continue
+        name = str(raw_voice.get("name", "")).strip()
+        if not name:
+            continue
+        raw_gender = str(raw_voice.get("gender", "unknown")).strip().casefold()
+        if raw_gender != "female":
+            continue
+        voices.append(
+            VoiceOption(
+                name=name,
+                gender="female",
+                language=str(raw_voice.get("language", "")).strip() or "unknown",
+                is_system_default=bool(raw_voice.get("isSystemDefault", False)),
+            )
+        )
+
+    return VoiceCatalog(voices=tuple(voices))
 
 
 def run_windows_stt(language: str, listen_seconds: int) -> CommandResult:

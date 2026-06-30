@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from threading import Lock
 from typing import Any
 
+from .identity import ASSISTANT_IDENTITY
 from .models import (
     AppSettings,
     LocalModelInfo,
@@ -388,7 +389,7 @@ def infer_model_role(name: str) -> str:
 
 def local_prompt(user_content: str) -> str:
     return (
-        "You are DE'YANA, a local-first private desktop AI assistant. "
+        f"You are {ASSISTANT_IDENTITY}, a local-first private desktop AI assistant. "
         "Answer using only the local model runtime. Do not suggest cloud AI services. "
         "Be concise, practical, and honest about uncertainty.\n\n"
         f"User: {user_content.strip()}\n"
