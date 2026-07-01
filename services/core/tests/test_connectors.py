@@ -185,7 +185,6 @@ def test_connectors_register_and_show_initial_status(tmp_path) -> None:
         "notion",
         "jira",
         "linear",
-        "stripe",
     ]
     assert {connector["status"] for connector in connectors} == {"not_connected"}
     assert all(connector["tokenStored"] is False for connector in connectors)

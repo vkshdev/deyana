@@ -128,8 +128,7 @@ const defaultConnectors = (): ConnectorItem[] =>
     ["slack", "Slack"],
     ["notion", "Notion"],
     ["jira", "Jira"],
-    ["linear", "Linear"],
-    ["stripe", "Stripe"]
+    ["linear", "Linear"]
   ].map(([id, name]) => ({
     id,
     name,
@@ -1780,7 +1779,7 @@ const approvedRootFromPath = (path: string): string => {
 const mergeConnector = (current: ConnectorItem[], connector: ConnectorItem): ConnectorItem[] => {
   const byId = new Map(current.map((item) => [item.id, item]));
   byId.set(connector.id, connector);
-  const preferredOrder = ["gmail", "calendar", "github", "drive", "slack", "notion", "jira", "linear", "stripe"];
+  const preferredOrder = ["gmail", "calendar", "github", "drive", "slack", "notion", "jira", "linear"];
   return [...byId.values()].sort((left, right) => {
     const leftIndex = preferredOrder.indexOf(left.id);
     const rightIndex = preferredOrder.indexOf(right.id);

@@ -475,24 +475,6 @@ class LinearConnector(BaseConnector):
         return ConnectorSyncResult(items_seen=len(records), records=tuple(records), detail="Linear issues synced.")
 
 
-class StripeConnector(BaseConnector):
-    def __init__(self, definition: ConnectorDefinition) -> None:
-        self.definition = definition
-
-    def sync(self, context: ConnectorSyncContext) -> ConnectorSyncResult:
-        if context.token.get("mock"):
-            return super().sync(context)
-        self.validate_token(context.token)
-        response = context.http_client.get_json(
-            f"{self.api_base_url()}/events?{urlencode({'limit': 20})}",
-            token=context.token,
-            payload_preview="Stripe event metadata list",
-        )
-        events = response.get("data") if isinstance(response, dict) else []
-        records = [stripe_record(item) for item in events if isinstance(item, dict) and isinstance(item.get("id"), str)]
-        return ConnectorSyncResult(items_seen=len(records), records=tuple(records), detail="Stripe events synced.")
-
-
 CONNECTOR_DEFINITIONS = [
     ConnectorDefinition(
         id="gmail",
@@ -598,19 +580,6 @@ CONNECTOR_DEFINITIONS = [
         token_url_env="DEYANA_LINEAR_OAUTH_TOKEN_URL",
         api_base_url_env="DEYANA_LINEAR_API_BASE_URL",
     ),
-    ConnectorDefinition(
-        id="stripe",
-        name="Stripe",
-        scopes=("read_only",),
-        authorization_url="https://connect.stripe.com/oauth/authorize",
-        token_url="https://connect.stripe.com/oauth/token",
-        api_base_url="https://api.stripe.com/v1",
-        api_probe_path="/events",
-        client_id_env="DEYANA_STRIPE_OAUTH_CLIENT_ID",
-        client_secret_env="DEYANA_STRIPE_OAUTH_CLIENT_SECRET",
-        token_url_env="DEYANA_STRIPE_OAUTH_TOKEN_URL",
-        api_base_url_env="DEYANA_STRIPE_API_BASE_URL",
-    ),
 ]
 
 
@@ -623,7 +592,6 @@ CONNECTOR_CLASSES = {
     "notion": NotionConnector,
     "jira": JiraConnector,
     "linear": LinearConnector,
-    "stripe": StripeConnector,
 }
 
 
@@ -983,24 +951,6 @@ def linear_record(payload: dict[str, Any]) -> ConnectorRecord:
         item_timestamp=updated,
         tags=("connector", "linear", "issue", status.lower().replace(" ", "-")),
         normalized={"issueId": issue_id, "identifier": identifier, "title": title, "status": status, "assignee": assignee, "updatedAt": updated},
-    )
-
-
-def stripe_record(payload: dict[str, Any]) -> ConnectorRecord:
-    event_id = str(payload["id"])
-    event_type = str(payload.get("type") or "event")
-    created = str(payload.get("created") or "")
-    livemode = bool(payload.get("livemode"))
-    summary = compact_sentence(f"Stripe event {event_type} ({event_id}) was received in {'live' if livemode else 'test'} mode.")
-    return ConnectorRecord(
-        external_id=event_id,
-        title=f"Stripe: {event_type}",
-        summary=summary,
-        content_markdown="\n".join(["## Stripe event summary", "", f"- Event: {event_type}", f"- ID: {event_id}", f"- Mode: {'live' if livemode else 'test'}", f"- Created: {created or 'Unknown'}"]),
-        source_uri=f"https://dashboard.stripe.com/events/{event_id}",
-        item_timestamp=created or None,
-        tags=("connector", "stripe", "event", event_type.replace(".", "-")),
-        normalized={"eventId": event_id, "type": event_type, "created": created, "livemode": livemode},
     )
 
 

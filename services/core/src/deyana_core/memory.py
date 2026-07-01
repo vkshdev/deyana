@@ -46,7 +46,6 @@ CONNECTOR_SOURCE_TO_FOLDER = {
     "notion": "Sources",
     "jira": "Tasks",
     "linear": "Tasks",
-    "stripe": "Stripe",
 }
 
 

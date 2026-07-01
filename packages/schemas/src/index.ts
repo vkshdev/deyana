@@ -1124,7 +1124,6 @@ export const DEFAULT_ONBOARDING_STATE: OnboardingState = {
     "Slack",
     "Tasks",
     "Decisions",
-    "Stripe",
     "Sources",
     "Inbox"
   ]

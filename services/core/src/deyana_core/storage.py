@@ -25,7 +25,6 @@ VAULT_FOLDERS = [
     "Slack",
     "Tasks",
     "Decisions",
-    "Stripe",
     "Sources",
     "Inbox",
 ]

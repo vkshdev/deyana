@@ -103,8 +103,6 @@ OAUTH_CONNECTOR_HOSTS = {
     "api.atlassian.com",
     "linear.app",
     "api.linear.app",
-    "connect.stripe.com",
-    "api.stripe.com",
 }
 
 LOCAL_HOSTS = {
@@ -401,7 +399,7 @@ def classify_payload(request: PrivacyCheckRequest) -> PrivacyDataCategory:
         return "unknown"
     if any(token in preview for token in ["source code", "private repo", "stack trace", "api_key"]):
         return "source_code"
-    if any(token in preview for token in ["gmail", "calendar", "slack", "notion", "stripe", "connector"]):
+    if any(token in preview for token in ["gmail", "calendar", "slack", "notion", "connector"]):
         return "connector_metadata"
     if any(token in preview for token in ["voice recording", "audio", "microphone"]):
         return "audio"
