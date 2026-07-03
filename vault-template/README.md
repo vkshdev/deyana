@@ -1,5 +1,19 @@
-# DEYANA Vault Template
+# DEYANA Vault Structure
 
-This is the folder structure created in the user-selected local vault during onboarding. The vault is user-owned and can be opened in Obsidian, VS Code, or any editor.
+Deyana creates this user-owned Markdown vault during onboarding. It stores compressed local summaries and source references rather than raw private dumps by default.
 
-Deyana should write compressed local summaries and source references here. It should not dump raw private data by default.
+```text
+Daily/
+Projects/
+People/
+Meetings/
+Emails/
+GitHub/
+Slack/
+Tasks/
+Decisions/
+Sources/
+Inbox/
+```
+
+The runtime source of truth is `VAULT_FOLDERS` in `services/core/src/deyana_core/storage.py`; the folders are created automatically and do not require placeholder files in the repository.
