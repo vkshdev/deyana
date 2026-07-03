@@ -2,6 +2,7 @@ import type { AssistantSnapshot } from "../../stores/assistantStore";
 import { productIdentity } from "@deyana/config";
 import { Brain, Check, ChevronRight, FolderOpen, HardDrive, ShieldCheck } from "lucide-react";
 import { assistantStore } from "../../stores/assistantStore";
+import { DeyanaMark } from "../brand/DeyanaMark";
 import { FloatingDockHandle } from "../floating/FloatingDockHandle";
 
 interface OnboardingFlowProps {
@@ -29,9 +30,12 @@ export function OnboardingFlow({ snapshot }: OnboardingFlowProps) {
     <section className="floating-panel onboarding-panel" aria-label={`${productIdentity.name} onboarding`}>
       <FloatingDockHandle />
       <header className="onboarding-header">
-        <div>
-          <strong>{productIdentity.brand}</strong>
-          <span>{step === "complete" ? "Ready" : "Private desktop setup"}</span>
+        <div className="onboarding-identity">
+          <DeyanaMark className="onboarding-brand-mark" />
+          <div>
+            <strong>{productIdentity.brand}</strong>
+            <span>{step === "complete" ? "Ready" : "Private desktop setup"}</span>
+          </div>
         </div>
         <div className="onboarding-progress" aria-label="Onboarding progress">
           {["welcome", "privacy", "local_ai", "vault"].map((item) => (

@@ -1,4 +1,5 @@
 import type { AssistantState } from "@deyana/schemas";
+import { DeyanaMark } from "../brand/DeyanaMark";
 
 interface FloatingStatusRingProps {
   state: AssistantState;
@@ -23,8 +24,7 @@ export function FloatingStatusRing({ state, compact = false }: FloatingStatusRin
   return (
     <div className={compact ? "status-ring status-ring-compact" : "status-ring"}>
       <div className={`status-ring-inner ${stateClass[state] ?? "status-idle"}`} />
-      <div className="status-core" />
+      <DeyanaMark className="status-core-mark" />
     </div>
   );
 }
-
