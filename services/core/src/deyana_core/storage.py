@@ -8,6 +8,7 @@ from .identity import PRODUCT_BRAND, PRODUCT_NAME
 from .models import (
     AppSettings,
     ModelProfile,
+    OnboardingStep,
     OnboardingState,
     PrivacyMode,
     SettingsPatch,
@@ -72,6 +73,30 @@ class CoreStore:
 
     def write_onboarding(self, state: OnboardingState) -> None:
         self._write_json(self.onboarding_path, state.model_dump(mode="json", by_alias=True))
+
+    def update_onboarding_progress(
+        self,
+        current_step: OnboardingStep,
+        privacy_mode: PrivacyMode,
+        model_profile: ModelProfile,
+    ) -> tuple[OnboardingState, AppSettings]:
+        if current_step == "complete":
+            raise ValueError("Use onboarding completion to mark setup as complete.")
+
+        state = self.read_onboarding()
+        settings = self.read_settings()
+        if state.completed:
+            return state, settings
+
+        state = state.model_copy(
+            update={
+                "current_step": current_step,
+                "selected_privacy_mode": privacy_mode,
+                "selected_model_profile": model_profile,
+            }
+        )
+        self.write_onboarding(state)
+        return state, settings
 
     def select_vault(self, raw_path: str) -> tuple[OnboardingState, AppSettings, list[str]]:
         vault_path = self._normalize_vault_path(raw_path)

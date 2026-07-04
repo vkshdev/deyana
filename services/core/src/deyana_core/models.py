@@ -103,6 +103,12 @@ class OnboardingState(ApiModel):
     vault_folders: list[str] = []
 
 
+class OnboardingProgressRequest(ApiModel):
+    current_step: OnboardingStep
+    privacy_mode: PrivacyMode = "local_only"
+    model_profile: ModelProfile = "low_spec"
+
+
 class VaultSelectRequest(ApiModel):
     path: str
 

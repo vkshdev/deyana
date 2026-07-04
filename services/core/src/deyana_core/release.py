@@ -123,7 +123,7 @@ class ReleaseService:
         public_release_docs = [
             self.repo_root / "README.md",
             self.repo_root / "ARCHITECTURE.md",
-            self.repo_root / "SECURITY.md",
+            self.repo_root / "CONTRIBUTING.md",
         ]
         release_docs_ready = all(path.is_file() for path in public_release_docs)
 
@@ -162,9 +162,9 @@ class ReleaseService:
                 "update_plan",
                 "Public release guidance",
                 release_docs_ready,
-                "Public README, architecture, and security guidance are documented."
+                "Public README, architecture, contribution, and security guidance are documented."
                 if release_docs_ready
-                else "Create README.md, ARCHITECTURE.md, and SECURITY.md.",
+                else "Create README.md, ARCHITECTURE.md, and CONTRIBUTING.md with security guidance.",
             ),
             check_item(
                 "local_model_setup",
