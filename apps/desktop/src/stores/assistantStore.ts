@@ -384,8 +384,28 @@ class AssistantStore {
     }
   };
 
-  setOnboardingStep = (onboardingStep: OnboardingStep) => {
-    this.setSnapshot({ onboardingStep, assistantState: "ONBOARDING" });
+  setOnboardingStep = async (onboardingStep: Exclude<OnboardingStep, "complete">) => {
+    this.setSnapshot({ onboardingBusy: true, assistantState: "ONBOARDING", error: undefined });
+
+    try {
+      const result = await backendClient.updateOnboardingState({
+        currentStep: onboardingStep,
+        privacyMode: this.snapshot.onboarding.selectedPrivacyMode,
+        modelProfile: this.snapshot.onboarding.selectedModelProfile
+      });
+      this.setSnapshot({
+        onboarding: result.state,
+        coreSettings: result.settings,
+        onboardingStep: result.state.currentStep,
+        onboardingBusy: false,
+        error: undefined
+      });
+    } catch (error) {
+      this.setSnapshot({
+        onboardingBusy: false,
+        error: error instanceof Error ? error.message : "Unable to save onboarding progress"
+      });
+    }
   };
 
   setOnboardingPrivacyMode = (privacyMode: PrivacyMode) => {
