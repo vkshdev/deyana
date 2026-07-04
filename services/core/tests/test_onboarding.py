@@ -25,6 +25,47 @@ def test_onboarding_state_defaults_to_incomplete(tmp_path) -> None:
     assert body["selectedModelProfile"] == "low_spec"
 
 
+def test_onboarding_progress_persists_across_refresh(tmp_path) -> None:
+    settings = CoreSettings(data_dir=tmp_path / "data", log_dir=tmp_path / "logs")
+
+    with TestClient(create_app(RuntimeState(settings))) as client:
+        response = client.patch(
+            "/onboarding/state",
+            json={
+                "currentStep": "local_ai",
+                "privacyMode": "local_only",
+                "modelProfile": "balanced",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["state"]["currentStep"] == "local_ai"
+    assert response.json()["state"]["selectedModelProfile"] == "balanced"
+
+    with TestClient(create_app(RuntimeState(settings))) as reopened_client:
+        state = reopened_client.get("/onboarding/state").json()
+
+    assert state["completed"] is False
+    assert state["currentStep"] == "local_ai"
+    assert state["selectedModelProfile"] == "balanced"
+
+
+def test_onboarding_progress_cannot_bypass_completion(tmp_path) -> None:
+    with make_client(tmp_path) as client:
+        response = client.patch(
+            "/onboarding/state",
+            json={
+                "currentStep": "complete",
+                "privacyMode": "local_only",
+                "modelProfile": "low_spec",
+            },
+        )
+        state = client.get("/onboarding/state").json()
+
+    assert response.status_code == 400
+    assert state["completed"] is False
+
+
 def test_vault_select_creates_template_folders(tmp_path) -> None:
     vault_path = tmp_path / "DeyanaVault"
 

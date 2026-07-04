@@ -50,6 +50,8 @@ def test_release_status_readiness_update_plan_performance_and_crash_recovery(tmp
     assert any(dependency["name"] == "release_readiness" for dependency in status.json()["dependencies"])
     assert readiness.status_code == 200
     assert {item["id"] for item in readiness.json()["items"]} >= {"installer_bundle", "update_plan", "core_service"}
+    public_guidance = next(item for item in readiness.json()["items"] if item["id"] == "update_plan")
+    assert public_guidance["status"] == "ready"
     assert update_plan.status_code == 200
     assert update_plan.json()["automaticUpdatesEnabled"] is False
     assert performance.status_code == 200
