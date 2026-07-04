@@ -4,6 +4,7 @@ import { Brain, Check, ChevronRight, FolderOpen, HardDrive, ShieldCheck } from "
 import { assistantStore } from "../../stores/assistantStore";
 import { DeyanaMark } from "../brand/DeyanaMark";
 import { FloatingDockHandle } from "../floating/FloatingDockHandle";
+import { startWindowDrag } from "../../utils/windowDrag";
 
 interface OnboardingFlowProps {
   snapshot: AssistantSnapshot;
@@ -29,7 +30,7 @@ export function OnboardingFlow({ snapshot }: OnboardingFlowProps) {
   return (
     <section className="floating-panel onboarding-panel" aria-label={`${productIdentity.name} onboarding`}>
       <FloatingDockHandle />
-      <header className="onboarding-header">
+      <header className="onboarding-header" data-tauri-drag-region onPointerDown={startWindowDrag}>
         <div className="onboarding-identity">
           <DeyanaMark className="onboarding-brand-mark" />
           <div>
@@ -47,8 +48,8 @@ export function OnboardingFlow({ snapshot }: OnboardingFlowProps) {
         </div>
       </header>
 
-      {step === "welcome" ? <WelcomeStep /> : null}
-      {step === "privacy" ? <PrivacyStep /> : null}
+      {step === "welcome" ? <WelcomeStep busy={snapshot.onboardingBusy} /> : null}
+      {step === "privacy" ? <PrivacyStep busy={snapshot.onboardingBusy} /> : null}
       {step === "local_ai" ? <LocalAiStep snapshot={snapshot} /> : null}
       {step === "vault" || step === "complete" ? <VaultStep snapshot={snapshot} /> : null}
 
@@ -57,7 +58,7 @@ export function OnboardingFlow({ snapshot }: OnboardingFlowProps) {
   );
 }
 
-function WelcomeStep() {
+function WelcomeStep({ busy }: { busy: boolean }) {
   return (
     <div className="onboarding-step">
       <div className="onboarding-icon">
@@ -70,7 +71,8 @@ function WelcomeStep() {
       <button
         className="primary-action"
         type="button"
-        onClick={() => assistantStore.setOnboardingStep("privacy")}
+        disabled={busy}
+        onClick={() => void assistantStore.setOnboardingStep("privacy")}
       >
         <span>Continue</span>
         <ChevronRight size={16} aria-hidden="true" />
@@ -79,7 +81,7 @@ function WelcomeStep() {
   );
 }
 
-function PrivacyStep() {
+function PrivacyStep({ busy }: { busy: boolean }) {
   return (
     <div className="onboarding-step">
       <div className="onboarding-icon">
@@ -99,7 +101,8 @@ function PrivacyStep() {
       <button
         className="primary-action"
         type="button"
-        onClick={() => assistantStore.setOnboardingStep("local_ai")}
+        disabled={busy}
+        onClick={() => void assistantStore.setOnboardingStep("local_ai")}
       >
         <span>Continue</span>
         <ChevronRight size={16} aria-hidden="true" />
@@ -158,7 +161,8 @@ function LocalAiStep({ snapshot }: OnboardingFlowProps) {
       <button
         className="primary-action"
         type="button"
-        onClick={() => assistantStore.setOnboardingStep("vault")}
+        disabled={snapshot.onboardingBusy}
+        onClick={() => void assistantStore.setOnboardingStep("vault")}
       >
         <span>Continue</span>
         <ChevronRight size={16} aria-hidden="true" />

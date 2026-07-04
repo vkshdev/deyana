@@ -18,6 +18,7 @@ import { QuickActions } from "./QuickActions";
 import { ReleaseQualityPanel } from "./ReleaseQualityPanel";
 import { ToolPanel } from "./ToolPanel";
 import { VoicePanel } from "./VoicePanel";
+import { startWindowDrag } from "../../utils/windowDrag";
 
 interface FloatingPanelProps {
   snapshot: AssistantSnapshot;
@@ -26,7 +27,7 @@ interface FloatingPanelProps {
 export function FloatingPanel({ snapshot }: FloatingPanelProps) {
   return (
     <section className="floating-panel" aria-label={`${productIdentity.name} assistant panel`}>
-      <header className="panel-header">
+      <header className="panel-header" data-tauri-drag-region onPointerDown={startWindowDrag}>
         <FloatingDockHandle />
         <div className="brand-mark" data-tauri-drag-region>
           <FloatingStatusRing state={snapshot.assistantState} />
