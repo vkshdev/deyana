@@ -39,6 +39,7 @@ import type {
   ModelTestResponse,
   OnboardingCompleteRequest,
   OnboardingCompleteResponse,
+  OnboardingProgressRequest,
   OnboardingState,
   PrivacyAuditDeleteResponse,
   PrivacyAuditListResponse,
@@ -367,6 +368,21 @@ export const backendClient = {
       throw new Error(`onboarding state returned ${response.status}`);
     }
     return response.json() as Promise<OnboardingState>;
+  },
+
+  async updateOnboardingState(
+    request: OnboardingProgressRequest
+  ): Promise<OnboardingCompleteResponse> {
+    const response = await fetch(`${coreService.endpoint}/onboarding/state`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request)
+    });
+    if (!response.ok) {
+      const detail = await readErrorDetail(response);
+      throw new Error(detail || `onboarding progress returned ${response.status}`);
+    }
+    return response.json() as Promise<OnboardingCompleteResponse>;
   },
 
   async selectVault(request: VaultSelectRequest): Promise<VaultSelectResponse> {

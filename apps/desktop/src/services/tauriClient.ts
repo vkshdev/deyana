@@ -7,6 +7,7 @@ import {
 } from "@deyana/schemas";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 
 const browserSettingsKey = "deyana.desktop.settings";
@@ -66,6 +67,14 @@ const readBrowserCoreStatus = async (): Promise<BackendProcessStatus> => {
 
 export const tauriClient = {
   isTauriRuntime,
+
+  async startDragging(): Promise<void> {
+    if (!isTauriRuntime()) {
+      return;
+    }
+
+    await getCurrentWindow().startDragging();
+  },
 
   async getDesktopSettings(): Promise<DesktopSettings> {
     if (!isTauriRuntime()) {
