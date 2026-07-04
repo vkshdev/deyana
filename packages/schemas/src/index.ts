@@ -251,6 +251,12 @@ export interface VaultSelectResponse {
   createdFolders: string[];
 }
 
+export interface OnboardingProgressRequest {
+  currentStep: Exclude<OnboardingStep, "complete">;
+  privacyMode: PrivacyMode;
+  modelProfile: ModelProfile;
+}
+
 export interface OnboardingCompleteRequest {
   privacyMode: PrivacyMode;
   modelProfile: ModelProfile;

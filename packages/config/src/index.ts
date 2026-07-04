@@ -36,15 +36,15 @@ export const modelDefaults = {
 
 export const designTokens = {
   color: {
-    glass: "rgba(10, 13, 16, 0.74)",
-    glassStrong: "rgba(13, 18, 22, 0.9)",
-    border: "rgba(208, 221, 230, 0.18)",
-    text: "#eef6f8",
-    textMuted: "#9fb0b5",
-    cyan: "#66e3ff",
-    jade: "#65f0bd",
-    amber: "#ffc857",
-    rose: "#ff7a90"
+    glass: "rgba(4, 8, 14, 0.82)",
+    glassStrong: "rgba(7, 13, 23, 0.94)",
+    border: "rgba(164, 184, 210, 0.2)",
+    text: "#f3f1ec",
+    textMuted: "#a8b2c0",
+    blue: "#83a9d4",
+    gold: "#d8b978",
+    goldSoft: "#f1d9a7",
+    danger: "#e78494"
   },
   radius: {
     panel: 8,
@@ -52,7 +52,7 @@ export const designTokens = {
     round: 999
   },
   shadow: {
-    panel: "0 22px 70px rgba(0, 0, 0, 0.42)",
-    glow: "0 0 28px rgba(102, 227, 255, 0.24)"
+    panel: "0 24px 74px rgba(0, 0, 0, 0.5)",
+    glow: "0 0 26px rgba(74, 108, 151, 0.16)"
   }
 } as const;
