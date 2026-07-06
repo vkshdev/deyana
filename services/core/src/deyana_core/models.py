@@ -263,6 +263,7 @@ ModelTask = Literal[
     "coding",
 ]
 ChatRole = Literal["user", "assistant"]
+ChatRoute = Literal["conversation", "memory", "web_search", "web_fetch"]
 PrivacyDecision = Literal["allow", "block"]
 PrivacyDestinationCategory = Literal[
     "local",
@@ -369,6 +370,7 @@ class ModelTestResponse(ApiModel):
 class ChatMessageRequest(ApiModel):
     content: str
     use_memory: bool = True
+    allow_web: bool = False
 
 
 class MemorySourceReference(ApiModel):
@@ -383,18 +385,28 @@ class MemorySourceReference(ApiModel):
     updated_at: str
 
 
+class WebSourceReference(ApiModel):
+    title: str
+    url: str
+    snippet: str
+    source: str = "public_web"
+
+
 class ChatMessageItem(ApiModel):
     id: str
     role: ChatRole
     content: str
     model: str | None = None
     source_references: list[MemorySourceReference] = []
+    web_source_references: list[WebSourceReference] = []
     created_at: str
 
 
 class ChatRetrievalSummary(ApiModel):
     query: str
+    route: ChatRoute = "conversation"
     retrieved: int
+    web_retrieved: int = 0
     compressed_characters: int
     context_tokens_estimate: int
 
@@ -405,6 +417,7 @@ class ChatMessageResponse(ApiModel):
     model: str
     latency_ms: int
     sources: list[MemorySourceReference] = []
+    web_sources: list[WebSourceReference] = []
     retrieval: ChatRetrievalSummary
 
 

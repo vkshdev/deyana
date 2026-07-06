@@ -36,10 +36,15 @@ class RuntimeState:
         self.chat_store = ChatStore(settings.data_dir)
         self.chat_store.initialize()
         self.model_router = ModelRouter(settings.ollama_endpoint, self.store)
-        self.chat_agent = ChatAgent(self.memory_store, self.chat_store, self.model_router)
         self.privacy_firewall = PrivacyFirewall(settings.data_dir, self.store)
         self.privacy_firewall.initialize()
         self.tool_service = ToolService(self.privacy_firewall, self.memory_store)
+        self.chat_agent = ChatAgent(
+            self.memory_store,
+            self.chat_store,
+            self.model_router,
+            self.tool_service,
+        )
         self.voice_service = LocalVoiceService(settings.data_dir)
         self.connector_manager = ConnectorManager(settings.data_dir, self.privacy_firewall, self.memory_store)
         self.connector_manager.initialize()
