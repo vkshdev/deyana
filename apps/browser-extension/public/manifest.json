@@ -5,6 +5,7 @@
   "description": "Connect the active browser tab to the local Deyana desktop assistant.",
   "permissions": [
     "activeTab",
+    "contextMenus",
     "scripting",
     "nativeMessaging",
     "storage"
