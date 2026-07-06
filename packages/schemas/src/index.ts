@@ -1,3 +1,7 @@
+import type { BrowserCoreEvent } from "./browser";
+
+export * from "./browser";
+
 export const ASSISTANT_STATES = [
   "BOOTING",
   "ONBOARDING",
@@ -10,6 +14,7 @@ export const ASSISTANT_STATES = [
   "RETRIEVING_MEMORY",
   "SUMMARIZING",
   "SEARCHING_WEB",
+  "READING_PAGE",
   "READING_FILE",
   "CODING",
   "SYNCING",
@@ -1052,7 +1057,8 @@ export type AppCoreEvent =
   | Phase8CoreEvent
   | Phase11CoreEvent
   | Phase13CoreEvent
-  | Phase15CoreEvent;
+  | Phase15CoreEvent
+  | BrowserCoreEvent;
 
 export interface FloatingWindowPosition {
   x: number;
