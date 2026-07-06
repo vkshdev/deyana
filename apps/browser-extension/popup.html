@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Deyana Browser Bridge</title>
+    <link rel="stylesheet" href="/src/ui/popup/popup.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <strong>DEYANA</strong>
+        <span>Browser Bridge</span>
+      </header>
+      <p id="status" role="status">Checking local connection...</p>
+      <label for="mode">Page context</label>
+      <select id="mode">
+        <option value="main">Main content</option>
+        <option value="selection">Selected text</option>
+        <option value="visible">Visible page</option>
+      </select>
+      <button id="capture" type="button">Share this page with Deyana</button>
+      <button id="reconnect" class="secondary" type="button">Reconnect local bridge</button>
+      <small>Access is temporary and limited to this tab. Page text stays on this device.</small>
+    </main>
+    <script type="module" src="/src/ui/popup/popup.ts"></script>
+  </body>
+</html>
