@@ -1,5 +1,5 @@
 import type { AssistantSnapshot } from "../../stores/assistantStore";
-import type { MemorySourceReference } from "@deyana/schemas";
+import type { MemorySourceReference, WebSourceReference } from "@deyana/schemas";
 import { MessageSquare, Send, Trash2 } from "lucide-react";
 import { assistantStore } from "../../stores/assistantStore";
 
@@ -45,6 +45,17 @@ export function LocalChat({ snapshot }: LocalChatProps) {
                 <div className="source-stack" aria-label="Local memory sources">
                   {message.sourceReferences.map((source) => (
                     <SourceReference source={source} key={`${message.id}-${source.id}`} />
+                  ))}
+                </div>
+              ) : null}
+              {message.webSourceReferences.length ? (
+                <div className="source-stack" aria-label="Public web sources">
+                  {message.webSourceReferences.map((source, index) => (
+                    <WebSourceReferenceView
+                      source={source}
+                      label={`W${index + 1}`}
+                      key={`${message.id}-${source.url}`}
+                    />
                   ))}
                 </div>
               ) : null}
@@ -97,6 +108,27 @@ function SourceReference({ source }: { source: MemorySourceReference }) {
       </summary>
       <p>{source.snippet}</p>
       <small>{path}</small>
+    </details>
+  );
+}
+
+function WebSourceReferenceView({
+  source,
+  label
+}: {
+  source: WebSourceReference;
+  label: string;
+}) {
+  return (
+    <details className="source-reference source-reference-web">
+      <summary>
+        <span>[{label}]</span>
+        <strong>{source.title}</strong>
+      </summary>
+      <p>{source.snippet}</p>
+      <a href={source.url} target="_blank" rel="noreferrer">
+        {source.url}
+      </a>
     </details>
   );
 }
