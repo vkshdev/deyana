@@ -9,6 +9,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from deyana_core.app import create_app
+from deyana_core.models import ToolResultItem, ToolRunResponse
 from deyana_core.runtime import RuntimeState
 from deyana_core.settings import CoreSettings
 
@@ -242,6 +243,87 @@ def test_chat_agent_can_skip_memory_retrieval(tmp_path) -> None:
     assert response.json()["sources"] == []
     assert response.json()["retrieval"]["retrieved"] == 0
     assert "No matching local memory was retrieved." in ollama.requests[-1]["prompt"]
+
+
+def test_chat_routes_public_questions_to_web_search_and_persists_sources(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    with FakeOllama() as ollama, make_client(tmp_path, ollama.endpoint) as client:
+        runtime = client.app.state.runtime
+
+        def fake_web_search(request):
+            assert request.user_approved is True
+            assert request.query == "What is the latest stable Python release?"
+            return ToolRunResponse(
+                tool_id="web_search",
+                status="completed",
+                title="Web search results",
+                summary="Found one result.",
+                content="Python releases",
+                items=[
+                    ToolResultItem(
+                        title="Python releases",
+                        summary="Official release information from python.org.",
+                        url="https://www.python.org/downloads/",
+                        source="bing",
+                    )
+                ],
+            )
+
+        monkeypatch.setattr(runtime.tool_service, "web_search", fake_web_search)
+        response = client.post(
+            "/chat/message",
+            json={
+                "content": "What is the latest stable Python release?",
+                "allowWeb": True,
+            },
+        )
+        history = client.get("/chat/history")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["retrieval"]["route"] == "web_search"
+    assert body["retrieval"]["retrieved"] == 0
+    assert body["retrieval"]["webRetrieved"] == 1
+    assert body["webSources"][0]["url"] == "https://www.python.org/downloads/"
+    assert body["assistantMessage"]["webSourceReferences"][0]["title"] == "Python releases"
+    assert "Web sources: [W1] Python releases" in body["assistantMessage"]["content"]
+    assert history.json()["messages"][-1]["webSourceReferences"][0]["source"] == "bing"
+    assert "PUBLIC WEB CONTEXT" in ollama.requests[-1]["prompt"]
+    assert "[W1] Python releases" in ollama.requests[-1]["prompt"]
+
+
+def test_chat_fetches_an_explicit_public_url(tmp_path, monkeypatch) -> None:
+    with FakeOllama() as ollama, make_client(tmp_path, ollama.endpoint) as client:
+        runtime = client.app.state.runtime
+
+        def fake_fetch_page(request):
+            assert request.user_approved is True
+            assert request.url == "https://example.com/guide"
+            return ToolRunResponse(
+                tool_id="fetch_page",
+                status="completed",
+                title="Example guide",
+                summary="A concise public guide.",
+                content="The guide explains the current public workflow.",
+            )
+
+        monkeypatch.setattr(runtime.tool_service, "fetch_page", fake_fetch_page)
+        response = client.post(
+            "/chat/message",
+            json={
+                "content": "Summarize https://example.com/guide",
+                "allowWeb": True,
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["retrieval"]["route"] == "web_fetch"
+    assert body["retrieval"]["webRetrieved"] == 1
+    assert body["webSources"][0]["title"] == "Example guide"
+    assert "Fetched page content" in ollama.requests[-1]["prompt"]
 
 
 def test_offline_ollama_status_and_chat_error_are_user_friendly(tmp_path) -> None:

@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from deyana_core.app import create_app
 from deyana_core.runtime import RuntimeState
 from deyana_core.settings import CoreSettings
+from deyana_core.tools import parse_bing_rss_results
 
 
 def make_client(tmp_path) -> TestClient:
@@ -99,3 +100,24 @@ def test_code_task_is_proposal_only_and_day_planner_uses_local_actions(tmp_path)
     assert plan.status_code == 200
     assert "Ship Phase 11" in plan.json()["content"]
     assert "update launch checklist" in plan.json()["content"]
+
+
+def test_bing_rss_results_include_snippets_and_urls() -> None:
+    content = """
+    <rss version="2.0">
+      <channel>
+        <item>
+          <title>Example docs</title>
+          <link>https://example.com/docs</link>
+          <description>Current public documentation for the example.</description>
+        </item>
+      </channel>
+    </rss>
+    """
+
+    results = parse_bing_rss_results(content, limit=5)
+
+    assert len(results) == 1
+    assert results[0].title == "Example docs"
+    assert results[0].summary == "Current public documentation for the example."
+    assert results[0].url == "https://example.com/docs"
