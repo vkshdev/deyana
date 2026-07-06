@@ -451,7 +451,10 @@ export interface ModelTestResponse {
 export interface ChatMessageRequest {
   content: string;
   useMemory?: boolean;
+  allowWeb?: boolean;
 }
+
+export type ChatRoute = "conversation" | "memory" | "web_search" | "web_fetch";
 
 export interface MemorySourceReference {
   id: string;
@@ -465,18 +468,28 @@ export interface MemorySourceReference {
   updatedAt: string;
 }
 
+export interface WebSourceReference {
+  title: string;
+  url: string;
+  snippet: string;
+  source: string;
+}
+
 export interface ChatMessageItem {
   id: string;
   role: "user" | "assistant";
   content: string;
   model?: string | null;
   sourceReferences: MemorySourceReference[];
+  webSourceReferences: WebSourceReference[];
   createdAt: string;
 }
 
 export interface ChatRetrievalSummary {
   query: string;
+  route: ChatRoute;
   retrieved: number;
+  webRetrieved: number;
   compressedCharacters: number;
   contextTokensEstimate: number;
 }
@@ -487,6 +500,7 @@ export interface ChatMessageResponse {
   model: string;
   latencyMs: number;
   sources: MemorySourceReference[];
+  webSources: WebSourceReference[];
   retrieval: ChatRetrievalSummary;
 }
 
