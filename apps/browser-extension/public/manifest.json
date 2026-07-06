@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "Deyana Browser Bridge",
+  "version": "0.1.0",
+  "description": "Connect the active browser tab to the local Deyana desktop assistant.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "nativeMessaging",
+    "storage"
+  ],
+  "optional_host_permissions": [
+    "https://web.whatsapp.com/*",
+    "https://mail.google.com/*",
+    "https://www.linkedin.com/*",
+    "https://app.slack.com/*",
+    "https://github.com/*"
+  ],
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Connect this tab to Deyana",
+    "default_popup": "popup.html"
+  },
+  "commands": {
+    "capture-active-page": {
+      "suggested_key": {
+        "default": "Alt+Shift+D"
+      },
+      "description": "Share the active page with local Deyana"
+    }
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'"
+  }
+}
