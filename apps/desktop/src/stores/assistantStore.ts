@@ -231,6 +231,8 @@ class AssistantStore {
   private coreStatusUnlisten?: () => void;
   private backendConnection?: BackendEventConnection;
   private backendReconnectTimer?: number;
+  private hydrationInProgress = false;
+  private hydrated = false;
 
   getSnapshot = () => this.snapshot;
 
@@ -240,6 +242,11 @@ class AssistantStore {
   };
 
   hydrate = async () => {
+    if (this.hydrated || this.hydrationInProgress) {
+      return;
+    }
+    this.hydrationInProgress = true;
+
     try {
       const [settings, backend] = await Promise.all([
         tauriClient.getDesktopSettings(),
@@ -254,10 +261,13 @@ class AssistantStore {
       await this.subscribeToCoreStatus();
       await this.refreshBackendStatus();
       this.connectBackendEvents();
+      this.hydrated = true;
     } catch (error) {
       this.setSnapshot({
         error: error instanceof Error ? error.message : "Unable to load local settings"
       });
+    } finally {
+      this.hydrationInProgress = false;
     }
   };
 
@@ -1391,7 +1401,8 @@ class AssistantStore {
     this.disconnectBackendEvents();
 
     try {
-      const connection = backendClient.connectEvents(
+      let connection: BackendEventConnection;
+      connection = backendClient.connectEvents(
         (event) => this.handleBackendEvent(event),
         (reason) => {
           if (this.backendConnection !== connection) {

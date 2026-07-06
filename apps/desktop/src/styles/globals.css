@@ -675,6 +675,18 @@ button {
   padding: 0 7px 7px;
 }
 
+.source-reference a {
+  display: block;
+  padding: 0 7px 7px;
+  color: var(--gold);
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.source-reference a:hover {
+  text-decoration: underline;
+}
+
 .message-user {
   align-self: flex-end;
   background: rgba(216, 185, 120, 0.1);
