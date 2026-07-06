@@ -306,13 +306,6 @@ fn python_executable(service_dir: &Path) -> PathBuf {
 }
 
 fn service_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    if let Ok(resource_dir) = app.path().resource_dir() {
-        let bundled_service_dir = resource_dir.join("services").join("core");
-        if bundled_service_dir.join("src").join("deyana_core").exists() {
-            return Ok(bundled_service_dir);
-        }
-    }
-
     let tauri_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let desktop_dir = tauri_dir
         .parent()
@@ -323,12 +316,38 @@ fn service_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let repo_dir = apps_dir
         .parent()
         .ok_or_else(|| "unable to resolve repository directory".to_string())?;
-    let service_dir = repo_dir.join("services").join("core");
+    let development_service_dir = repo_dir.join("services").join("core");
 
-    if service_dir.join("src").join("deyana_core").exists() {
-        Ok(service_dir)
+    // Tauri exposes bundled resources during development too. Prefer the
+    // repository service so the managed virtualenv (including WebSocket
+    // support) is used when launching from VS Code or `tauri dev`.
+    if cfg!(debug_assertions)
+        && development_service_dir
+            .join("src")
+            .join("deyana_core")
+            .exists()
+    {
+        return Ok(development_service_dir);
+    }
+
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let bundled_service_dir = resource_dir.join("services").join("core");
+        if bundled_service_dir.join("src").join("deyana_core").exists() {
+            return Ok(bundled_service_dir);
+        }
+    }
+
+    if development_service_dir
+        .join("src")
+        .join("deyana_core")
+        .exists()
+    {
+        Ok(development_service_dir)
     } else {
-        Err(format!("core service directory not found: {}", service_dir.display()))
+        Err(format!(
+            "core service directory not found: {}",
+            development_service_dir.display()
+        ))
     }
 }
 
