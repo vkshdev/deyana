@@ -325,20 +325,33 @@ export const backendClient = {
     onClose: (reason: string) => void
   ): BackendEventConnection {
     const socket = new WebSocket(coreService.websocketUrl);
+    let intentionalClose = false;
+    let closeReported = false;
+
+    const reportClose = (reason: string) => {
+      if (intentionalClose || closeReported) {
+        return;
+      }
+      closeReported = true;
+      onClose(reason);
+    };
 
     socket.onmessage = (message) => {
       try {
         onEvent(JSON.parse(message.data as string) as AppCoreEvent);
       } catch {
-        onClose("Received an invalid backend event");
+        reportClose("Received an invalid backend event");
       }
     };
 
-    socket.onerror = () => onClose("Backend event stream failed");
-    socket.onclose = () => onClose("Backend event stream closed");
+    socket.onerror = () => reportClose("Backend event stream failed");
+    socket.onclose = () => reportClose("Backend event stream closed");
 
     return {
-      disconnect: () => socket.close()
+      disconnect: () => {
+        intentionalClose = true;
+        socket.close();
+      }
     };
   },
 

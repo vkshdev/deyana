@@ -231,7 +231,6 @@ class AssistantStore {
   private coreStatusUnlisten?: () => void;
   private backendConnection?: BackendEventConnection;
   private backendReconnectTimer?: number;
-  private intentionalBackendDisconnect = false;
 
   getSnapshot = () => this.snapshot;
 
@@ -999,7 +998,11 @@ class AssistantStore {
     });
 
     try {
-      const response = await backendClient.sendChatMessage({ content: trimmed });
+      const response = await backendClient.sendChatMessage({
+        content: trimmed,
+        useMemory: true,
+        allowWeb: true
+      });
       this.setSnapshot({
         chatBusy: false,
         assistantState: this.restingAssistantState(),
@@ -1288,7 +1291,7 @@ class AssistantStore {
         error: backend.lifecycle === "crashed" ? backend.lastError ?? "Backend core crashed" : undefined
       });
 
-      if (backend.lifecycle === "running") {
+      if (backend.lifecycle === "running" && !this.backendConnection) {
         this.scheduleBackendReconnect(200);
       }
     });
@@ -1388,10 +1391,17 @@ class AssistantStore {
     this.disconnectBackendEvents();
 
     try {
-      this.backendConnection = backendClient.connectEvents(
+      const connection = backendClient.connectEvents(
         (event) => this.handleBackendEvent(event),
-        (reason) => this.handleBackendClose(reason)
+        (reason) => {
+          if (this.backendConnection !== connection) {
+            return;
+          }
+          this.backendConnection = undefined;
+          this.handleBackendClose(reason);
+        }
       );
+      this.backendConnection = connection;
     } catch {
       this.scheduleBackendReconnect(1200);
     }
@@ -1399,6 +1409,7 @@ class AssistantStore {
 
   private handleBackendEvent = (event: AppCoreEvent) => {
     if (event.type === "app.ready") {
+      this.clearBackendReconnect();
       this.setSnapshot({
         backend: {
           ...this.snapshot.backend,
@@ -1415,6 +1426,7 @@ class AssistantStore {
     }
 
     if (event.type === "backend.heartbeat") {
+      this.clearBackendReconnect();
       this.setSnapshot({
         backend: {
           ...this.snapshot.backend,
@@ -1713,11 +1725,6 @@ class AssistantStore {
   };
 
   private handleBackendClose = (reason: string) => {
-    if (this.intentionalBackendDisconnect) {
-      this.intentionalBackendDisconnect = false;
-      return;
-    }
-
     if (this.snapshot.backend.lifecycle === "stopping" || this.snapshot.backend.lifecycle === "stopped") {
       return;
     }
@@ -1740,9 +1747,18 @@ class AssistantStore {
     }
 
     this.backendReconnectTimer = window.setTimeout(() => {
+      this.backendReconnectTimer = undefined;
       void this.refreshBackendStatus();
       this.connectBackendEvents();
     }, delayMs);
+  };
+
+  private clearBackendReconnect = () => {
+    if (!this.backendReconnectTimer) {
+      return;
+    }
+    window.clearTimeout(this.backendReconnectTimer);
+    this.backendReconnectTimer = undefined;
   };
 
   private setConnectorBusy = (connectorId: string, busy: boolean) => {
@@ -1756,7 +1772,6 @@ class AssistantStore {
 
   private disconnectBackendEvents = () => {
     if (this.backendConnection) {
-      this.intentionalBackendDisconnect = true;
       this.backendConnection.disconnect();
       this.backendConnection = undefined;
     }
