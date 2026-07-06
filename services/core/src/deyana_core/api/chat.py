@@ -42,6 +42,7 @@ async def send_chat_message(
             runtime.chat_agent.answer,
             content,
             use_memory=payload.use_memory,
+            allow_web=payload.allow_web,
         )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
