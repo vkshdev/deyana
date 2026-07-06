@@ -5,7 +5,7 @@ import sqlite3
 import uuid
 from pathlib import Path
 
-from .models import ChatMessageItem, ChatRole, MemorySourceReference
+from .models import ChatMessageItem, ChatRole, MemorySourceReference, WebSourceReference
 from .runtime_time import utc_timestamp
 
 
@@ -25,6 +25,7 @@ class ChatStore:
                   content TEXT NOT NULL,
                   model TEXT,
                   source_context_json TEXT NOT NULL DEFAULT '[]',
+                  web_source_context_json TEXT NOT NULL DEFAULT '[]',
                   created_at TEXT NOT NULL
                 );
 
@@ -32,7 +33,7 @@ class ChatStore:
                 ON chat_messages(created_at);
                 """
             )
-            self.ensure_source_column(connection)
+            self.ensure_source_columns(connection)
 
     def connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.database_path)
@@ -45,15 +46,18 @@ class ChatStore:
         content: str,
         model: str | None = None,
         source_references: list[MemorySourceReference] | None = None,
+        web_source_references: list[WebSourceReference] | None = None,
     ) -> ChatMessageItem:
         self.initialize()
         references = source_references or []
+        web_references = web_source_references or []
         message = ChatMessageItem(
             id=f"chat_{uuid.uuid4().hex}",
             role=role,
             content=content,
             model=model,
             source_references=references,
+            web_source_references=web_references,
             created_at=utc_timestamp(),
         )
         with self.connect() as connection:
@@ -61,9 +65,10 @@ class ChatStore:
                 connection.execute(
                     """
                     INSERT INTO chat_messages (
-                      id, role, content, model, source_context_json, created_at
+                      id, role, content, model, source_context_json,
+                      web_source_context_json, created_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         message.id,
@@ -72,6 +77,9 @@ class ChatStore:
                         message.model,
                         json.dumps(
                             [reference.model_dump(mode="json", by_alias=True) for reference in references]
+                        ),
+                        json.dumps(
+                            [reference.model_dump(mode="json", by_alias=True) for reference in web_references]
                         ),
                         message.created_at,
                     ),
@@ -110,17 +118,27 @@ class ChatStore:
         except (json.JSONDecodeError, KeyError, TypeError):
             source_references = []
 
+        try:
+            web_source_references = [
+                WebSourceReference.model_validate(item)
+                for item in json.loads(row["web_source_context_json"] or "[]")
+                if isinstance(item, dict)
+            ]
+        except (json.JSONDecodeError, KeyError, TypeError):
+            web_source_references = []
+
         return ChatMessageItem(
             id=row["id"],
             role=row["role"],
             content=row["content"],
             model=row["model"],
             source_references=source_references,
+            web_source_references=web_source_references,
             created_at=row["created_at"],
         )
 
     @staticmethod
-    def ensure_source_column(connection: sqlite3.Connection) -> None:
+    def ensure_source_columns(connection: sqlite3.Connection) -> None:
         columns = {
             row["name"]
             for row in connection.execute("PRAGMA table_info(chat_messages)").fetchall()
@@ -128,4 +146,8 @@ class ChatStore:
         if "source_context_json" not in columns:
             connection.execute(
                 "ALTER TABLE chat_messages ADD COLUMN source_context_json TEXT NOT NULL DEFAULT '[]'"
+            )
+        if "web_source_context_json" not in columns:
+            connection.execute(
+                "ALTER TABLE chat_messages ADD COLUMN web_source_context_json TEXT NOT NULL DEFAULT '[]'"
             )

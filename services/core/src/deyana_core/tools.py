@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import re
 import subprocess
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote_plus
@@ -112,7 +113,7 @@ class ToolService:
         query = normalize_space(request.query)
         if not query:
             raise ToolExecutionError("Search query is required.")
-        url = f"https://duckduckgo.com/html/?q={quote_plus(query)}"
+        url = f"https://www.bing.com/search?q={quote_plus(query)}&format=rss"
         privacy = self.privacy_firewall.guard(
             PrivacyCheckRequest(
                 url=url,
@@ -123,8 +124,8 @@ class ToolService:
                 user_approved=True,
             )
         )
-        html_text = fetch_text(url, accept="text/html")
-        items = parse_duckduckgo_results(html_text, limit=request.limit)
+        rss_text = fetch_text(url, accept="application/rss+xml,application/xml,text/xml")
+        items = parse_bing_rss_results(rss_text, limit=request.limit)
         summary = f"Found {len(items)} public results for: {query}"
         return ToolRunResponse(
             tool_id="web_search",
@@ -290,17 +291,19 @@ def fetch_text(url: str, *, accept: str) -> str:
         raise ToolExecutionError(f"Tool request failed: {error.reason}") from error
 
 
-def parse_duckduckgo_results(content: str, *, limit: int) -> list[ToolResultItem]:
+def parse_bing_rss_results(content: str, *, limit: int) -> list[ToolResultItem]:
+    try:
+        root = ET.fromstring(content)
+    except ET.ParseError as error:
+        raise ToolExecutionError("Public search returned invalid XML.") from error
+
     results: list[ToolResultItem] = []
-    pattern = re.compile(
-        r'<a[^>]+class="result__a"[^>]+href="(?P<url>[^"]+)"[^>]*>(?P<title>.*?)</a>',
-        re.IGNORECASE | re.DOTALL,
-    )
-    for match in pattern.finditer(content):
-        title = html_to_text(match.group("title"))
-        url = html.unescape(match.group("url"))
+    for item in root.findall("./channel/item"):
+        title = normalize_space(item.findtext("title") or "")
+        url = normalize_space(item.findtext("link") or "")
+        summary = html_to_text(item.findtext("description") or "") or title
         if title and url:
-            results.append(ToolResultItem(title=title, summary=title, url=url, source="duckduckgo"))
+            results.append(ToolResultItem(title=title, summary=summary, url=url, source="bing"))
         if len(results) >= limit:
             break
     return results
