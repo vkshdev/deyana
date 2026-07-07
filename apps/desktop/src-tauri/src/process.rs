@@ -1,7 +1,7 @@
 use serde::Serialize;
 use std::{
     fs::{self, File},
-    io::Write,
+    io::{self, Read, Write},
     net::{SocketAddr, TcpStream},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
@@ -58,6 +58,30 @@ struct CoreProcessInner {
 impl CoreProcessManager {
     pub fn start(&self, app: &AppHandle) -> Result<CoreProcessSnapshot, String> {
         if self.has_running_child() {
+            return Ok(self.snapshot());
+        }
+
+        if core_is_healthy() {
+            self.set_snapshot(app, |snapshot| {
+                snapshot.lifecycle = "running".to_string();
+                snapshot.pid = None;
+                snapshot.started_at_ms.get_or_insert_with(now_ms);
+                snapshot.updated_at_ms = now_ms();
+                snapshot.last_error = None;
+            });
+            return Ok(self.snapshot());
+        }
+
+        if port_is_open() {
+            self.set_snapshot(app, |snapshot| {
+                snapshot.lifecycle = "unavailable".to_string();
+                snapshot.pid = None;
+                snapshot.updated_at_ms = now_ms();
+                snapshot.last_error = Some(
+                    "port 8765 is occupied by a service that is not a healthy Deyana core"
+                        .to_string(),
+                );
+            });
             return Ok(self.snapshot());
         }
 
@@ -142,6 +166,18 @@ impl CoreProcessManager {
         };
 
         if !has_child {
+            if core_is_healthy() {
+                self.set_snapshot(app, |snapshot| {
+                    snapshot.lifecycle = "running".to_string();
+                    snapshot.pid = None;
+                    snapshot.updated_at_ms = now_ms();
+                    snapshot.last_error = Some(
+                        "the connected Deyana core is externally managed and was not stopped"
+                            .to_string(),
+                    );
+                });
+                return Ok(self.snapshot());
+            }
             self.set_snapshot(app, |snapshot| {
                 snapshot.lifecycle = "stopped".to_string();
                 snapshot.pid = None;
@@ -222,7 +258,7 @@ impl CoreProcessManager {
             }
 
             let lifecycle = manager.snapshot().lifecycle;
-            if lifecycle == "starting" && port_is_open() {
+            if lifecycle == "starting" && core_is_healthy() {
                 manager.set_snapshot(&app, |snapshot| {
                     snapshot.lifecycle = "running".to_string();
                     snapshot.updated_at_ms = now_ms();
@@ -249,11 +285,17 @@ impl CoreProcessManager {
         *child_lock = None;
         drop(child_lock);
 
+        let healthy_core_available = core_is_healthy();
+
         self.set_snapshot(app, |snapshot| {
-            snapshot.lifecycle = lifecycle.to_string();
+            snapshot.lifecycle = if healthy_core_available {
+                "running".to_string()
+            } else {
+                lifecycle.to_string()
+            };
             snapshot.pid = None;
             snapshot.updated_at_ms = now_ms();
-            snapshot.last_error = if status.success() {
+            snapshot.last_error = if status.success() || healthy_core_available {
                 None
             } else {
                 Some(format!("core exited with status {status}"))
@@ -317,31 +359,40 @@ fn service_dir(app: &AppHandle) -> Result<PathBuf, String> {
         .parent()
         .ok_or_else(|| "unable to resolve repository directory".to_string())?;
     let development_service_dir = repo_dir.join("services").join("core");
+    let bundled_service_dir = app
+        .path()
+        .resource_dir()
+        .ok()
+        .map(|resource_dir| resource_dir.join("services").join("core"));
 
     // Tauri exposes bundled resources during development too. Prefer the
     // repository service so the managed virtualenv (including WebSocket
     // support) is used when launching from VS Code or `tauri dev`.
-    if cfg!(debug_assertions)
-        && development_service_dir
-            .join("src")
-            .join("deyana_core")
-            .exists()
-    {
+    if cfg!(debug_assertions) && has_core_source(&development_service_dir) {
         return Ok(development_service_dir);
     }
 
-    if let Ok(resource_dir) = app.path().resource_dir() {
-        let bundled_service_dir = resource_dir.join("services").join("core");
-        if bundled_service_dir.join("src").join("deyana_core").exists() {
+    // Release bundles currently include the Python source but not a full
+    // virtualenv. For prototype MSI builds created from this checkout, prefer
+    // the repository service when its managed venv exists; otherwise the
+    // installed app may launch system Python without FastAPI/Uvicorn installed.
+    if has_core_source(&development_service_dir) && has_managed_python(&development_service_dir) {
+        return Ok(development_service_dir);
+    }
+
+    if let Some(bundled_service_dir) = bundled_service_dir.as_ref() {
+        if has_core_source(bundled_service_dir) && has_managed_python(bundled_service_dir) {
+            return Ok(bundled_service_dir.clone());
+        }
+    }
+
+    if let Some(bundled_service_dir) = bundled_service_dir {
+        if has_core_source(&bundled_service_dir) {
             return Ok(bundled_service_dir);
         }
     }
 
-    if development_service_dir
-        .join("src")
-        .join("deyana_core")
-        .exists()
-    {
+    if has_core_source(&development_service_dir) {
         Ok(development_service_dir)
     } else {
         Err(format!(
@@ -351,9 +402,70 @@ fn service_dir(app: &AppHandle) -> Result<PathBuf, String> {
     }
 }
 
+fn has_core_source(service_dir: &Path) -> bool {
+    service_dir.join("src").join("deyana_core").exists()
+}
+
+fn has_managed_python(service_dir: &Path) -> bool {
+    service_dir
+        .join(".venv")
+        .join("Scripts")
+        .join("python.exe")
+        .exists()
+        || service_dir.join(".venv").join("bin").join("python").exists()
+}
+
 fn port_is_open() -> bool {
     let address = SocketAddr::from(([127, 0, 0, 1], CORE_PORT));
     TcpStream::connect_timeout(&address, Duration::from_millis(200)).is_ok()
+}
+
+fn core_is_healthy() -> bool {
+    let address = SocketAddr::from(([127, 0, 0, 1], CORE_PORT));
+    let Ok(mut stream) = TcpStream::connect_timeout(&address, Duration::from_millis(300)) else {
+        return false;
+    };
+    let timeout = Some(Duration::from_millis(500));
+    if stream.set_read_timeout(timeout).is_err() || stream.set_write_timeout(timeout).is_err() {
+        return false;
+    }
+
+    let request = format!(
+        "GET /status HTTP/1.1\r\nHost: {CORE_HOST}:{CORE_PORT}\r\nConnection: close\r\nAccept: application/json\r\n\r\n"
+    );
+    if stream.write_all(request.as_bytes()).is_err() {
+        return false;
+    }
+
+    let mut response = Vec::new();
+    match stream.read_to_end(&mut response) {
+        Ok(_) => {}
+        Err(error)
+            if !response.is_empty()
+                && matches!(error.kind(), io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock) => {}
+        Err(_) => return false,
+    }
+
+    let Ok(response) = String::from_utf8(response) else {
+        return false;
+    };
+    let Some((headers, body)) = response.split_once("\r\n\r\n") else {
+        return false;
+    };
+    if !headers.lines().next().is_some_and(|line| line.contains(" 200 ")) {
+        return false;
+    }
+
+    let Ok(payload) = serde_json::from_str::<serde_json::Value>(body) else {
+        return false;
+    };
+    payload.get("service").and_then(|value| value.as_str()) == Some("deyana-core")
+        && payload.get("lifecycle").and_then(|value| value.as_str()) == Some("running")
+        && payload
+            .get("featureFlags")
+            .and_then(|value| value.get("installedDesktopCors"))
+            .and_then(|value| value.as_bool())
+            == Some(true)
 }
 
 fn request_clean_shutdown() {

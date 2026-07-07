@@ -24,6 +24,7 @@ pub fn configure_main_window(app: &AppHandle) -> Result<WebviewWindow, String> {
         window
             .set_position(Position::Physical(PhysicalPosition::new(position.x, position.y)))
             .map_err(|error| error.to_string())?;
+        ensure_window_visible(&window, &settings.ui_mode)?;
     } else {
         place_default(&window, current_width(&settings.ui_mode))?;
     }
@@ -116,6 +117,7 @@ fn apply_window_mode(window: &WebviewWindow, mode: &str, preserve_right_edge: bo
         snap_after_resize(window, width, right_edge)?;
     }
 
+    ensure_window_visible(window, mode)?;
     Ok(())
 }
 
@@ -142,6 +144,47 @@ fn snap_after_resize(window: &WebviewWindow, width: f64, right_edge: i32) -> Res
 
     window
         .set_position(Position::Physical(PhysicalPosition::new(next_x, current_y)))
+        .map_err(|error| error.to_string())
+}
+
+fn ensure_window_visible(window: &WebviewWindow, mode: &str) -> Result<(), String> {
+    let (width, height) = dimensions_for_mode(mode)?;
+    let monitor = active_monitor(window)?;
+    let scale = monitor.as_ref().map(|monitor| monitor.scale_factor()).unwrap_or(1.0);
+    let width_px = (width * scale).round() as i32;
+    let height_px = (height * scale).round() as i32;
+    let edge_padding = (MIN_EDGE_PADDING * scale).round() as i32;
+    let position = window.outer_position().map_err(|error| error.to_string())?;
+
+    let (left_limit, top_limit, right_limit, bottom_limit) = if let Some(monitor) = monitor {
+        let monitor_position = monitor.position();
+        let monitor_size = monitor.size();
+        (
+            monitor_position.x + edge_padding,
+            monitor_position.y + edge_padding,
+            monitor_position.x + monitor_size.width as i32 - width_px - edge_padding,
+            monitor_position.y + monitor_size.height as i32 - height_px - edge_padding,
+        )
+    } else {
+        (
+            edge_padding,
+            edge_padding,
+            edge_padding.max(position.x),
+            edge_padding.max(position.y),
+        )
+    };
+
+    let right_limit = right_limit.max(left_limit);
+    let bottom_limit = bottom_limit.max(top_limit);
+    let next_x = position.x.clamp(left_limit, right_limit);
+    let next_y = position.y.clamp(top_limit, bottom_limit);
+
+    if next_x == position.x && next_y == position.y {
+        return Ok(());
+    }
+
+    window
+        .set_position(Position::Physical(PhysicalPosition::new(next_x, next_y)))
         .map_err(|error| error.to_string())
 }
 
