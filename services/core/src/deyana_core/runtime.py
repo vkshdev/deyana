@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 
 from . import __version__
 from .agent import ChatAgent
+from .browser import BrowserService
 from .chat import ChatStore
 from .connectors import ConnectorManager
 from .event_bus import EventBus
@@ -39,6 +40,15 @@ class RuntimeState:
         self.privacy_firewall = PrivacyFirewall(settings.data_dir, self.store)
         self.privacy_firewall.initialize()
         self.tool_service = ToolService(self.privacy_firewall, self.memory_store)
+        self.browser_service = BrowserService(
+            data_dir=settings.data_dir,
+            host=settings.host,
+            port=settings.port,
+            model_router=self.model_router,
+            tool_service=self.tool_service,
+            event_bus=self.event_bus,
+            event_factory=self.event,
+        )
         self.chat_agent = ChatAgent(
             self.memory_store,
             self.chat_store,
@@ -55,6 +65,7 @@ class RuntimeState:
             chat_store=self.chat_store,
             privacy_firewall=self.privacy_firewall,
             connector_manager=self.connector_manager,
+            browser_service=self.browser_service,
             model_router=self.model_router,
             voice_service=self.voice_service,
         )
@@ -127,6 +138,7 @@ class RuntimeState:
             ],
             feature_flags={
                 "websocketEvents": True,
+                "installedDesktopCors": True,
                 "localLogging": True,
                 "settings": True,
                 "onboarding": True,
@@ -146,6 +158,10 @@ class RuntimeState:
                 "gitTools": True,
                 "codingTools": True,
                 "dayPlanner": True,
+                "browserAgent": True,
+                "browserActivePage": True,
+                "browserSearch": True,
+                "browserOpenTab": True,
                 "connectors": True,
                 "expandedConnectors": True,
                 "connectorScheduler": True,
