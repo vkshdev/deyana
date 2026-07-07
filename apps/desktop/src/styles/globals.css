@@ -1722,6 +1722,223 @@ button {
   touch-action: none;
 }
 
+.browser-panel {
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+  padding: 9px;
+  border: 1px solid rgba(208, 221, 230, 0.1);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.browser-heading,
+.browser-status,
+.browser-context-controls,
+.browser-search-row,
+.browser-open-row,
+.browser-search-results article,
+.browser-detail-list article {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.browser-heading {
+  justify-content: space-between;
+}
+
+.browser-status {
+  min-height: 38px;
+  padding: 0 8px;
+  border: 1px solid rgba(208, 221, 230, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.browser-status > span,
+.browser-search-results article > div,
+.browser-detail-list article > span {
+  min-width: 0;
+  flex: 1;
+}
+
+.browser-status strong,
+.browser-status small,
+.browser-search-results strong,
+.browser-search-results small,
+.browser-detail-list strong,
+.browser-detail-list small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.browser-status strong,
+.browser-search-results strong,
+.browser-detail-list strong,
+.browser-audit-list strong,
+.browser-context-preview strong,
+.browser-summary strong {
+  color: var(--text);
+  font-size: 10px;
+}
+
+.browser-status small,
+.browser-search-results small,
+.browser-detail-list small,
+.browser-audit-list span,
+.browser-audit-list small,
+.browser-context-preview small,
+.browser-context-preview span,
+.browser-summary small {
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.25;
+}
+
+.browser-connected {
+  color: var(--gold);
+  border-color: rgba(216, 185, 120, 0.22);
+}
+
+.browser-disconnected {
+  color: var(--rose);
+}
+
+.browser-instruction {
+  min-height: 34px;
+  padding: 7px 8px;
+  border: 1px solid rgba(131, 169, 212, 0.18);
+  border-radius: 8px;
+  color: var(--blue);
+  background: rgba(131, 169, 212, 0.07);
+  font-size: 9px;
+  line-height: 1.3;
+  text-align: left;
+}
+
+.browser-context-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.browser-context-controls select,
+.browser-context-controls button,
+.browser-search-row input,
+.browser-search-row button,
+.browser-open-row input,
+.browser-open-row button {
+  min-width: 0;
+  height: 30px;
+  border: 1px solid rgba(208, 221, 230, 0.12);
+  border-radius: 8px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.055);
+  outline: none;
+  font: inherit;
+  font-size: 10px;
+}
+
+.browser-context-controls select,
+.browser-search-row input,
+.browser-open-row input {
+  padding: 0 8px;
+}
+
+.browser-context-controls button,
+.browser-search-row button,
+.browser-open-row button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 9px;
+}
+
+.browser-context-controls button:disabled,
+.browser-search-row button:disabled,
+.browser-open-row button:disabled,
+.browser-panel input:disabled,
+.browser-panel select:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+}
+
+.browser-context-preview,
+.browser-summary {
+  display: grid;
+  gap: 5px;
+  padding: 8px;
+  border: 1px solid rgba(208, 221, 230, 0.09);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.browser-context-preview > div {
+  display: grid;
+  gap: 2px;
+}
+
+.browser-context-preview p,
+.browser-summary p {
+  max-height: 92px;
+  margin: 0;
+  overflow: auto;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.browser-search-row,
+.browser-open-row {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+}
+
+.browser-search-results,
+.browser-detail-list,
+.browser-audit-list {
+  display: grid;
+  gap: 5px;
+}
+
+.browser-search-results article,
+.browser-detail-list article,
+.browser-audit-list article {
+  min-height: 36px;
+  padding: 6px 7px;
+  border: 1px solid rgba(208, 221, 230, 0.08);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.browser-details summary {
+  min-height: 26px;
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.browser-audit-list article {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.browser-audit-list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .onboarding-identity {
   min-width: 0;
   display: flex;

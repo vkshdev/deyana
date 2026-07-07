@@ -3,6 +3,21 @@ import type {
   AppCoreEvent,
   BackendHealthResponse,
   BackendStatusResponse,
+  BrowserAuditListResponse,
+  BrowserContextReadRequest,
+  BrowserContextReadResponse,
+  BrowserContextSummaryRequest,
+  BrowserContextSummaryResponse,
+  BrowserDisconnectResponse,
+  BrowserOpenTabRequest,
+  BrowserOpenTabResponse,
+  BrowserPermissionListResponse,
+  BrowserPermissionRequest,
+  BrowserPermissionResponse,
+  BrowserSearchRequest,
+  BrowserSearchResponse,
+  BrowserSessionListResponse,
+  BrowserStatusResponse,
   ChatHistoryDeleteResponse,
   ChatHistoryResponse,
   ChatMessageRequest,
@@ -144,6 +159,70 @@ export const backendClient = {
     } finally {
       window.clearTimeout(timeout);
     }
+  },
+
+  async getBrowserStatus(): Promise<BrowserStatusResponse> {
+    return getJson<BrowserStatusResponse>("/browser/status", "browser status");
+  },
+
+  async listBrowserSessions(): Promise<BrowserSessionListResponse> {
+    return getJson<BrowserSessionListResponse>("/browser/sessions", "browser sessions");
+  },
+
+  async disconnectBrowserSession(pageSessionId: string): Promise<BrowserDisconnectResponse> {
+    const response = await fetch(
+      `${coreService.endpoint}/browser/sessions/${encodeURIComponent(pageSessionId)}`,
+      { method: "DELETE" }
+    );
+    if (!response.ok) {
+      throw new Error((await readErrorDetail(response)) || `browser session disconnect returned ${response.status}`);
+    }
+    return response.json() as Promise<BrowserDisconnectResponse>;
+  },
+
+  async listBrowserPermissions(): Promise<BrowserPermissionListResponse> {
+    return getJson<BrowserPermissionListResponse>("/browser/permissions", "browser permissions");
+  },
+
+  async requestBrowserPermission(
+    request: BrowserPermissionRequest
+  ): Promise<BrowserPermissionResponse> {
+    return postBrowser<BrowserPermissionResponse>("/browser/permissions/request", request);
+  },
+
+  async revokeBrowserPermission(origin: string): Promise<BrowserPermissionResponse> {
+    const params = new URLSearchParams({ origin });
+    const response = await fetch(`${coreService.endpoint}/browser/permissions?${params}`, {
+      method: "DELETE"
+    });
+    if (!response.ok) {
+      throw new Error((await readErrorDetail(response)) || `browser permission revoke returned ${response.status}`);
+    }
+    return response.json() as Promise<BrowserPermissionResponse>;
+  },
+
+  async readBrowserContext(
+    request: BrowserContextReadRequest
+  ): Promise<BrowserContextReadResponse> {
+    return postBrowser<BrowserContextReadResponse>("/browser/context/read", request);
+  },
+
+  async summarizeBrowserContext(
+    request: BrowserContextSummaryRequest
+  ): Promise<BrowserContextSummaryResponse> {
+    return postBrowser<BrowserContextSummaryResponse>("/browser/context/summarize", request);
+  },
+
+  async browserSearch(request: BrowserSearchRequest): Promise<BrowserSearchResponse> {
+    return postBrowser<BrowserSearchResponse>("/browser/search", request);
+  },
+
+  async openBrowserTab(request: BrowserOpenTabRequest): Promise<BrowserOpenTabResponse> {
+    return postBrowser<BrowserOpenTabResponse>("/browser/tabs/open", request);
+  },
+
+  async listBrowserAudit(): Promise<BrowserAuditListResponse> {
+    return getJson<BrowserAuditListResponse>("/browser/audit?limit=20", "browser audit");
   },
 
   async listTools(): Promise<ToolListResponse> {
@@ -783,6 +862,26 @@ const postTool = async (path: string, request: object): Promise<ToolRunResponse>
     throw new Error(detail || `${path} returned ${response.status}`);
   }
   return response.json() as Promise<ToolRunResponse>;
+};
+
+const getJson = async <T>(path: string, label: string): Promise<T> => {
+  const response = await fetch(`${coreService.endpoint}${path}`);
+  if (!response.ok) {
+    throw new Error((await readErrorDetail(response)) || `${label} returned ${response.status}`);
+  }
+  return response.json() as Promise<T>;
+};
+
+const postBrowser = async <T>(path: string, request: object): Promise<T> => {
+  const response = await fetch(`${coreService.endpoint}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(request)
+  });
+  if (!response.ok) {
+    throw new Error((await readErrorDetail(response)) || `${path} returned ${response.status}`);
+  }
+  return response.json() as Promise<T>;
 };
 
 const readErrorDetail = async (response: Response) => {
