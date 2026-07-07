@@ -73,6 +73,7 @@ async def delete_local_data(request: Request, payload: DeleteLocalDataRequest) -
     except ReleaseSafetyError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
+    await runtime.browser_service.disconnect("Local browser data was deleted.")
     await runtime.event_bus.publish(
         runtime.event(
             "release.local_data.deleted",
