@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .browser import BrowserService
 from .chat import ChatStore
 from .connectors import ConnectorManager
 from .identity import PRODUCT_NAME
@@ -54,6 +55,7 @@ class ReleaseService:
         chat_store: ChatStore,
         privacy_firewall: PrivacyFirewall,
         connector_manager: ConnectorManager,
+        browser_service: BrowserService,
         model_router: ModelRouter,
         voice_service: LocalVoiceService,
         repo_root: Path | None = None,
@@ -64,6 +66,7 @@ class ReleaseService:
         self.chat_store = chat_store
         self.privacy_firewall = privacy_firewall
         self.connector_manager = connector_manager
+        self.browser_service = browser_service
         self.model_router = model_router
         self.voice_service = voice_service
         self.repo_root = repo_root or Path(__file__).resolve().parents[4]
@@ -153,6 +156,19 @@ class ReleaseService:
                 "Core service source is available for bundled or development launch.",
             ),
             check_item(
+                "browser_extension",
+                "Browser extension source",
+                (self.repo_root / "apps" / "browser-extension" / "public" / "manifest.json").is_file(),
+                "Manifest V3 browser extension source is available.",
+            ),
+            check_item(
+                "browser_native_host",
+                "Browser native messaging host",
+                (self.repo_root / "apps" / "browser-native-host" / "Cargo.toml").is_file()
+                and (self.repo_root / "apps" / "browser-native-host" / "scripts" / "register.ps1").is_file(),
+                "Native messaging host source and registration script are available.",
+            ),
+            check_item(
                 "privacy_firewall",
                 "Privacy firewall",
                 True,
@@ -191,6 +207,7 @@ class ReleaseService:
                 "Publish release notes with privacy-impact changes called out explicitly.",
                 "Ship updates manually until a signed updater endpoint is introduced.",
                 "Run backend tests, desktop TypeScript check, Tauri cargo check, and production UI build before release.",
+                "Build and register the browser native messaging host for each supported browser extension ID.",
                 "Never enable automatic updates without a signed manifest and rollback plan.",
             ],
             checked_at=utc_timestamp(),
@@ -230,6 +247,9 @@ class ReleaseService:
         model_status = self.model_router.status()
         settings = self.store.read_settings()
         onboarding = self.store.read_onboarding()
+        browser_sessions = self.browser_service.list_sessions()
+        browser_permissions = self.browser_service.list_permissions()
+        browser_audit = self.browser_service.list_audit(limit=200)
 
         sections = {
             "settings": settings.model_dump(mode="json", by_alias=True),
@@ -244,6 +264,11 @@ class ReleaseService:
                 "status": voice_status.model_dump(mode="json", by_alias=True),
             },
             "models": model_status.model_dump(mode="json", by_alias=True),
+            "browser": {
+                "sessions": browser_sessions.model_dump(mode="json", by_alias=True),
+                "permissions": browser_permissions.model_dump(mode="json", by_alias=True),
+                "audit": browser_audit.model_dump(mode="json", by_alias=True),
+            },
         }
         counts = {
             "memoryItems": len(memory.items),
@@ -251,6 +276,9 @@ class ReleaseService:
             "privacyAuditEvents": privacy_audit.total,
             "connectors": len(connectors.items),
             "connectorSyncRuns": sync_runs.total,
+            "browserSessions": browser_sessions.total,
+            "browserPermissions": browser_permissions.total,
+            "browserAuditEvents": browser_audit.total,
         }
         return ReleasePrivacyExportResponse(
             exported_at=utc_timestamp(),
@@ -259,6 +287,8 @@ class ReleaseService:
             notes=[
                 "Connector OAuth token secrets are not exported.",
                 "Raw voice audio is not stored and is therefore not exported.",
+                "Raw browser page text is held in memory only and is not exported.",
+                "Browser bridge credentials are secret and are not exported.",
                 "Markdown vault files remain user-owned on disk.",
             ],
         )
@@ -336,9 +366,20 @@ class ReleaseService:
         self.chat_store.initialize()
         self.privacy_firewall.initialize()
         self.connector_manager.initialize()
+        self.browser_service.reinitialize_after_local_data_delete()
         self.voice_service.write_settings(self.voice_service.default_settings())
         self.mark_startup()
-        return ["settings", "onboarding", "memory", "chat", "privacy", "connectors", "voice", "release-state"]
+        return [
+            "settings",
+            "onboarding",
+            "memory",
+            "chat",
+            "privacy",
+            "connectors",
+            "browser",
+            "voice",
+            "release-state",
+        ]
 
     def delete_roots(self) -> list[Path]:
         roots = [self.settings.data_dir, self.settings.log_dir]

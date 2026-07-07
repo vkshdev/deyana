@@ -9,6 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import __version__
 from .api import (
+    browser_bridge_router,
+    browser_router,
     chat_router,
     connectors_router,
     health_router,
@@ -91,13 +93,18 @@ def create_app(runtime: RuntimeState | None = None) -> FastAPI:
         allow_origins=[
             "http://127.0.0.1:1420",
             "http://localhost:1420",
+            "http://tauri.localhost",
+            "https://tauri.localhost",
             "tauri://localhost",
+            "asset://localhost",
         ],
         allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["*"],
     )
 
     app.include_router(health_router)
+    app.include_router(browser_router)
+    app.include_router(browser_bridge_router)
     app.include_router(status_router)
     app.include_router(settings_router)
     app.include_router(onboarding_router)
