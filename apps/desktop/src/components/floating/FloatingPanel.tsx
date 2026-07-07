@@ -12,6 +12,7 @@ import { FloatingSyncIndicator } from "./FloatingSyncIndicator";
 import { ConnectorStatusList } from "./ConnectorStatusList";
 import { LocalChat } from "./LocalChat";
 import { MemoryBrowser } from "../memory/MemoryBrowser";
+import { BrowserAgentPanel } from "../browser/BrowserAgentPanel";
 import { ModelSetupPanel } from "./ModelSetupPanel";
 import { PrivacyAuditPanel } from "./PrivacyAuditPanel";
 import { QuickActions } from "./QuickActions";
@@ -83,6 +84,7 @@ export function FloatingPanel({ snapshot }: FloatingPanelProps) {
         <ModelSetupPanel snapshot={snapshot} />
         <VoicePanel snapshot={snapshot} />
         <LocalChat snapshot={snapshot} />
+        <BrowserAgentPanel snapshot={snapshot} />
         <PrivacyAuditPanel snapshot={snapshot} />
         <ReleaseQualityPanel snapshot={snapshot} />
 
