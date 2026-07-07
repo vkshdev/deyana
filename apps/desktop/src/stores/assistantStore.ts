@@ -7,6 +7,14 @@ import {
   type AppCoreEvent,
   type BackendProcessStatus,
   type BackendStatusResponse,
+  type BrowserAuditEvent,
+  type BrowserContextMode,
+  type BrowserContextSummaryResponse,
+  type BrowserPageContext,
+  type BrowserPermission,
+  type BrowserSearchResponse,
+  type BrowserSession,
+  type BrowserStatusResponse,
   type ChatMessageItem,
   type ChatMessageResponse,
   type ConnectorItem,
@@ -63,6 +71,17 @@ export interface AssistantSnapshot {
   backend: BackendProcessStatus;
   backendStatus?: BackendStatusResponse;
   backendEventStreamConnected: boolean;
+  browserStatus: BrowserStatusResponse;
+  browserSessions: BrowserSession[];
+  browserPermissions: BrowserPermission[];
+  browserAuditEvents: BrowserAuditEvent[];
+  browserContextMode: BrowserContextMode;
+  browserContext?: BrowserPageContext;
+  browserSummary?: BrowserContextSummaryResponse;
+  browserSearchQuery: string;
+  browserSearchResult?: BrowserSearchResponse;
+  browserOpenUrl: string;
+  browserBusy: boolean;
   lastBackendEventType?: string;
   connectors: ConnectorItem[];
   connectorSyncRuns: ConnectorSyncRun[];
@@ -158,6 +177,21 @@ const initialSnapshot: AssistantSnapshot = {
   syncStatus: "idle",
   backend: DEFAULT_BACKEND_PROCESS_STATUS,
   backendEventStreamConnected: false,
+  browserStatus: {
+    state: "disconnected",
+    connected: false,
+    protocolVersion: 1,
+    activeSessions: 0,
+    permissions: 0,
+    credentialPath: ""
+  },
+  browserSessions: [],
+  browserPermissions: [],
+  browserAuditEvents: [],
+  browserContextMode: "main",
+  browserSearchQuery: "",
+  browserOpenUrl: "",
+  browserBusy: false,
   connectors: defaultConnectors(),
   connectorSyncRuns: [],
   connectorBusy: {},
@@ -235,6 +269,15 @@ class AssistantStore {
   private hydrated = false;
 
   getSnapshot = () => this.snapshot;
+
+  private browserUnavailableStatus = (lastError: string): BrowserStatusResponse => ({
+    ...this.snapshot.browserStatus,
+    state: "disconnected",
+    connected: false,
+    activeSessions: 0,
+    permissions: 0,
+    lastError
+  });
 
   subscribe = (listener: Listener) => {
     this.listeners.add(listener);
@@ -394,13 +437,26 @@ class AssistantStore {
   };
 
   setOnboardingStep = async (onboardingStep: Exclude<OnboardingStep, "complete">) => {
-    this.setSnapshot({ onboardingBusy: true, assistantState: "ONBOARDING", error: undefined });
+    const localOnboarding: OnboardingState = {
+      ...this.snapshot.onboarding,
+      currentStep: onboardingStep,
+      selectedPrivacyMode: this.snapshot.onboarding.selectedPrivacyMode,
+      selectedModelProfile: this.snapshot.onboarding.selectedModelProfile
+    };
+
+    this.setSnapshot({
+      onboarding: localOnboarding,
+      onboardingStep,
+      onboardingBusy: true,
+      assistantState: "ONBOARDING",
+      error: undefined
+    });
 
     try {
       const result = await backendClient.updateOnboardingState({
         currentStep: onboardingStep,
-        privacyMode: this.snapshot.onboarding.selectedPrivacyMode,
-        modelProfile: this.snapshot.onboarding.selectedModelProfile
+        privacyMode: localOnboarding.selectedPrivacyMode,
+        modelProfile: localOnboarding.selectedModelProfile
       });
       this.setSnapshot({
         onboarding: result.state,
@@ -410,9 +466,18 @@ class AssistantStore {
         error: undefined
       });
     } catch (error) {
+      this.scheduleBackendReconnect(700);
       this.setSnapshot({
+        onboarding: localOnboarding,
+        onboardingStep,
         onboardingBusy: false,
-        error: error instanceof Error ? error.message : "Unable to save onboarding progress"
+        backend: {
+          ...this.snapshot.backend,
+          lifecycle: this.snapshot.backend.lifecycle === "running" ? "running" : "unavailable",
+          updatedAtMs: Date.now(),
+          lastError: error instanceof Error ? error.message : "Unable to save onboarding progress"
+        },
+        error: undefined
       });
     }
   };
@@ -481,10 +546,39 @@ class AssistantStore {
         ]
       });
     } catch (error) {
+      const localCompletedAt = new Date().toISOString();
       this.setSnapshot({
+        onboarding: {
+          ...this.snapshot.onboarding,
+          completed: true,
+          completedAt: localCompletedAt,
+          currentStep: "complete",
+          selectedVaultPath: vaultPath,
+          vaultStatus: "ready",
+          vaultError: null
+        },
+        onboardingStep: "complete",
+        onboardingVaultPath: vaultPath,
         onboardingBusy: false,
-        error: error instanceof Error ? error.message : "Unable to complete onboarding"
+        assistantState: this.snapshot.settings.uiMode === "expanded" ? "EXPANDED_PANEL" : "COMPACT_FLOATING",
+        backend: {
+          ...this.snapshot.backend,
+          lifecycle: this.snapshot.backend.lifecycle === "running" ? "running" : "unavailable",
+          updatedAtMs: Date.now(),
+          lastError: error instanceof Error ? error.message : "Unable to complete onboarding"
+        },
+        memoryPreview: [
+          {
+            id: "vault",
+            title: "Vault selected",
+            source: vaultPath,
+            updatedLabel: "Prototype"
+          },
+          ...this.snapshot.memoryPreview.filter((item) => item.id !== "vault")
+        ],
+        error: undefined
       });
+      this.scheduleBackendReconnect(700);
     }
   };
 
@@ -1334,6 +1428,38 @@ class AssistantStore {
         backendClient.getVoiceSettings(),
         backendClient.getVoiceStatus()
       ]);
+
+      let browserStatus = this.snapshot.browserStatus;
+      let browserSessions = this.snapshot.browserSessions;
+      let browserPermissions = this.snapshot.browserPermissions;
+      let browserAuditEvents = this.snapshot.browserAuditEvents;
+      let browserContext = this.snapshot.browserContext;
+      let browserSummary = this.snapshot.browserSummary;
+      try {
+        const [status, sessions, permissions, audit] = await Promise.all([
+          backendClient.getBrowserStatus(),
+          backendClient.listBrowserSessions(),
+          backendClient.listBrowserPermissions(),
+          backendClient.listBrowserAudit()
+        ]);
+        const activeSessionIds = new Set(sessions.items.map((session) => session.id));
+        browserStatus = status;
+        browserSessions = sessions.items;
+        browserPermissions = permissions.items;
+        browserAuditEvents = audit.items;
+        browserContext =
+          browserContext && activeSessionIds.has(browserContext.pageSessionId) ? browserContext : undefined;
+        browserSummary = browserContext ? browserSummary : undefined;
+      } catch {
+        browserStatus = this.browserUnavailableStatus(
+          "Browser agent API is unavailable. Restart the core to load Phase 16 browser support."
+        );
+        browserSessions = [];
+        browserPermissions = [];
+        browserAuditEvents = [];
+        browserContext = undefined;
+        browserSummary = undefined;
+      }
       const onboardingVaultPath = onboarding.selectedVaultPath ?? coreSettings.vaultPath ?? "";
       const memoryPreview = onboarding.completed && onboardingVaultPath
         ? [
@@ -1359,6 +1485,12 @@ class AssistantStore {
         connectorSyncRuns: connectorSyncRuns.items,
         voiceSettings,
         voiceStatus,
+        browserStatus,
+        browserSessions,
+        browserPermissions,
+        browserAuditEvents,
+        browserContext,
+        browserSummary,
         syncStatus: deriveSyncStatus(connectors.items),
         onboardingStep: onboarding.completed ? "complete" : onboarding.currentStep,
         onboardingVaultPath,
@@ -1610,6 +1742,62 @@ class AssistantStore {
       return;
     }
 
+    if (event.type === "browser.connection.changed") {
+      this.setSnapshot({
+        browserStatus: event.payload,
+        lastBackendEventType: event.type
+      });
+      return;
+    }
+
+    if (event.type === "browser.page.context.updated") {
+      const browserSessions = [
+        event.payload.session,
+        ...this.snapshot.browserSessions.filter((item) => item.id !== event.payload.session.id)
+      ];
+      this.setSnapshot({
+        browserContext: event.payload.context,
+        browserSessions,
+        browserStatus: {
+          ...this.snapshot.browserStatus,
+          activeSessions: browserSessions.length
+        },
+        lastBackendEventType: event.type
+      });
+      return;
+    }
+
+    if (event.type === "browser.page.session.closed") {
+      const browserSessions = this.snapshot.browserSessions.filter(
+        (item) => item.id !== event.payload.pageSessionId
+      );
+      this.setSnapshot({
+        browserSessions,
+        browserContext:
+          this.snapshot.browserContext?.pageSessionId === event.payload.pageSessionId
+            ? undefined
+            : this.snapshot.browserContext,
+        browserStatus: {
+          ...this.snapshot.browserStatus,
+          activeSessions: browserSessions.length
+        },
+        lastBackendEventType: event.type
+      });
+      return;
+    }
+
+    if (event.type === "browser.permission.changed") {
+      this.setSnapshot({
+        browserPermissions: event.payload.permissions,
+        browserStatus: {
+          ...this.snapshot.browserStatus,
+          permissions: event.payload.permissions.length
+        },
+        lastBackendEventType: event.type
+      });
+      return;
+    }
+
     if (event.type === "voice.settings.updated") {
       this.setSnapshot({
         voiceSettings: event.payload,
@@ -1762,6 +1950,210 @@ class AssistantStore {
       void this.refreshBackendStatus();
       this.connectBackendEvents();
     }, delayMs);
+  };
+
+  loadBrowser = async () => {
+    try {
+      const [status, sessions, permissions, audit] = await Promise.all([
+        backendClient.getBrowserStatus(),
+        backendClient.listBrowserSessions(),
+        backendClient.listBrowserPermissions(),
+        backendClient.listBrowserAudit()
+      ]);
+      const activeSessionIds = new Set(sessions.items.map((session) => session.id));
+      const browserContext =
+        this.snapshot.browserContext && activeSessionIds.has(this.snapshot.browserContext.pageSessionId)
+          ? this.snapshot.browserContext
+          : undefined;
+      this.setSnapshot({
+        browserStatus: status,
+        browserSessions: sessions.items,
+        browserPermissions: permissions.items,
+        browserAuditEvents: audit.items,
+        browserContext,
+        browserSummary: browserContext ? this.snapshot.browserSummary : undefined
+      });
+    } catch (error) {
+      this.setSnapshot({
+        browserStatus: this.browserUnavailableStatus(
+          error instanceof Error ? error.message : "Unable to load browser agent status"
+        ),
+        browserSessions: [],
+        browserPermissions: [],
+        browserAuditEvents: [],
+        browserContext: undefined,
+        browserSummary: undefined
+      });
+    }
+  };
+
+  setBrowserContextMode = (browserContextMode: BrowserContextMode) => {
+    this.setSnapshot({ browserContextMode });
+  };
+
+  setBrowserSearchQuery = (browserSearchQuery: string) => {
+    this.setSnapshot({ browserSearchQuery });
+  };
+
+  setBrowserOpenUrl = (browserOpenUrl: string) => {
+    this.setSnapshot({ browserOpenUrl });
+  };
+
+  readBrowserPage = async () => {
+    this.setSnapshot({ browserBusy: true, assistantState: "READING_PAGE", error: undefined });
+    try {
+      const response = await backendClient.readBrowserContext({
+        mode: this.snapshot.browserContextMode,
+        userApproved: true
+      });
+      this.setSnapshot({
+        browserBusy: false,
+        browserContext: response.context ?? this.snapshot.browserContext,
+        browserSummary: response.status === "completed" ? undefined : this.snapshot.browserSummary,
+        assistantState: this.restingAssistantState(),
+        error: response.status === "completed" ? undefined : response.instruction ?? "Unable to read page"
+      });
+      await this.loadBrowser();
+    } catch (error) {
+      this.setSnapshot({
+        browserBusy: false,
+        assistantState: this.restingAssistantState(),
+        error: error instanceof Error ? error.message : "Unable to read active browser page"
+      });
+    }
+  };
+
+  summarizeBrowserPage = async () => {
+    this.setSnapshot({ browserBusy: true, assistantState: "READING_PAGE", error: undefined });
+    try {
+      const response = await backendClient.summarizeBrowserContext({
+        mode: this.snapshot.browserContextMode,
+        instruction: "Summarize the important information on this page.",
+        userApproved: true
+      });
+      this.setSnapshot({
+        browserBusy: false,
+        browserContext: response.context ?? this.snapshot.browserContext,
+        browserSummary: response,
+        assistantState: this.restingAssistantState(),
+        error: response.status === "completed" ? undefined : response.instruction ?? "Unable to summarize page"
+      });
+      await this.loadBrowser();
+    } catch (error) {
+      this.setSnapshot({
+        browserBusy: false,
+        assistantState: this.restingAssistantState(),
+        error: error instanceof Error ? error.message : "Unable to summarize active browser page"
+      });
+    }
+  };
+
+  searchBrowser = async () => {
+    const query = this.snapshot.browserSearchQuery.trim();
+    if (!query) {
+      this.setSnapshot({ error: "Enter a public browser search query." });
+      return;
+    }
+    this.setSnapshot({ browserBusy: true, assistantState: "SEARCHING_WEB", error: undefined });
+    try {
+      const response = await backendClient.browserSearch({
+        query,
+        limit: 5,
+        userApproved: true
+      });
+      this.setSnapshot({
+        browserBusy: false,
+        browserSearchResult: response,
+        assistantState: this.restingAssistantState(),
+        error: response.status === "completed" ? undefined : response.summary
+      });
+      await this.loadBrowser();
+    } catch (error) {
+      this.setSnapshot({
+        browserBusy: false,
+        assistantState: this.restingAssistantState(),
+        error: error instanceof Error ? error.message : "Unable to search the public web"
+      });
+    }
+  };
+
+  openBrowserUrl = async (url = this.snapshot.browserOpenUrl) => {
+    const normalizedUrl = url.trim();
+    if (!normalizedUrl) {
+      this.setSnapshot({ error: "Enter an HTTP or HTTPS URL to open." });
+      return;
+    }
+    this.setSnapshot({ browserBusy: true, error: undefined });
+    try {
+      const response = await backendClient.openBrowserTab({
+        url: normalizedUrl,
+        active: true,
+        userApproved: true
+      });
+      this.setSnapshot({
+        browserBusy: false,
+        browserOpenUrl: response.status === "completed" ? "" : normalizedUrl,
+        error: response.status === "completed" ? undefined : response.instruction ?? "Unable to open tab"
+      });
+    } catch (error) {
+      this.setSnapshot({
+        browserBusy: false,
+        error: error instanceof Error ? error.message : "Unable to open browser tab"
+      });
+    }
+  };
+
+  disconnectBrowserSession = async (pageSessionId: string) => {
+    this.setSnapshot({ browserBusy: true, error: undefined });
+    try {
+      await backendClient.disconnectBrowserSession(pageSessionId);
+      this.setSnapshot({
+        browserBusy: false,
+        browserSessions: this.snapshot.browserSessions.filter((item) => item.id !== pageSessionId),
+        browserContext:
+          this.snapshot.browserContext?.pageSessionId === pageSessionId
+            ? undefined
+            : this.snapshot.browserContext
+      });
+      await this.loadBrowser();
+    } catch (error) {
+      this.setSnapshot({
+        browserBusy: false,
+        error: error instanceof Error ? error.message : "Unable to disconnect browser session"
+      });
+    }
+  };
+
+  requestActiveTabPermission = async () => {
+    this.setSnapshot({ browserBusy: true, error: undefined });
+    try {
+      const response = await backendClient.requestBrowserPermission({
+        kind: "temporary_active_tab"
+      });
+      this.setSnapshot({ browserBusy: false, error: response.instruction });
+    } catch (error) {
+      this.setSnapshot({
+        browserBusy: false,
+        error: error instanceof Error ? error.message : "Unable to request browser access"
+      });
+    }
+  };
+
+  revokeBrowserPermission = async (origin: string) => {
+    this.setSnapshot({ browserBusy: true, error: undefined });
+    try {
+      const response = await backendClient.revokeBrowserPermission(origin);
+      this.setSnapshot({
+        browserBusy: false,
+        error: response.status === "completed" ? undefined : response.instruction
+      });
+      await this.loadBrowser();
+    } catch (error) {
+      this.setSnapshot({
+        browserBusy: false,
+        error: error instanceof Error ? error.message : "Unable to revoke browser permission"
+      });
+    }
   };
 
   private clearBackendReconnect = () => {
