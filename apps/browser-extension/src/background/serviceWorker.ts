@@ -1,6 +1,8 @@
 import type {
   BrowserBridgeEnvelope,
+  BrowserClickActionResponse,
   BrowserContextMode,
+  BrowserFillFieldResponse,
   BrowserOpenTabResponse,
   BrowserPageContext,
   BrowserPermission,
@@ -12,6 +14,8 @@ import {
   isBridgeEnvelope,
   permissionPayload,
   type CapturePageResult,
+  type ClickActionResult,
+  type FillFieldResult,
   type PopupState
 } from "../protocol/messages";
 
@@ -211,6 +215,30 @@ async function handleNativeMessage(message: unknown): Promise<void> {
         requestedSession || null
       )
     );
+    return;
+  }
+
+  if (envelope.type === "browser.field.fill.requested") {
+    const response = await fillField(envelope);
+    postNative(
+      createEnvelope("browser.field.fill.completed", response, envelope.requestId, envelope.pageSessionId)
+    );
+    return;
+  }
+
+  if (envelope.type === "browser.field.clear.requested") {
+    const response = await clearField(envelope);
+    postNative(
+      createEnvelope("browser.field.clear.completed", response, envelope.requestId, envelope.pageSessionId)
+    );
+    return;
+  }
+
+  if (envelope.type === "browser.action.click.requested") {
+    const response = await clickAction(envelope);
+    postNative(
+      createEnvelope("browser.action.click.completed", response, envelope.requestId, envelope.pageSessionId)
+    );
   }
 }
 
@@ -241,10 +269,7 @@ async function captureActivePage(mode: BrowserContextMode): Promise<CapturePageR
   }
 
   try {
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      files: ["content-bridge.js"]
-    });
+    await ensureContentBridge(tab.id);
     const result = await chrome.tabs.sendMessage<CapturePageResult>(tab.id, {
       type: "deyana.capture-page",
       mode
@@ -262,6 +287,18 @@ async function captureActivePage(mode: BrowserContextMode): Promise<CapturePageR
   }
 }
 
+async function ensureContentBridge(tabId: number): Promise<void> {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    files: ["content-bridge.js"]
+  });
+}
+
+function tabIdForPageSession(pageSessionId: string): number | null {
+  const entry = [...pageSessions.entries()].find(([, sessionId]) => sessionId === pageSessionId);
+  return entry?.[0] ?? null;
+}
+
 async function openTab(url: string, active: boolean): Promise<BrowserOpenTabResponse> {
   if (!isSafeHttpUrl(url)) {
     return {
@@ -275,6 +312,114 @@ async function openTab(url: string, active: boolean): Promise<BrowserOpenTabResp
     return { status: "completed", url, tabId: tab.id ?? null };
   } catch {
     return { status: "failed", url, instruction: "The browser could not open this URL." };
+  }
+}
+
+async function fillField(
+  envelope: BrowserBridgeEnvelope<Record<string, unknown>>
+): Promise<BrowserFillFieldResponse> {
+  const pageSessionId = String(envelope.payload.pageSessionId ?? envelope.pageSessionId ?? "");
+  const fieldHandle = String(envelope.payload.fieldHandle ?? "");
+  const tabId = tabIdForPageSession(pageSessionId);
+  if (!tabId) {
+    return {
+      status: "failed",
+      fieldHandle,
+      inserted: false,
+      instruction: "The target page session is no longer active."
+    };
+  }
+
+  try {
+    await ensureContentBridge(tabId);
+    const result = await chrome.tabs.sendMessage<FillFieldResult>(tabId, {
+      type: "deyana.fill-field",
+      pageSessionId,
+      fieldHandle,
+      value: String(envelope.payload.value ?? ""),
+      userApproved: Boolean(envelope.payload.userApproved)
+    });
+    return result;
+  } catch {
+    return {
+      status: "failed",
+      fieldHandle,
+      inserted: false,
+      instruction: "Deyana could not reach the target field in the browser tab."
+    };
+  }
+}
+
+async function clearField(
+  envelope: BrowserBridgeEnvelope<Record<string, unknown>>
+): Promise<BrowserFillFieldResponse> {
+  const pageSessionId = String(envelope.payload.pageSessionId ?? envelope.pageSessionId ?? "");
+  const fieldHandle = String(envelope.payload.fieldHandle ?? "");
+  const tabId = tabIdForPageSession(pageSessionId);
+  if (!tabId) {
+    return {
+      status: "failed",
+      fieldHandle,
+      inserted: false,
+      instruction: "The target page session is no longer active."
+    };
+  }
+
+  try {
+    await ensureContentBridge(tabId);
+    const result = await chrome.tabs.sendMessage<FillFieldResult>(tabId, {
+      type: "deyana.clear-field",
+      pageSessionId,
+      fieldHandle,
+      restoreOriginal: envelope.payload.restoreOriginal !== false,
+      userApproved: Boolean(envelope.payload.userApproved)
+    });
+    return result;
+  } catch {
+    return {
+      status: "failed",
+      fieldHandle,
+      inserted: false,
+      instruction: "Deyana could not restore or clear the target field."
+    };
+  }
+}
+
+async function clickAction(
+  envelope: BrowserBridgeEnvelope<Record<string, unknown>>
+): Promise<BrowserClickActionResponse> {
+  const pageSessionId = String(envelope.payload.pageSessionId ?? envelope.pageSessionId ?? "");
+  const actionId = String(envelope.payload.actionId ?? "");
+  const tabId = tabIdForPageSession(pageSessionId);
+  if (!tabId) {
+    return {
+      status: "failed",
+      actionId,
+      clicked: false,
+      verified: false,
+      instruction: "The target page session is no longer active."
+    };
+  }
+
+  try {
+    await ensureContentBridge(tabId);
+    const result = await chrome.tabs.sendMessage<ClickActionResult>(tabId, {
+      type: "deyana.click-action",
+      pageSessionId,
+      actionId,
+      expectedText: String(envelope.payload.expectedText ?? ""),
+      targetLabel: String(envelope.payload.targetLabel ?? ""),
+      userApproved: Boolean(envelope.payload.userApproved)
+    });
+    return result;
+  } catch {
+    return {
+      status: "failed",
+      actionId,
+      clicked: false,
+      verified: false,
+      instruction: "Deyana could not execute the adapter-declared browser action."
+    };
   }
 }
 
@@ -352,7 +497,7 @@ async function closePageSession(tabId: number, reason: string): Promise<void> {
   );
 }
 
-function postNative(message: BrowserBridgeEnvelope): void {
+function postNative(message: BrowserBridgeEnvelope<object>): void {
   if (!nativePort) {
     return;
   }
