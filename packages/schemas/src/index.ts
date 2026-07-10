@@ -724,6 +724,13 @@ export interface VoiceSpeakResponse {
   createdAt: string;
 }
 
+export interface VoiceInterruptResponse {
+  interrupted: boolean;
+  engine: string;
+  detail: string;
+  createdAt: string;
+}
+
 export interface ConnectorItem {
   id: string;
   name: string;
