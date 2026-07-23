@@ -636,6 +636,13 @@ class VoiceSpeakResponse(ApiModel):
     created_at: str
 
 
+class VoiceInterruptResponse(ApiModel):
+    interrupted: bool
+    engine: str
+    detail: str
+    created_at: str
+
+
 ConnectorStatus = Literal["not_connected", "connected", "syncing", "paused", "error"]
 ConnectorSyncRunStatus = Literal["queued", "running", "completed", "failed", "skipped"]
 ReleaseCheckStatus = Literal["ready", "warning", "missing", "blocked"]
