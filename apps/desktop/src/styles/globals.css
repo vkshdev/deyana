@@ -1735,6 +1735,8 @@ button {
 .browser-heading,
 .browser-status,
 .browser-context-controls,
+.browser-field-row,
+.browser-draft-row,
 .browser-search-row,
 .browser-open-row,
 .browser-search-results article,
@@ -1827,6 +1829,10 @@ button {
 
 .browser-context-controls select,
 .browser-context-controls button,
+.browser-field-row select,
+.browser-draft-row input,
+.browser-draft-row button,
+.browser-draft-actions button,
 .browser-search-row input,
 .browser-search-row button,
 .browser-open-row input,
@@ -1843,12 +1849,16 @@ button {
 }
 
 .browser-context-controls select,
+.browser-field-row select,
+.browser-draft-row input,
 .browser-search-row input,
 .browser-open-row input {
   padding: 0 8px;
 }
 
 .browser-context-controls button,
+.browser-draft-row button,
+.browser-draft-actions button,
 .browser-search-row button,
 .browser-open-row button {
   display: inline-flex;
@@ -1859,6 +1869,8 @@ button {
 }
 
 .browser-context-controls button:disabled,
+.browser-draft-row button:disabled,
+.browser-draft-actions button:disabled,
 .browser-search-row button:disabled,
 .browser-open-row button:disabled,
 .browser-panel input:disabled,
@@ -1868,6 +1880,11 @@ button {
 }
 
 .browser-context-preview,
+.browser-draft-panel,
+.browser-draft-preview,
+.browser-action-preview,
+.browser-busy-mode-panel,
+.browser-personality-panel,
 .browser-summary {
   display: grid;
   gap: 5px;
@@ -1883,6 +1900,9 @@ button {
 }
 
 .browser-context-preview p,
+.browser-draft-preview p,
+.browser-action-preview p,
+.browser-busy-template,
 .browser-summary p {
   max-height: 92px;
   margin: 0;
@@ -1892,6 +1912,103 @@ button {
   line-height: 1.35;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.browser-draft-panel {
+  gap: 7px;
+  border-color: rgba(216, 185, 120, 0.12);
+  background: rgba(216, 185, 120, 0.035);
+}
+
+.browser-adapter-health {
+  display: grid;
+  gap: 2px;
+}
+
+.browser-adapter-health strong,
+.browser-draft-preview strong,
+.browser-action-preview strong {
+  color: var(--text);
+  font-size: 10px;
+}
+
+.browser-adapter-health span,
+.browser-draft-preview small,
+.browser-action-preview small {
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.25;
+}
+
+.browser-field-row,
+.browser-draft-row {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+}
+
+.browser-draft-row {
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+}
+
+.browser-draft-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.browser-draft-preview {
+  border-color: rgba(131, 169, 212, 0.16);
+  background: rgba(131, 169, 212, 0.045);
+}
+
+.browser-action-preview {
+  border-color: rgba(231, 132, 148, 0.2);
+  background: rgba(231, 132, 148, 0.045);
+}
+
+.browser-busy-mode-panel {
+  border-color: rgba(118, 206, 164, 0.18);
+  background: rgba(118, 206, 164, 0.04);
+}
+
+.browser-personality-panel {
+  border-color: rgba(151, 129, 232, 0.2);
+  background: rgba(151, 129, 232, 0.045);
+}
+
+.browser-busy-heading,
+.browser-toggle-row,
+.browser-busy-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.browser-busy-heading {
+  justify-content: space-between;
+}
+
+.browser-busy-heading strong {
+  color: var(--text);
+  font-size: 10px;
+}
+
+.browser-busy-heading span,
+.browser-busy-mode-panel small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.browser-busy-mode-panel textarea,
+.browser-personality-panel textarea {
+  min-height: 54px;
+  resize: vertical;
+}
+
+.browser-busy-controls input {
+  width: 58px;
 }
 
 .browser-search-row,
