@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Request
 from ..models import (
     VoiceSettings,
     VoiceSettingsPatch,
+    VoiceInterruptResponse,
     VoiceSpeakRequest,
     VoiceSpeakResponse,
     VoiceStatusResponse,
@@ -91,6 +92,19 @@ async def speak_voice(request: Request, payload: VoiceSpeakRequest) -> VoiceSpea
     await runtime.event_bus.publish(
         runtime.event(
             "tts.completed",
+            result.model_dump(mode="json", by_alias=True),
+        )
+    )
+    return result
+
+
+@router.post("/interrupt", response_model=VoiceInterruptResponse)
+async def interrupt_voice(request: Request) -> VoiceInterruptResponse:
+    runtime = request.app.state.runtime
+    result = runtime.voice_service.interrupt_speech()
+    await runtime.event_bus.publish(
+        runtime.event(
+            "tts.interrupted",
             result.model_dump(mode="json", by_alias=True),
         )
     )
