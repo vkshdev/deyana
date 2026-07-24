@@ -94,7 +94,7 @@ def test_voice_tts_uses_only_selected_local_female_voice(tmp_path, monkeypatch) 
     )
     monkeypatch.setattr(
         "deyana_core.voice.run_windows_tts",
-        lambda text, voice, rate, volume: spoken.append((text, voice)) or CommandResult(0, "", ""),
+        lambda text, voice, rate, volume, **kwargs: spoken.append((text, voice)) or CommandResult(0, "", ""),
     )
 
     with make_client(tmp_path) as client:
