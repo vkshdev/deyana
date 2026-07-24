@@ -11,9 +11,10 @@ from PIL import ImageGrab
 logger = logging.getLogger(__name__)
 
 class VisionService:
-    def __init__(self, ollama_host: str = "http://127.0.0.1:11434"):
+    def __init__(self, ollama_host: str = "http://127.0.0.1:11434", profile: str = "low_spec"):
         self.ollama_host = ollama_host
-        self.vision_model = "llava:latest" # Default vision model
+        self.model = "llava:34b" if profile == "ultra" else "llava:latest"
+        self.vision_model = self.model
 
     def capture_screen_base64(self) -> Optional[str]:
         """Captures the primary screen and returns it as a base64 encoded JPEG string."""
