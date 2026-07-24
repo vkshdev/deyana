@@ -23,6 +23,7 @@ from .api import (
     settings_router,
     status_router,
     tools_router,
+    triage_router,
     vault_router,
     voice_router,
     websocket_router,
@@ -43,9 +44,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
     )
 
+    runtime.triage_daemon.start()
+
     try:
         yield
     finally:
+        runtime.triage_daemon.stop()
         runtime.mark_stopping("lifespan_shutdown")
         runtime.release_service.mark_clean_shutdown()
         await runtime.event_bus.publish(
@@ -119,4 +123,5 @@ def create_app(runtime: RuntimeState | None = None) -> FastAPI:
     app.include_router(voice_router)
     app.include_router(lifecycle_router)
     app.include_router(websocket_router)
+    app.include_router(triage_router)
     return app
