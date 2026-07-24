@@ -263,7 +263,7 @@ ModelTask = Literal[
     "coding",
 ]
 ChatRole = Literal["user", "assistant"]
-ChatRoute = Literal["conversation", "memory", "web_search", "web_fetch"]
+ChatRoute = Literal["conversation", "memory", "web_search", "web_fetch", "screen_query"]
 PrivacyDecision = Literal["allow", "block"]
 PrivacyDestinationCategory = Literal[
     "local",
@@ -311,6 +311,7 @@ ToolId = Literal[
     "commit_message",
     "code_task",
     "day_planner",
+    "os_automation",
 ]
 ToolRisk = Literal["low", "public_web", "local_file", "source_code", "dangerous"]
 VoiceEngineStatus = Literal["available", "disabled", "muted", "unsupported", "missing", "error"]
@@ -559,6 +560,11 @@ class DayPlannerRequest(ApiModel):
     commitments: list[str] = []
     focus: list[str] = []
     notes: str = ""
+
+
+class OSAutomationRequest(ApiModel):
+    macro_name: str
+    user_approved: bool = False
 
 
 class VoiceSettings(ApiModel):
