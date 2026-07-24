@@ -152,8 +152,8 @@ async function handleNativeMessage(message: unknown): Promise<void> {
                 : "failed",
               instruction: result.instruction
             },
-        envelope.requestId,
-        result.context?.pageSessionId ?? null
+        envelope.requestId as `${string}-${string}-${string}-${string}-${string}`,
+        (result.context?.pageSessionId as `${string}-${string}-${string}-${string}-${string}`) ?? null
       )
     );
     return;
@@ -165,7 +165,7 @@ async function handleNativeMessage(message: unknown): Promise<void> {
       envelope.payload.active !== false
     );
     postNative(
-      createEnvelope("browser.tab.open.completed", response, envelope.requestId)
+      createEnvelope("browser.tab.open.completed", response as unknown as Record<string, unknown>, envelope.requestId as `${string}-${string}-${string}-${string}-${string}`)
     );
     return;
   }
@@ -173,7 +173,7 @@ async function handleNativeMessage(message: unknown): Promise<void> {
   if (envelope.type === "browser.permission.requested") {
     const response = await requestOptionalPermission(String(envelope.payload.origin ?? ""));
     postNative(
-      createEnvelope("browser.permission.request.completed", response, envelope.requestId)
+      createEnvelope("browser.permission.request.completed", response as unknown as Record<string, unknown>, envelope.requestId as `${string}-${string}-${string}-${string}-${string}`)
     );
     await publishPermissionChange();
     return;
@@ -182,7 +182,7 @@ async function handleNativeMessage(message: unknown): Promise<void> {
   if (envelope.type === "browser.permission.revoke.requested") {
     const response = await revokeOptionalPermission(String(envelope.payload.origin ?? ""));
     postNative(
-      createEnvelope("browser.permission.revoke.completed", response, envelope.requestId)
+      createEnvelope("browser.permission.revoke.completed", response as unknown as Record<string, unknown>, envelope.requestId as `${string}-${string}-${string}-${string}-${string}`)
     );
     await publishPermissionChange();
     return;
@@ -207,8 +207,8 @@ async function handleNativeMessage(message: unknown): Promise<void> {
       createEnvelope(
         "browser.session.disconnect.completed",
         { disconnected: Boolean(entry), pageSessionId: requestedSession },
-        envelope.requestId,
-        requestedSession || null
+        envelope.requestId as `${string}-${string}-${string}-${string}-${string}`,
+        (requestedSession as `${string}-${string}-${string}-${string}-${string}`) || null
       )
     );
   }

@@ -41,7 +41,6 @@ from .models import (
 )
 from .store import BrowserStore
 
-
 BRIDGE_REQUEST_TIMEOUT_SECONDS = 15.0
 PAGE_SESSION_TTL_MINUTES = 5
 MAX_MODEL_CONTEXT_CHARACTERS = 12_000
@@ -103,16 +102,24 @@ class BrowserService:
         self._last_message_at: str | None = None
         self._last_error: str | None = None
 
-    def authenticate(self, authorization: str | None, extension_origin: str | None) -> str:
+    def authenticate(
+        self, authorization: str | None, extension_origin: str | None
+    ) -> str:
         prefix = "Bearer "
         if not authorization or not authorization.startswith(prefix):
-            raise BrowserBridgeAuthenticationError("Browser bridge authorization is missing.")
+            raise BrowserBridgeAuthenticationError(
+                "Browser bridge authorization is missing."
+            )
         supplied = authorization[len(prefix) :].strip()
         if not hmac.compare_digest(supplied, self.credential):
-            raise BrowserBridgeAuthenticationError("Browser bridge authorization is invalid.")
+            raise BrowserBridgeAuthenticationError(
+                "Browser bridge authorization is invalid."
+            )
         origin = (extension_origin or "").strip()
         if not is_extension_origin(origin):
-            raise BrowserBridgeAuthenticationError("Browser extension origin is invalid.")
+            raise BrowserBridgeAuthenticationError(
+                "Browser extension origin is invalid."
+            )
         return origin
 
     async def attach(self, websocket: WebSocket, extension_origin: str) -> None:
@@ -177,7 +184,9 @@ class BrowserService:
             await self._publish_status("browser.connection.changed")
             return
         if envelope.type not in INBOUND_BRIDGE_MESSAGE_TYPES:
-            self._last_error = f"Unsupported browser bridge message type: {envelope.type}."
+            self._last_error = (
+                f"Unsupported browser bridge message type: {envelope.type}."
+            )
             await self._publish_status("browser.connection.changed")
             return
         if not is_recent_bridge_timestamp(envelope.timestamp):
@@ -227,7 +236,9 @@ class BrowserService:
             )
 
         if envelope.type == "browser.page.session.closed":
-            page_session_id = envelope.page_session_id or str(envelope.payload.get("pageSessionId", ""))
+            page_session_id = envelope.page_session_id or str(
+                envelope.payload.get("pageSessionId", "")
+            )
             if page_session_id:
                 self.store.delete_session(page_session_id)
                 await self._publish(
@@ -243,7 +254,12 @@ class BrowserService:
             self.store.replace_permissions(permissions)
             await self._publish(
                 "browser.permission.changed",
-                {"permissions": [item.model_dump(mode="json", by_alias=True) for item in permissions]},
+                {
+                    "permissions": [
+                        item.model_dump(mode="json", by_alias=True)
+                        for item in permissions
+                    ]
+                },
             )
 
         future = self._pending.get(envelope.request_id)
@@ -254,7 +270,13 @@ class BrowserService:
         sessions = self.list_sessions()
         permissions = self.store.list_permissions()
         connected = self._websocket is not None
-        state = "connected" if connected else "error" if self._last_error else "disconnected"
+        state = (
+            "connected"
+            if connected
+            else "error"
+            if self._last_error
+            else "disconnected"
+        )
         return BrowserStatusResponse(
             state=state,
             connected=connected,
@@ -280,7 +302,9 @@ class BrowserService:
     def list_audit(self, limit: int = 50) -> BrowserAuditListResponse:
         return self.store.list_audit(limit=limit)
 
-    async def request_context(self, request: BrowserContextReadRequest) -> BrowserContextReadResponse:
+    async def request_context(
+        self, request: BrowserContextReadRequest
+    ) -> BrowserContextReadResponse:
         if not request.user_approved:
             self._audit(
                 event_type="browser.permission.required",
@@ -305,7 +329,9 @@ class BrowserService:
                 operation="browser.read_page",
                 detail=str(error),
             )
-            return BrowserContextReadResponse(status="unavailable", instruction=str(error))
+            return BrowserContextReadResponse(
+                status="unavailable", instruction=str(error)
+            )
 
         response = BrowserContextReadResponse.model_validate(envelope.payload)
         if response.context:
@@ -328,7 +354,9 @@ class BrowserService:
         request: BrowserContextSummaryRequest,
     ) -> BrowserContextSummaryResponse:
         read_response = await self.request_context(
-            BrowserContextReadRequest(mode=request.mode, user_approved=request.user_approved)
+            BrowserContextReadRequest(
+                mode=request.mode, user_approved=request.user_approved
+            )
         )
         if read_response.status != "completed" or not read_response.context:
             return BrowserContextSummaryResponse(
@@ -384,7 +412,9 @@ class BrowserService:
         )
         status = "permission_required" if result.permission_required else "completed"
         self._audit(
-            event_type="browser.search.completed" if status == "completed" else "browser.permission.required",
+            event_type="browser.search.completed"
+            if status == "completed"
+            else "browser.permission.required",
             decision="allowed" if status == "completed" else "blocked",
             operation="browser.search",
             detail=result.summary,
@@ -411,19 +441,26 @@ class BrowserService:
                 {"url": url, "active": request.active},
             )
         except BrowserBridgeUnavailable as error:
-            return BrowserOpenTabResponse(status="unavailable", url=url, instruction=str(error))
+            return BrowserOpenTabResponse(
+                status="unavailable", url=url, instruction=str(error)
+            )
         response = BrowserOpenTabResponse.model_validate(envelope.payload)
         self._audit(
-            event_type="browser.tab.opened" if response.status == "completed" else "browser.tab.open_failed",
+            event_type="browser.tab.opened"
+            if response.status == "completed"
+            else "browser.tab.open_failed",
             decision="allowed" if response.status == "completed" else "failed",
             operation="browser.open_tab",
             origin=origin_for_url(url),
-            detail=response.instruction or f"Opened approved URL: {origin_for_url(url)}",
+            detail=response.instruction
+            or f"Opened approved URL: {origin_for_url(url)}",
             payload=url,
         )
         return response
 
-    async def request_permission(self, request: BrowserPermissionRequest) -> BrowserPermissionResponse:
+    async def request_permission(
+        self, request: BrowserPermissionRequest
+    ) -> BrowserPermissionResponse:
         if request.kind == "temporary_active_tab":
             return BrowserPermissionResponse(
                 status="permission_required",
@@ -443,7 +480,9 @@ class BrowserService:
                 {"origin": request.origin, "kind": request.kind},
             )
         except BrowserBridgeUnavailable as error:
-            return BrowserPermissionResponse(status="unavailable", instruction=str(error))
+            return BrowserPermissionResponse(
+                status="unavailable", instruction=str(error)
+            )
         return BrowserPermissionResponse.model_validate(envelope.payload)
 
     async def revoke_permission(self, origin: str) -> BrowserPermissionResponse:
@@ -453,10 +492,14 @@ class BrowserService:
                 {"origin": origin},
             )
         except BrowserBridgeUnavailable as error:
-            return BrowserPermissionResponse(status="unavailable", instruction=str(error))
+            return BrowserPermissionResponse(
+                status="unavailable", instruction=str(error)
+            )
         return BrowserPermissionResponse.model_validate(envelope.payload)
 
-    async def disconnect_session(self, page_session_id: str) -> BrowserDisconnectResponse:
+    async def disconnect_session(
+        self, page_session_id: str
+    ) -> BrowserDisconnectResponse:
         deleted = self.store.delete_session(page_session_id)
         if self._websocket:
             try:
@@ -467,7 +510,9 @@ class BrowserService:
                 )
             except BrowserBridgeUnavailable:
                 pass
-        return BrowserDisconnectResponse(disconnected=deleted, page_session_id=page_session_id)
+        return BrowserDisconnectResponse(
+            disconnected=deleted, page_session_id=page_session_id
+        )
 
     async def _request(
         self,
@@ -490,19 +535,29 @@ class BrowserService:
             page_session_id=page_session_id,
             payload=payload,
         )
-        future: asyncio.Future[BrowserBridgeEnvelope] = asyncio.get_running_loop().create_future()
+        future: asyncio.Future[BrowserBridgeEnvelope] = (
+            asyncio.get_running_loop().create_future()
+        )
         self._pending[request_id] = future
         try:
             async with self._send_lock:
-                await websocket.send_json(envelope.model_dump(mode="json", by_alias=True))
-            return await asyncio.wait_for(future, timeout=BRIDGE_REQUEST_TIMEOUT_SECONDS)
+                await websocket.send_json(
+                    envelope.model_dump(mode="json", by_alias=True)
+                )
+            return await asyncio.wait_for(
+                future, timeout=BRIDGE_REQUEST_TIMEOUT_SECONDS
+            )
         except TimeoutError as error:
-            raise BrowserBridgeUnavailable("Browser extension did not respond before the request expired.") from error
+            raise BrowserBridgeUnavailable(
+                "Browser extension did not respond before the request expired."
+            ) from error
         finally:
             self._pending.pop(request_id, None)
 
     def _store_context(self, context: BrowserPageContext):
-        expires_at = (datetime.now(UTC) + timedelta(minutes=PAGE_SESSION_TTL_MINUTES)).isoformat()
+        expires_at = (
+            datetime.now(UTC) + timedelta(minutes=PAGE_SESSION_TTL_MINUTES)
+        ).isoformat()
         return self.store.upsert_context(context, expires_at)
 
     def _remember_request_id(self, request_id: str) -> bool:
@@ -519,7 +574,9 @@ class BrowserService:
         now = datetime.now(UTC)
         for session in self.store.list_sessions().items:
             try:
-                expires_at = datetime.fromisoformat(session.expires_at.replace("Z", "+00:00"))
+                expires_at = datetime.fromisoformat(
+                    session.expires_at.replace("Z", "+00:00")
+                )
             except ValueError:
                 self.store.delete_session(session.id)
                 continue
@@ -530,7 +587,9 @@ class BrowserService:
         return self.store.record_audit(**kwargs)
 
     async def _publish_status(self, event_type: str) -> None:
-        await self._publish(event_type, self.status().model_dump(mode="json", by_alias=True))
+        await self._publish(
+            event_type, self.status().model_dump(mode="json", by_alias=True)
+        )
 
     async def _publish(self, event_type: str, payload: dict[str, object]) -> None:
         await self.event_bus.publish(self.event_factory(event_type, payload))
@@ -540,7 +599,9 @@ def is_extension_origin(value: str) -> bool:
     if not value.startswith("chrome-extension://") or not value.endswith("/"):
         return False
     extension_id = value.removeprefix("chrome-extension://").removesuffix("/")
-    return len(extension_id) == 32 and all("a" <= character <= "p" for character in extension_id)
+    return len(extension_id) == 32 and all(
+        "a" <= character <= "p" for character in extension_id
+    )
 
 
 def is_recent_bridge_timestamp(value: str) -> bool:

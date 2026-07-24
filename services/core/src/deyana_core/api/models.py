@@ -48,7 +48,9 @@ async def select_model(
 async def test_model(request: Request, payload: ModelTestRequest) -> ModelTestResponse:
     runtime = request.app.state.runtime
     try:
-        generation = await asyncio.to_thread(runtime.model_router.test_prompt, payload.prompt)
+        generation = await asyncio.to_thread(
+            runtime.model_router.test_prompt, payload.prompt
+        )
     except OllamaUnavailableError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
     except OllamaModelMissingError as error:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import sqlite3
 import time
@@ -19,6 +18,7 @@ from .memory import MemoryStore
 from .models import (
     ConnectorHealthItem,
     ConnectorHealthResponse,
+    CrashRecoveryResponse,
     DeleteLocalDataResponse,
     PerformanceMetric,
     PerformanceProfileResponse,
@@ -29,14 +29,12 @@ from .models import (
     ReleaseReadinessItem,
     ReleaseReadinessResponse,
     ReleaseUpdatePlanResponse,
-    CrashRecoveryResponse,
 )
 from .privacy import PrivacyFirewall
 from .runtime_time import utc_timestamp
 from .settings import CoreSettings
 from .storage import CoreStore
 from .voice import LocalVoiceService
-
 
 DELETE_CONFIRMATION_PHRASE = "DELETE LOCAL DATA"
 
@@ -98,7 +96,11 @@ class ReleaseService:
 
     def crash_recovery(self) -> CrashRecoveryResponse:
         current = read_json(self.state_path)
-        previous = current.get("previous") if isinstance(current.get("previous"), dict) else self.previous_state
+        previous = (
+            current.get("previous")
+            if isinstance(current.get("previous"), dict)
+            else self.previous_state
+        )
         previous_crash = bool(previous) and previous.get("cleanShutdown") is False
         actions = [
             "Core process state is persisted at startup and clean shutdown.",
@@ -111,18 +113,38 @@ class ReleaseService:
             current_session_id=self.session_id,
             previous_crash_detected=previous_crash,
             started_at=str(current.get("startedAt") or utc_timestamp()),
-            last_started_at=previous.get("startedAt") if isinstance(previous, dict) else None,
-            last_clean_shutdown_at=previous.get("cleanShutdownAt") if isinstance(previous, dict) else None,
+            last_started_at=previous.get("startedAt")
+            if isinstance(previous, dict)
+            else None,
+            last_clean_shutdown_at=previous.get("cleanShutdownAt")
+            if isinstance(previous, dict)
+            else None,
             recovery_actions=actions,
         )
 
     def readiness(self, version: str) -> ReleaseReadinessResponse:
-        tauri_config = read_json(self.repo_root / "apps" / "desktop" / "src-tauri" / "tauri.conf.json")
+        tauri_config = read_json(
+            self.repo_root / "apps" / "desktop" / "src-tauri" / "tauri.conf.json"
+        )
         root_package = read_json(self.repo_root / "package.json")
-        desktop_package = read_json(self.repo_root / "apps" / "desktop" / "package.json")
-        bundle = tauri_config.get("bundle") if isinstance(tauri_config.get("bundle"), dict) else {}
-        scripts = root_package.get("scripts") if isinstance(root_package.get("scripts"), dict) else {}
-        desktop_scripts = desktop_package.get("scripts") if isinstance(desktop_package.get("scripts"), dict) else {}
+        desktop_package = read_json(
+            self.repo_root / "apps" / "desktop" / "package.json"
+        )
+        bundle = (
+            tauri_config.get("bundle")
+            if isinstance(tauri_config.get("bundle"), dict)
+            else {}
+        )
+        scripts = (
+            root_package.get("scripts")
+            if isinstance(root_package.get("scripts"), dict)
+            else {}
+        )
+        desktop_scripts = (
+            desktop_package.get("scripts")
+            if isinstance(desktop_package.get("scripts"), dict)
+            else {}
+        )
         public_release_docs = [
             self.repo_root / "README.md",
             self.repo_root / "ARCHITECTURE.md",
@@ -135,13 +157,17 @@ class ReleaseService:
                 "installer_bundle",
                 "Installer bundle",
                 bool(bundle.get("active")),
-                "Tauri bundling is enabled." if bundle.get("active") else "Enable Tauri bundle.active for installer builds.",
+                "Tauri bundling is enabled."
+                if bundle.get("active")
+                else "Enable Tauri bundle.active for installer builds.",
             ),
             check_item(
                 "installer_target",
                 "Windows installer target",
                 bool(bundle.get("targets")),
-                f"Configured targets: {bundle.get('targets')}" if bundle.get("targets") else "No installer target configured.",
+                f"Configured targets: {bundle.get('targets')}"
+                if bundle.get("targets")
+                else "No installer target configured.",
             ),
             check_item(
                 "desktop_build_script",
@@ -158,14 +184,28 @@ class ReleaseService:
             check_item(
                 "browser_extension",
                 "Browser extension source",
-                (self.repo_root / "apps" / "browser-extension" / "public" / "manifest.json").is_file(),
+                (
+                    self.repo_root
+                    / "apps"
+                    / "browser-extension"
+                    / "public"
+                    / "manifest.json"
+                ).is_file(),
                 "Manifest V3 browser extension source is available.",
             ),
             check_item(
                 "browser_native_host",
                 "Browser native messaging host",
-                (self.repo_root / "apps" / "browser-native-host" / "Cargo.toml").is_file()
-                and (self.repo_root / "apps" / "browser-native-host" / "scripts" / "register.ps1").is_file(),
+                (
+                    self.repo_root / "apps" / "browser-native-host" / "Cargo.toml"
+                ).is_file()
+                and (
+                    self.repo_root
+                    / "apps"
+                    / "browser-native-host"
+                    / "scripts"
+                    / "register.ps1"
+                ).is_file(),
                 "Native messaging host source and registration script are available.",
             ),
             check_item(
@@ -190,7 +230,9 @@ class ReleaseService:
             ),
         ]
         blocked = any(item.status in {"missing", "blocked"} for item in items)
-        update_ready = any(item.id == "update_plan" and item.status == "ready" for item in items)
+        update_ready = any(
+            item.id == "update_plan" and item.status == "ready" for item in items
+        )
         return ReleaseReadinessResponse(
             installer_ready=not blocked,
             update_plan_ready=update_ready,
@@ -215,13 +257,18 @@ class ReleaseService:
 
     def list_logs(self) -> ReleaseLogListResponse:
         files = sorted(
-            [log_file_item(path, self.log_relative_path(path)) for path in self.log_files()],
+            [
+                log_file_item(path, self.log_relative_path(path))
+                for path in self.log_files()
+            ],
             key=lambda item: item.modified_at,
             reverse=True,
         )
         return ReleaseLogListResponse(files=files, total=len(files))
 
-    def read_log(self, relative_path: str, max_characters: int = 20000) -> ReleaseLogReadResponse:
+    def read_log(
+        self, relative_path: str, max_characters: int = 20000
+    ) -> ReleaseLogReadResponse:
         path = self.resolve_log_path(relative_path)
         content = path.read_text(encoding="utf-8", errors="replace")
         truncated = len(content) > max_characters
@@ -255,7 +302,12 @@ class ReleaseService:
             "settings": settings.model_dump(mode="json", by_alias=True),
             "onboarding": onboarding.model_dump(mode="json", by_alias=True),
             "memory": memory.model_dump(mode="json", by_alias=True),
-            "chat": {"messages": [message.model_dump(mode="json", by_alias=True) for message in chat_messages]},
+            "chat": {
+                "messages": [
+                    message.model_dump(mode="json", by_alias=True)
+                    for message in chat_messages
+                ]
+            },
             "privacyAudit": privacy_audit.model_dump(mode="json", by_alias=True),
             "connectors": connectors.model_dump(mode="json", by_alias=True),
             "connectorSyncRuns": sync_runs.model_dump(mode="json", by_alias=True),
@@ -266,7 +318,9 @@ class ReleaseService:
             "models": model_status.model_dump(mode="json", by_alias=True),
             "browser": {
                 "sessions": browser_sessions.model_dump(mode="json", by_alias=True),
-                "permissions": browser_permissions.model_dump(mode="json", by_alias=True),
+                "permissions": browser_permissions.model_dump(
+                    mode="json", by_alias=True
+                ),
                 "audit": browser_audit.model_dump(mode="json", by_alias=True),
             },
         }
@@ -294,7 +348,10 @@ class ReleaseService:
         )
 
     def connector_health(self) -> ConnectorHealthResponse:
-        items = [health_for_connector(connector) for connector in self.connector_manager.list_connectors().items]
+        items = [
+            health_for_connector(connector)
+            for connector in self.connector_manager.list_connectors().items
+        ]
         healthy = sum(1 for item in items if item.health == "healthy")
         errors = sum(1 for item in items if item.health == "error")
         attention = sum(1 for item in items if item.health == "attention")
@@ -309,18 +366,85 @@ class ReleaseService:
     def performance_profile(self, uptime_seconds: float) -> PerformanceProfileResponse:
         started = time.perf_counter()
         data_bytes = directory_size(self.settings.data_dir)
-        log_bytes = sum(path.stat().st_size for path in self.log_files() if path.exists())
-        db_bytes = sum(path.stat().st_size for path in self.settings.data_dir.glob("*.sqlite3") if path.exists())
+        log_bytes = sum(
+            path.stat().st_size for path in self.log_files() if path.exists()
+        )
+        db_bytes = sum(
+            path.stat().st_size
+            for path in self.settings.data_dir.glob("*.sqlite3")
+            if path.exists()
+        )
         metrics = [
-            PerformanceMetric(name="dataBytes", value=float(data_bytes), unit="bytes", detail="Core local data directory size."),
-            PerformanceMetric(name="databaseBytes", value=float(db_bytes), unit="bytes", detail="SQLite database file size total."),
-            PerformanceMetric(name="logBytes", value=float(log_bytes), unit="bytes", detail="Known release log file size total."),
-            PerformanceMetric(name="memoryItems", value=float(sqlite_count(self.memory_store.database_path, "memory_items")), unit="count", detail="Structured memory items."),
-            PerformanceMetric(name="chatMessages", value=float(sqlite_count(self.chat_store.database_path, "chat_messages")), unit="count", detail="Local chat messages."),
-            PerformanceMetric(name="privacyAuditEvents", value=float(sqlite_count(self.privacy_firewall.database_path, "privacy_audit_events")), unit="count", detail="Privacy audit events."),
-            PerformanceMetric(name="connectorSyncRuns", value=float(sqlite_count(self.connector_manager.database_path, "connector_sync_runs")), unit="count", detail="Connector sync run records."),
-            PerformanceMetric(name="connectorItems", value=float(sqlite_count(self.connector_manager.database_path, "connector_items")), unit="count", detail="Normalized connector records."),
-            PerformanceMetric(name="profileLatencyMs", value=round((time.perf_counter() - started) * 1000, 3), unit="ms", detail="Time to capture this lightweight profile."),
+            PerformanceMetric(
+                name="dataBytes",
+                value=float(data_bytes),
+                unit="bytes",
+                detail="Core local data directory size.",
+            ),
+            PerformanceMetric(
+                name="databaseBytes",
+                value=float(db_bytes),
+                unit="bytes",
+                detail="SQLite database file size total.",
+            ),
+            PerformanceMetric(
+                name="logBytes",
+                value=float(log_bytes),
+                unit="bytes",
+                detail="Known release log file size total.",
+            ),
+            PerformanceMetric(
+                name="memoryItems",
+                value=float(
+                    sqlite_count(self.memory_store.database_path, "memory_items")
+                ),
+                unit="count",
+                detail="Structured memory items.",
+            ),
+            PerformanceMetric(
+                name="chatMessages",
+                value=float(
+                    sqlite_count(self.chat_store.database_path, "chat_messages")
+                ),
+                unit="count",
+                detail="Local chat messages.",
+            ),
+            PerformanceMetric(
+                name="privacyAuditEvents",
+                value=float(
+                    sqlite_count(
+                        self.privacy_firewall.database_path, "privacy_audit_events"
+                    )
+                ),
+                unit="count",
+                detail="Privacy audit events.",
+            ),
+            PerformanceMetric(
+                name="connectorSyncRuns",
+                value=float(
+                    sqlite_count(
+                        self.connector_manager.database_path, "connector_sync_runs"
+                    )
+                ),
+                unit="count",
+                detail="Connector sync run records.",
+            ),
+            PerformanceMetric(
+                name="connectorItems",
+                value=float(
+                    sqlite_count(
+                        self.connector_manager.database_path, "connector_items"
+                    )
+                ),
+                unit="count",
+                detail="Normalized connector records.",
+            ),
+            PerformanceMetric(
+                name="profileLatencyMs",
+                value=round((time.perf_counter() - started) * 1000, 3),
+                unit="ms",
+                detail="Time to capture this lightweight profile.",
+            ),
         ]
         return PerformanceProfileResponse(
             captured_at=utc_timestamp(),
@@ -328,12 +452,20 @@ class ReleaseService:
             metrics=metrics,
         )
 
-    def delete_local_data(self, *, confirmation_phrase: str, include_vault: bool) -> DeleteLocalDataResponse:
+    def delete_local_data(
+        self, *, confirmation_phrase: str, include_vault: bool
+    ) -> DeleteLocalDataResponse:
         if confirmation_phrase != DELETE_CONFIRMATION_PHRASE:
-            raise ReleaseSafetyError(f'Type "{DELETE_CONFIRMATION_PHRASE}" to delete local data.')
+            raise ReleaseSafetyError(
+                f'Type "{DELETE_CONFIRMATION_PHRASE}" to delete local data.'
+            )
 
         settings = self.store.read_settings()
-        vault_path = Path(settings.vault_path).resolve(strict=False) if settings.vault_path else None
+        vault_path = (
+            Path(settings.vault_path).resolve(strict=False)
+            if settings.vault_path
+            else None
+        )
         deleted_paths: list[str] = []
         for path in self.delete_roots():
             deleted_paths.extend(delete_path_contents(path))
@@ -418,7 +550,9 @@ class ReleaseService:
     def resolve_log_path(self, relative_path: str) -> Path:
         normalized = relative_path.strip().replace("\\", "/")
         if not normalized or normalized.startswith("../") or "/../" in normalized:
-            raise ReleaseSafetyError("Log path must stay inside the local log directory.")
+            raise ReleaseSafetyError(
+                "Log path must stay inside the local log directory."
+            )
         for root in self.log_roots():
             candidate = (root / normalized).resolve(strict=False)
             try:
@@ -522,7 +656,9 @@ def sqlite_count(database_path: Path, table: str) -> int:
         return 0
     try:
         with sqlite3.connect(database_path) as connection:
-            return int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+            return int(
+                connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            )
     except sqlite3.Error:
         return 0
 

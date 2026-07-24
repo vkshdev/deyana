@@ -5,11 +5,11 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-from fastapi.testclient import TestClient
-
 from deyana_core.app import create_app
 from deyana_core.runtime import RuntimeState
 from deyana_core.settings import CoreSettings
+from fastapi.testclient import TestClient
+from typing_extensions import Self
 
 
 def make_client(tmp_path) -> TestClient:
@@ -24,14 +24,16 @@ class FakeConnectorApi:
         self.endpoint = ""
         self.requests: list[dict[str, Any]] = []
 
-    def __enter__(self) -> "FakeConnectorApi":
+    def __enter__(self) -> Self:
         parent = self
 
         class Handler(BaseHTTPRequestHandler):
             def do_POST(self) -> None:
                 length = int(self.headers.get("content-length", "0"))
                 body = self.rfile.read(length).decode("utf-8")
-                parent.requests.append({"method": "POST", "path": self.path, "body": body})
+                parent.requests.append(
+                    {"method": "POST", "path": self.path, "body": body}
+                )
                 if self.path in {"/oauth/google/token", "/oauth/github/token"}:
                     token_prefix = "github" if "github" in self.path else "google"
                     self.send_json(
@@ -65,7 +67,10 @@ class FakeConnectorApi:
                                 "headers": [
                                     {"name": "From", "value": "founder@example.com"},
                                     {"name": "Subject", "value": "Launch checklist"},
-                                    {"name": "Date", "value": "Fri, 19 Jun 2026 09:00:00 +0000"},
+                                    {
+                                        "name": "Date",
+                                        "value": "Fri, 19 Jun 2026 09:00:00 +0000",
+                                    },
                                 ]
                             },
                         },
@@ -155,7 +160,9 @@ def connect_mock_connector(client: TestClient, connector_id: str = "gmail") -> d
 
 def complete_onboarding(client: TestClient, tmp_path) -> None:
     vault_path = tmp_path / "vault"
-    assert client.post("/vault/select", json={"path": str(vault_path)}).status_code == 200
+    assert (
+        client.post("/vault/select", json={"path": str(vault_path)}).status_code == 200
+    )
     assert (
         client.post(
             "/onboarding/complete",
@@ -258,7 +265,9 @@ def test_manual_sync_emits_websocket_events(tmp_path) -> None:
 
         with client.websocket_connect("/ws") as websocket:
             assert websocket.receive_json()["type"] == "app.ready"
-            response = client.post("/connectors/calendar/sync", json={"reason": "manual"})
+            response = client.post(
+                "/connectors/calendar/sync", json={"reason": "manual"}
+            )
             assert response.status_code == 200
 
             events = [websocket.receive_json()["type"] for _ in range(4)]
@@ -269,14 +278,20 @@ def test_manual_sync_emits_websocket_events(tmp_path) -> None:
     assert "connector.status.changed" in events
 
 
-def test_real_connectors_fetch_normalize_and_write_local_memory(tmp_path, monkeypatch) -> None:
+def test_real_connectors_fetch_normalize_and_write_local_memory(
+    tmp_path, monkeypatch
+) -> None:
     with FakeConnectorApi() as api:
         monkeypatch.setenv("DEYANA_GOOGLE_OAUTH_CLIENT_ID", "google-client")
         monkeypatch.setenv("DEYANA_GOOGLE_OAUTH_CLIENT_SECRET", "google-secret")
         monkeypatch.setenv("DEYANA_GITHUB_OAUTH_CLIENT_ID", "github-client")
         monkeypatch.setenv("DEYANA_GITHUB_OAUTH_CLIENT_SECRET", "github-secret")
-        monkeypatch.setenv("DEYANA_GOOGLE_OAUTH_TOKEN_URL", f"{api.endpoint}/oauth/google/token")
-        monkeypatch.setenv("DEYANA_GITHUB_OAUTH_TOKEN_URL", f"{api.endpoint}/oauth/github/token")
+        monkeypatch.setenv(
+            "DEYANA_GOOGLE_OAUTH_TOKEN_URL", f"{api.endpoint}/oauth/google/token"
+        )
+        monkeypatch.setenv(
+            "DEYANA_GITHUB_OAUTH_TOKEN_URL", f"{api.endpoint}/oauth/github/token"
+        )
         monkeypatch.setenv("DEYANA_GMAIL_API_BASE_URL", f"{api.endpoint}/gmail")
         monkeypatch.setenv("DEYANA_CALENDAR_API_BASE_URL", f"{api.endpoint}/calendar")
         monkeypatch.setenv("DEYANA_GITHUB_API_BASE_URL", f"{api.endpoint}/github")
@@ -309,10 +324,16 @@ def test_real_connectors_fetch_normalize_and_write_local_memory(tmp_path, monkey
                 ).json()
                 for connector_id in ["gmail", "calendar", "github"]
             }
-            second_gmail = client.post("/connectors/gmail/sync", json={"reason": "manual"})
-            memory = client.get("/memory", params={"query": "connector", "limit": 20}).json()
+            second_gmail = client.post(
+                "/connectors/gmail/sync", json={"reason": "manual"}
+            )
+            memory = client.get(
+                "/memory", params={"query": "connector", "limit": 20}
+            ).json()
 
-    assert {response["run"]["status"] for response in first_runs.values()} == {"completed"}
+    assert {response["run"]["status"] for response in first_runs.values()} == {
+        "completed"
+    }
     assert {response["run"]["itemsWritten"] for response in first_runs.values()} == {1}
     assert second_gmail.status_code == 200
     assert second_gmail.json()["run"]["itemsSeen"] == 1
@@ -320,7 +341,9 @@ def test_real_connectors_fetch_normalize_and_write_local_memory(tmp_path, monkey
 
     source_types = {item["sourceType"] for item in memory["items"]}
     assert {"gmail", "calendar", "github"}.issubset(source_types)
-    markdown_paths = {item["sourceType"]: item["markdownPath"] for item in memory["items"]}
+    markdown_paths = {
+        item["sourceType"]: item["markdownPath"] for item in memory["items"]
+    }
     assert "Emails" in markdown_paths["gmail"]
     assert "Meetings" in markdown_paths["calendar"]
     assert "GitHub" in markdown_paths["github"]

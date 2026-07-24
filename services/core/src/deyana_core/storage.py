@@ -8,11 +8,10 @@ from .identity import PRODUCT_BRAND, PRODUCT_NAME
 from .models import (
     AppSettings,
     ModelProfile,
-    OnboardingStep,
     OnboardingState,
+    OnboardingStep,
     PrivacyMode,
     SettingsPatch,
-    SyncMode,
 )
 from .runtime_time import utc_timestamp
 
@@ -42,17 +41,23 @@ class CoreStore:
         if not data:
             return self.default_settings()
 
-        return AppSettings.model_validate({**self.default_settings().model_dump(), **data})
+        return AppSettings.model_validate(
+            {**self.default_settings().model_dump(), **data}
+        )
 
     def patch_settings(self, patch: SettingsPatch) -> AppSettings:
         settings = self.read_settings()
         updates = patch.model_dump(exclude_unset=True)
-        next_settings = settings.model_copy(update={**updates, "updated_at": utc_timestamp()})
+        next_settings = settings.model_copy(
+            update={**updates, "updated_at": utc_timestamp()}
+        )
         self.write_settings(next_settings)
         return next_settings
 
     def write_settings(self, settings: AppSettings) -> None:
-        self._write_json(self.settings_path, settings.model_dump(mode="json", by_alias=True))
+        self._write_json(
+            self.settings_path, settings.model_dump(mode="json", by_alias=True)
+        )
 
     def reset_settings(self) -> AppSettings:
         settings = self.default_settings()
@@ -64,7 +69,9 @@ class CoreStore:
         if not data:
             return self.default_onboarding()
 
-        state = OnboardingState.model_validate({**self.default_onboarding().model_dump(), **data})
+        state = OnboardingState.model_validate(
+            {**self.default_onboarding().model_dump(), **data}
+        )
         if state.selected_vault_path and state.vault_status == "ready":
             vault_path = Path(state.selected_vault_path)
             if not vault_path.exists():
@@ -72,7 +79,9 @@ class CoreStore:
         return state
 
     def write_onboarding(self, state: OnboardingState) -> None:
-        self._write_json(self.onboarding_path, state.model_dump(mode="json", by_alias=True))
+        self._write_json(
+            self.onboarding_path, state.model_dump(mode="json", by_alias=True)
+        )
 
     def update_onboarding_progress(
         self,
@@ -98,7 +107,9 @@ class CoreStore:
         self.write_onboarding(state)
         return state, settings
 
-    def select_vault(self, raw_path: str) -> tuple[OnboardingState, AppSettings, list[str]]:
+    def select_vault(
+        self, raw_path: str
+    ) -> tuple[OnboardingState, AppSettings, list[str]]:
         vault_path = self._normalize_vault_path(raw_path)
         created_folders = create_vault_template(vault_path)
 
@@ -138,7 +149,9 @@ class CoreStore:
         if not vault_root.exists():
             raise ValueError("Selected vault folder is missing.")
 
-        missing = [folder for folder in VAULT_FOLDERS if not (vault_root / folder).is_dir()]
+        missing = [
+            folder for folder in VAULT_FOLDERS if not (vault_root / folder).is_dir()
+        ]
         if missing:
             create_vault_template(vault_root)
 

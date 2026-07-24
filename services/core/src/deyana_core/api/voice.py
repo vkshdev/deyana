@@ -24,7 +24,9 @@ async def get_voice_settings(request: Request) -> VoiceSettings:
 
 
 @router.patch("/settings", response_model=VoiceSettings)
-async def patch_voice_settings(request: Request, payload: VoiceSettingsPatch) -> VoiceSettings:
+async def patch_voice_settings(
+    request: Request, payload: VoiceSettingsPatch
+) -> VoiceSettings:
     runtime = request.app.state.runtime
     try:
         settings = runtime.voice_service.patch_settings(payload)
@@ -45,15 +47,23 @@ async def get_voice_status(request: Request) -> VoiceStatusResponse:
 
 
 @router.post("/transcribe", response_model=VoiceTranscriptResponse)
-async def transcribe_voice(request: Request, payload: VoiceTranscriptRequest) -> VoiceTranscriptResponse:
+async def transcribe_voice(
+    request: Request, payload: VoiceTranscriptRequest
+) -> VoiceTranscriptResponse:
     runtime = request.app.state.runtime
-    await runtime.event_bus.publish(runtime.event("voice.recording.started", {"rawAudioStored": False}))
-    await runtime.event_bus.publish(runtime.event("voice.transcription.started", {"engine": "windows_speech"}))
+    await runtime.event_bus.publish(
+        runtime.event("voice.recording.started", {"rawAudioStored": False})
+    )
+    await runtime.event_bus.publish(
+        runtime.event("voice.transcription.started", {"engine": "windows_speech"})
+    )
 
     try:
         result = await asyncio.to_thread(runtime.voice_service.transcribe, payload)
     except (ValueError, VoiceUnavailableError) as error:
-        await runtime.event_bus.publish(runtime.event("voice.recording.stopped", {"rawAudioStored": False}))
+        await runtime.event_bus.publish(
+            runtime.event("voice.recording.stopped", {"rawAudioStored": False})
+        )
         await runtime.event_bus.publish(
             runtime.event(
                 "voice.transcription.failed",
@@ -62,7 +72,9 @@ async def transcribe_voice(request: Request, payload: VoiceTranscriptRequest) ->
         )
         raise HTTPException(status_code=400, detail=str(error)) from error
 
-    await runtime.event_bus.publish(runtime.event("voice.recording.stopped", {"rawAudioStored": False}))
+    await runtime.event_bus.publish(
+        runtime.event("voice.recording.stopped", {"rawAudioStored": False})
+    )
     await runtime.event_bus.publish(
         runtime.event(
             "voice.transcription.completed",
@@ -73,9 +85,13 @@ async def transcribe_voice(request: Request, payload: VoiceTranscriptRequest) ->
 
 
 @router.post("/speak", response_model=VoiceSpeakResponse)
-async def speak_voice(request: Request, payload: VoiceSpeakRequest) -> VoiceSpeakResponse:
+async def speak_voice(
+    request: Request, payload: VoiceSpeakRequest
+) -> VoiceSpeakResponse:
     runtime = request.app.state.runtime
-    await runtime.event_bus.publish(runtime.event("tts.started", {"engine": "windows_speech"}))
+    await runtime.event_bus.publish(
+        runtime.event("tts.started", {"engine": "windows_speech"})
+    )
 
     try:
         result = await asyncio.to_thread(runtime.voice_service.speak, payload)

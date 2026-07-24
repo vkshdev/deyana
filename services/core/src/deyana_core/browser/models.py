@@ -6,11 +6,12 @@ from pydantic import Field
 
 from ..models import ApiModel, ToolResultItem
 
-
 BROWSER_PROTOCOL_VERSION = 1
 BrowserContextMode = Literal["selection", "main", "visible"]
 BrowserConnectionState = Literal["disconnected", "connecting", "connected", "error"]
-BrowserRequestStatus = Literal["completed", "permission_required", "unavailable", "failed"]
+BrowserRequestStatus = Literal[
+    "completed", "permission_required", "unavailable", "failed"
+]
 BrowserPermissionKind = Literal["temporary_active_tab", "optional_origin"]
 BrowserAuditDecision = Literal["allowed", "blocked", "failed"]
 

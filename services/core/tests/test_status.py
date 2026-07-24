@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from fastapi.testclient import TestClient
-
 from deyana_core.app import create_app
 from deyana_core.runtime import RuntimeState
 from deyana_core.settings import CoreSettings
+from fastapi.testclient import TestClient
 
 
 def test_status_endpoint_exposes_current_core_capabilities(tmp_path) -> None:
@@ -44,5 +43,9 @@ def test_status_endpoint_exposes_current_core_capabilities(tmp_path) -> None:
     assert body["featureFlags"]["crashRecovery"] is True
     assert any(dependency["name"] == "python" for dependency in body["dependencies"])
     assert any(dependency["name"] == "ollama" for dependency in body["dependencies"])
-    assert any(dependency["name"] == "local_voice" for dependency in body["dependencies"])
-    assert any(dependency["name"] == "release_readiness" for dependency in body["dependencies"])
+    assert any(
+        dependency["name"] == "local_voice" for dependency in body["dependencies"]
+    )
+    assert any(
+        dependency["name"] == "release_readiness" for dependency in body["dependencies"]
+    )

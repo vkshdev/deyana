@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import socket
 import time
 import urllib.error
 import urllib.request
@@ -11,7 +10,6 @@ from typing import Any
 
 from .identity import ASSISTANT_IDENTITY
 from .models import (
-    AppSettings,
     LocalModelInfo,
     LocalModelStatusResponse,
     ModelProfile,
@@ -89,7 +87,9 @@ class OllamaClient:
         self.generate_timeout_seconds = generate_timeout_seconds
 
     def list_models(self) -> list[OllamaInstalledModel]:
-        body = self._request("GET", "/api/tags", timeout_seconds=self.status_timeout_seconds)
+        body = self._request(
+            "GET", "/api/tags", timeout_seconds=self.status_timeout_seconds
+        )
         models = body.get("models", [])
         if not isinstance(models, list):
             return []
@@ -173,7 +173,7 @@ class OllamaClient:
             raise OllamaProviderError(
                 f"Ollama returned HTTP {error.code}: {detail or error.reason}"
             ) from error
-        except (TimeoutError, socket.timeout, urllib.error.URLError) as error:
+        except (TimeoutError, urllib.error.URLError) as error:
             raise OllamaUnavailableError(
                 f"Ollama is not reachable at {self.endpoint}. Start Ollama, then retry."
             ) from error
@@ -200,7 +200,9 @@ class ModelRouter:
     def status(self) -> LocalModelStatusResponse:
         settings = self.store.read_settings()
         selected_chat = settings.selected_chat_model or DEFAULT_CHAT_MODEL
-        selected_embedding = settings.selected_embedding_model or DEFAULT_EMBEDDING_MODEL
+        selected_embedding = (
+            settings.selected_embedding_model or DEFAULT_EMBEDDING_MODEL
+        )
         installed_models: list[OllamaInstalledModel] = []
         provider_available = False
         message = "Ollama is not running. Start Ollama to enable local chat."
@@ -259,7 +261,9 @@ class ModelRouter:
         if request.chat_model is not None:
             updates["selected_chat_model"] = normalize_model_name(request.chat_model)
         if request.embedding_model is not None:
-            updates["selected_embedding_model"] = normalize_model_name(request.embedding_model)
+            updates["selected_embedding_model"] = normalize_model_name(
+                request.embedding_model
+            )
 
         next_settings = settings.model_copy(update=updates)
         self.store.write_settings(next_settings)
@@ -344,7 +348,9 @@ class ModelRouter:
                 installed=name in installed_by_name,
                 recommended=name in {DEFAULT_CHAT_MODEL, DEFAULT_EMBEDDING_MODEL},
                 profile=profile,
-                size_bytes=installed_by_name[name].size_bytes if name in installed_by_name else None,
+                size_bytes=installed_by_name[name].size_bytes
+                if name in installed_by_name
+                else None,
                 detail=MODEL_DETAILS.get(name, "Local Ollama model."),
             )
             for name in names

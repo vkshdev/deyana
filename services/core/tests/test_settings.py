@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from fastapi.testclient import TestClient
-
 from deyana_core.app import create_app
 from deyana_core.runtime import RuntimeState
 from deyana_core.settings import CoreSettings
+from fastapi.testclient import TestClient
 
 
 def test_settings_patch_persists_local_preferences(tmp_path) -> None:
@@ -13,7 +12,11 @@ def test_settings_patch_persists_local_preferences(tmp_path) -> None:
     with TestClient(create_app(RuntimeState(settings))) as client:
         response = client.patch(
             "/settings",
-            json={"privacyMode": "local_only", "modelProfile": "balanced", "syncMode": "low_frequency"},
+            json={
+                "privacyMode": "local_only",
+                "modelProfile": "balanced",
+                "syncMode": "low_frequency",
+            },
         )
 
     assert response.status_code == 200

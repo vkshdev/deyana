@@ -26,7 +26,6 @@ from .models import (
 from .privacy import PrivacyFirewall
 from .runtime_time import utc_timestamp
 
-
 TOOL_MANIFESTS = [
     ToolManifest(
         tool_id="web_search",
@@ -100,7 +99,9 @@ class ToolExecutionError(RuntimeError):
 
 
 class ToolService:
-    def __init__(self, privacy_firewall: PrivacyFirewall, memory_store: MemoryStore) -> None:
+    def __init__(
+        self, privacy_firewall: PrivacyFirewall, memory_store: MemoryStore
+    ) -> None:
         self.privacy_firewall = privacy_firewall
         self.memory_store = memory_store
 
@@ -109,7 +110,9 @@ class ToolService:
 
     def web_search(self, request: WebSearchRequest) -> ToolRunResponse:
         if not request.user_approved:
-            return permission_required("web_search", "Public web search requires approval.")
+            return permission_required(
+                "web_search", "Public web search requires approval."
+            )
         query = normalize_space(request.query)
         if not query:
             raise ToolExecutionError("Search query is required.")
@@ -124,7 +127,9 @@ class ToolService:
                 user_approved=True,
             )
         )
-        rss_text = fetch_text(url, accept="application/rss+xml,application/xml,text/xml")
+        rss_text = fetch_text(
+            url, accept="application/rss+xml,application/xml,text/xml"
+        )
         items = parse_bing_rss_results(rss_text, limit=request.limit)
         summary = f"Found {len(items)} public results for: {query}"
         return ToolRunResponse(
@@ -132,14 +137,17 @@ class ToolService:
             status="completed",
             title="Web search results",
             summary=summary,
-            content="\n".join(f"- {item.title}: {item.url}" for item in items) or "No results found.",
+            content="\n".join(f"- {item.title}: {item.url}" for item in items)
+            or "No results found.",
             items=items,
             privacy=privacy,
         )
 
     def fetch_page(self, request: WebFetchRequest) -> ToolRunResponse:
         if not request.user_approved:
-            return permission_required("fetch_page", "Public webpage fetch requires approval.")
+            return permission_required(
+                "fetch_page", "Public webpage fetch requires approval."
+            )
         privacy = self.privacy_firewall.guard(
             PrivacyCheckRequest(
                 url=request.url,
@@ -164,11 +172,16 @@ class ToolService:
 
     def read_file(self, request: FileReadRequest) -> ToolRunResponse:
         if not request.user_approved:
-            return permission_required("read_file", "Reading a local file requires folder approval.")
+            return permission_required(
+                "read_file", "Reading a local file requires folder approval."
+            )
         file_path = resolve_inside_root(request.path, request.allowed_root)
         if not file_path.is_file():
             raise ToolExecutionError("Approved path is not a readable file.")
-        content = truncate(file_path.read_text(encoding="utf-8", errors="replace"), request.max_characters)
+        content = truncate(
+            file_path.read_text(encoding="utf-8", errors="replace"),
+            request.max_characters,
+        )
         return ToolRunResponse(
             tool_id="read_file",
             status="completed",
@@ -179,7 +192,9 @@ class ToolService:
 
     def git_status(self, request: GitReadRequest) -> ToolRunResponse:
         if not request.user_approved:
-            return permission_required("git_status", "Reading git status requires repository approval.")
+            return permission_required(
+                "git_status", "Reading git status requires repository approval."
+            )
         repo = require_git_repo(request.repo_path)
         output = run_git(repo, ["status", "--short"], request.max_characters)
         return ToolRunResponse(
@@ -192,7 +207,9 @@ class ToolService:
 
     def git_diff(self, request: GitReadRequest) -> ToolRunResponse:
         if not request.user_approved:
-            return permission_required("git_diff", "Reading git diff requires repository approval.")
+            return permission_required(
+                "git_diff", "Reading git diff requires repository approval."
+            )
         repo = require_git_repo(request.repo_path)
         output = run_git(repo, ["diff", "--", "."], request.max_characters)
         return ToolRunResponse(
@@ -205,12 +222,17 @@ class ToolService:
 
     def commit_message(self, request: GitReadRequest) -> ToolRunResponse:
         if not request.user_approved:
-            return permission_required("commit_message", "Commit message suggestion requires repository approval.")
+            return permission_required(
+                "commit_message",
+                "Commit message suggestion requires repository approval.",
+            )
         repo = require_git_repo(request.repo_path)
         status = run_git(repo, ["status", "--short"], request.max_characters)
         diff = run_git(repo, ["diff", "--stat"], request.max_characters)
         message = suggest_commit_message(status=status, diff_stat=diff)
-        content = f"{message}\n\nRationale:\n{diff or status or 'No local changes detected.'}"
+        content = (
+            f"{message}\n\nRationale:\n{diff or status or 'No local changes detected.'}"
+        )
         return ToolRunResponse(
             tool_id="commit_message",
             status="completed",
@@ -222,7 +244,10 @@ class ToolService:
 
     def code_task(self, request: CodeTaskRequest) -> ToolRunResponse:
         if not request.user_approved:
-            return permission_required("code_task", "Coding explanation/proposal requires approval for source context.")
+            return permission_required(
+                "code_task",
+                "Coding explanation/proposal requires approval for source context.",
+            )
         goal = normalize_space(request.goal)
         context = truncate(request.context, 8000)
         proposal = build_code_proposal(goal=goal, context=context)
@@ -237,14 +262,22 @@ class ToolService:
 
     def day_planner(self, request: DayPlannerRequest) -> ToolRunResponse:
         date = request.date or utc_timestamp()[:10]
-        actions = self.memory_store.list_insights(insight_type="action_item", status="open", limit=12).items
+        actions = self.memory_store.list_insights(
+            insight_type="action_item", status="open", limit=12
+        ).items
         lines = [f"# Day plan - {date}", "", "## Focus blocks", ""]
-        focus = [normalize_space(item) for item in request.focus if normalize_space(item)]
+        focus = [
+            normalize_space(item) for item in request.focus if normalize_space(item)
+        ]
         if not focus:
             focus = ["Review priority work", "Clear open action items", "Plan tomorrow"]
         for index, item in enumerate(focus[:5], start=1):
             lines.append(f"{index}. {item}")
-        commitments = [normalize_space(item) for item in request.commitments if normalize_space(item)]
+        commitments = [
+            normalize_space(item)
+            for item in request.commitments
+            if normalize_space(item)
+        ]
         if commitments:
             lines.extend(["", "## Commitments", ""])
             lines.extend(f"- {item}" for item in commitments[:10])
@@ -276,7 +309,11 @@ def permission_required(tool_id: str, message: str) -> ToolRunResponse:
 
 
 def fetch_text(url: str, *, accept: str) -> str:
-    request = Request(url, headers={"user-agent": "DEYANA-local-tool/0.1", "accept": accept}, method="GET")
+    request = Request(
+        url,
+        headers={"user-agent": "DEYANA-local-tool/0.1", "accept": accept},
+        method="GET",
+    )
     try:
         with urlopen(request, timeout=20) as response:
             content_type = response.headers.get("content-type", "")
@@ -286,7 +323,9 @@ def fetch_text(url: str, *, accept: str) -> str:
                 charset = match.group(1)
             return response.read().decode(charset, errors="replace")
     except HTTPError as error:
-        raise ToolExecutionError(f"Tool request failed with HTTP {error.code}.") from error
+        raise ToolExecutionError(
+            f"Tool request failed with HTTP {error.code}."
+        ) from error
     except URLError as error:
         raise ToolExecutionError(f"Tool request failed: {error.reason}") from error
 
@@ -303,14 +342,18 @@ def parse_bing_rss_results(content: str, *, limit: int) -> list[ToolResultItem]:
         url = normalize_space(item.findtext("link") or "")
         summary = html_to_text(item.findtext("description") or "") or title
         if title and url:
-            results.append(ToolResultItem(title=title, summary=summary, url=url, source="bing"))
+            results.append(
+                ToolResultItem(title=title, summary=summary, url=url, source="bing")
+            )
         if len(results) >= limit:
             break
     return results
 
 
 def html_to_text(content: str) -> str:
-    text = re.sub(r"<(script|style).*?</\1>", " ", content, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(
+        r"<(script|style).*?</\1>", " ", content, flags=re.IGNORECASE | re.DOTALL
+    )
     text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
     text = re.sub(r"</(p|div|li|h[1-6])>", "\n", text, flags=re.IGNORECASE)
     text = re.sub(r"<[^>]+>", " ", text)
@@ -358,8 +401,16 @@ def git_status_summary(output: str) -> str:
 def diff_summary(output: str) -> str:
     if not output.strip():
         return "No unstaged diff."
-    additions = sum(1 for line in output.splitlines() if line.startswith("+") and not line.startswith("+++"))
-    deletions = sum(1 for line in output.splitlines() if line.startswith("-") and not line.startswith("---"))
+    additions = sum(
+        1
+        for line in output.splitlines()
+        if line.startswith("+") and not line.startswith("+++")
+    )
+    deletions = sum(
+        1
+        for line in output.splitlines()
+        if line.startswith("-") and not line.startswith("---")
+    )
     return f"Unstaged diff has about {additions} additions and {deletions} deletions."
 
 
@@ -384,7 +435,9 @@ def build_code_proposal(*, goal: str, context: str) -> str:
         "",
         "## Explanation",
         "",
-        compact_sentence(context, 900) if context else "No source context was provided.",
+        compact_sentence(context, 900)
+        if context
+        else "No source context was provided.",
         "",
         "## Proposed change plan",
         "",

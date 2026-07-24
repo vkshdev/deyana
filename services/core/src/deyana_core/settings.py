@@ -16,17 +16,17 @@ class CoreSettings:
     data_dir: Path = Path("data")
 
     @classmethod
-    def from_env(cls) -> "CoreSettings":
+    def from_env(cls) -> CoreSettings:
         return cls(
             host=os.getenv("DEYANA_CORE_HOST", "127.0.0.1"),
             port=int(os.getenv("DEYANA_CORE_PORT", "8765")),
-            ollama_endpoint=os.getenv("DEYANA_OLLAMA_ENDPOINT", "http://127.0.0.1:11434"),
+            ollama_endpoint=os.getenv(
+                "DEYANA_OLLAMA_ENDPOINT", "http://127.0.0.1:11434"
+            ),
             heartbeat_seconds=float(os.getenv("DEYANA_CORE_HEARTBEAT_SECONDS", "5")),
             log_level=os.getenv("DEYANA_CORE_LOG_LEVEL", "info"),
             log_dir=Path(os.getenv("DEYANA_CORE_LOG_DIR", "logs")),
-            data_dir=Path(
-                os.getenv("DEYANA_CORE_DATA_DIR", default_data_dir())
-            ),
+            data_dir=Path(os.getenv("DEYANA_CORE_DATA_DIR", default_data_dir())),
         )
 
 

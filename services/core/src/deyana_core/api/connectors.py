@@ -25,7 +25,9 @@ router = APIRouter(prefix="/connectors", tags=["connectors"])
 
 @router.get("", response_model=ConnectorListResponse)
 async def list_connectors(request: Request) -> ConnectorListResponse:
-    return await asyncio.to_thread(request.app.state.runtime.connector_manager.list_connectors)
+    return await asyncio.to_thread(
+        request.app.state.runtime.connector_manager.list_connectors
+    )
 
 
 @router.get("/sync-runs", response_model=ConnectorSyncRunsResponse)
@@ -33,13 +35,17 @@ async def list_connector_sync_runs(
     request: Request,
     limit: int = Query(default=20, ge=1, le=100),
 ) -> ConnectorSyncRunsResponse:
-    return await asyncio.to_thread(request.app.state.runtime.connector_manager.list_sync_runs, limit=limit)
+    return await asyncio.to_thread(
+        request.app.state.runtime.connector_manager.list_sync_runs, limit=limit
+    )
 
 
 @router.get("/{connector_id}", response_model=ConnectorItem)
 async def get_connector(request: Request, connector_id: str) -> ConnectorItem:
     try:
-        return await asyncio.to_thread(request.app.state.runtime.connector_manager.get_connector, connector_id)
+        return await asyncio.to_thread(
+            request.app.state.runtime.connector_manager.get_connector, connector_id
+        )
     except ConnectorNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
 
@@ -122,7 +128,9 @@ async def complete_connector_oauth(
 
 
 @router.post("/{connector_id}/disconnect", response_model=ConnectorDisconnectResponse)
-async def disconnect_connector(request: Request, connector_id: str) -> ConnectorDisconnectResponse:
+async def disconnect_connector(
+    request: Request, connector_id: str
+) -> ConnectorDisconnectResponse:
     runtime = request.app.state.runtime
     try:
         connector, token_deleted = await asyncio.to_thread(
@@ -132,7 +140,9 @@ async def disconnect_connector(request: Request, connector_id: str) -> Connector
     except ConnectorNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
 
-    response = ConnectorDisconnectResponse(connector=connector, token_deleted=token_deleted)
+    response = ConnectorDisconnectResponse(
+        connector=connector, token_deleted=token_deleted
+    )
     await publish_connector_event(runtime, "connector.status.changed", connector)
     return response
 
@@ -178,13 +188,21 @@ async def sync_connector(
 
     if privacy_result:
         await publish_privacy_event(runtime, privacy_result)
-    event_type = "connector.sync.completed" if response.run.status == "completed" else "connector.sync.failed"
+    event_type = (
+        "connector.sync.completed"
+        if response.run.status == "completed"
+        else "connector.sync.failed"
+    )
     await publish_connector_sync_event(runtime, event_type, response)
-    await publish_connector_event(runtime, "connector.status.changed", response.connector)
+    await publish_connector_event(
+        runtime, "connector.status.changed", response.connector
+    )
     return response
 
 
-async def publish_connector_event(runtime, event_type: str, connector: ConnectorItem) -> None:
+async def publish_connector_event(
+    runtime, event_type: str, connector: ConnectorItem
+) -> None:
     await runtime.event_bus.publish(
         runtime.event(
             event_type,
@@ -193,7 +211,9 @@ async def publish_connector_event(runtime, event_type: str, connector: Connector
     )
 
 
-async def publish_connector_sync_event(runtime, event_type: str, response: ConnectorSyncResponse) -> None:
+async def publish_connector_sync_event(
+    runtime, event_type: str, response: ConnectorSyncResponse
+) -> None:
     await runtime.event_bus.publish(
         runtime.event(
             event_type,
@@ -204,14 +224,18 @@ async def publish_connector_sync_event(runtime, event_type: str, response: Conne
 
 async def publish_connector_error_snapshot(runtime, connector_id: str) -> None:
     try:
-        connector = await asyncio.to_thread(runtime.connector_manager.get_connector, connector_id)
+        connector = await asyncio.to_thread(
+            runtime.connector_manager.get_connector, connector_id
+        )
     except ConnectorError:
         return
     await publish_connector_event(runtime, "connector.status.changed", connector)
 
 
 async def publish_privacy_event(runtime, result: PrivacyCheckResponse) -> None:
-    event_type = "privacy.request.blocked" if not result.allowed else "privacy.request.allowed"
+    event_type = (
+        "privacy.request.blocked" if not result.allowed else "privacy.request.allowed"
+    )
     await runtime.event_bus.publish(
         runtime.event(
             event_type,

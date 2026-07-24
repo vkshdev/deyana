@@ -46,14 +46,13 @@ class TokenVault:
         self.initialize()
         timestamp = utc_timestamp()
         encrypted = encrypt_token_payload(token_payload, self._local_key)
-        with self.connect() as connection:
-            with connection:
-                existing = connection.execute(
-                    "SELECT created_at FROM connector_tokens WHERE connector_id = ?",
-                    (connector_id,),
-                ).fetchone()
-                connection.execute(
-                    """
+        with self.connect() as connection, connection:
+            existing = connection.execute(
+                "SELECT created_at FROM connector_tokens WHERE connector_id = ?",
+                (connector_id,),
+            ).fetchone()
+            connection.execute(
+                """
                     INSERT INTO connector_tokens (
                       connector_id, encrypted_token_json, created_at, updated_at
                     )
@@ -62,13 +61,13 @@ class TokenVault:
                       encrypted_token_json = excluded.encrypted_token_json,
                       updated_at = excluded.updated_at
                     """,
-                    (
-                        connector_id,
-                        encrypted,
-                        existing["created_at"] if existing else timestamp,
-                        timestamp,
-                    ),
-                )
+                (
+                    connector_id,
+                    encrypted,
+                    existing["created_at"] if existing else timestamp,
+                    timestamp,
+                ),
+            )
         return timestamp
 
     def read(self, connector_id: str) -> dict[str, Any] | None:
@@ -84,12 +83,11 @@ class TokenVault:
 
     def delete(self, connector_id: str) -> bool:
         self.initialize()
-        with self.connect() as connection:
-            with connection:
-                cursor = connection.execute(
-                    "DELETE FROM connector_tokens WHERE connector_id = ?",
-                    (connector_id,),
-                )
+        with self.connect() as connection, connection:
+            cursor = connection.execute(
+                "DELETE FROM connector_tokens WHERE connector_id = ?",
+                (connector_id,),
+            )
         return cursor.rowcount > 0
 
     def has_token(self, connector_id: str) -> bool:
@@ -115,8 +113,12 @@ class TokenVault:
         return key
 
 
-def encrypt_token_payload(payload: dict[str, Any], local_key_factory: callable[[], bytes]) -> str:
-    plaintext = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+def encrypt_token_payload(
+    payload: dict[str, Any], local_key_factory: callable[[], bytes]
+) -> str:
+    plaintext = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode(
+        "utf-8"
+    )
     if os.name == "nt":
         encrypted = _dpapi_protect(plaintext)
         return json.dumps(
@@ -129,10 +131,15 @@ def encrypt_token_payload(payload: dict[str, Any], local_key_factory: callable[[
         )
 
     encrypted = _hmac_stream_encrypt(plaintext, local_key_factory())
-    return json.dumps({"version": 1, "provider": "local-hmac-stream", **encrypted}, separators=(",", ":"))
+    return json.dumps(
+        {"version": 1, "provider": "local-hmac-stream", **encrypted},
+        separators=(",", ":"),
+    )
 
 
-def decrypt_token_payload(encrypted_token_json: str, local_key_factory: callable[[], bytes]) -> dict[str, Any]:
+def decrypt_token_payload(
+    encrypted_token_json: str, local_key_factory: callable[[], bytes]
+) -> dict[str, Any]:
     envelope = json.loads(encrypted_token_json)
     provider = envelope.get("provider")
     if provider == "windows-dpapi":
@@ -163,7 +170,9 @@ def _dpapi_call(data: bytes, *, protect: bool) -> bytes:
     crypt32 = ctypes.windll.crypt32
     kernel32 = ctypes.windll.kernel32
     input_buffer = ctypes.create_string_buffer(data)
-    input_blob = _DataBlob(len(data), ctypes.cast(input_buffer, ctypes.POINTER(ctypes.c_char)))
+    input_blob = _DataBlob(
+        len(data), ctypes.cast(input_buffer, ctypes.POINTER(ctypes.c_char))
+    )
     output_blob = _DataBlob()
 
     if protect:
@@ -227,4 +236,7 @@ def _keystream(key: bytes, nonce: bytes, length: int) -> bytes:
 
 
 def xor_bytes(left: bytes, right: bytes) -> bytes:
-    return bytes(left_byte ^ right_byte for left_byte, right_byte in zip(left, right, strict=True))
+    return bytes(
+        left_byte ^ right_byte
+        for left_byte, right_byte in zip(left, right, strict=True)
+    )

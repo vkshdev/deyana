@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import logging
 from logging.handlers import RotatingFileHandler
-from tempfile import gettempdir
 from pathlib import Path
+from tempfile import gettempdir
 
 from .settings import CoreSettings
 
@@ -29,7 +29,9 @@ def configure_logging(settings: CoreSettings) -> None:
         file_handler.setFormatter(formatter)
         root.addHandler(file_handler)
     else:
-        root.warning("file logging is unavailable; continuing with console logging only")
+        root.warning(
+            "file logging is unavailable; continuing with console logging only"
+        )
 
 
 def build_file_handler(log_dir: Path) -> RotatingFileHandler | None:

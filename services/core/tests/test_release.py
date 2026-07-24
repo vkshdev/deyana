@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi.testclient import TestClient
-
 from deyana_core.app import create_app
 from deyana_core.runtime import RuntimeState
 from deyana_core.settings import CoreSettings
+from fastapi.testclient import TestClient
 
 
 def make_client(tmp_path) -> TestClient:
@@ -16,7 +15,9 @@ def make_client(tmp_path) -> TestClient:
 
 def complete_onboarding(client: TestClient, tmp_path) -> Path:
     vault_path = tmp_path / "vault"
-    assert client.post("/vault/select", json={"path": str(vault_path)}).status_code == 200
+    assert (
+        client.post("/vault/select", json={"path": str(vault_path)}).status_code == 200
+    )
     assert (
         client.post(
             "/onboarding/complete",
@@ -31,7 +32,9 @@ def complete_onboarding(client: TestClient, tmp_path) -> Path:
     return vault_path
 
 
-def test_release_status_readiness_update_plan_performance_and_crash_recovery(tmp_path) -> None:
+def test_release_status_readiness_update_plan_performance_and_crash_recovery(
+    tmp_path,
+) -> None:
     with make_client(tmp_path) as client:
         status = client.get("/status")
         readiness = client.get("/release/readiness")
@@ -47,15 +50,26 @@ def test_release_status_readiness_update_plan_performance_and_crash_recovery(tmp
     assert status.json()["featureFlags"]["connectorHealth"] is True
     assert status.json()["featureFlags"]["performanceProfiling"] is True
     assert status.json()["featureFlags"]["crashRecovery"] is True
-    assert any(dependency["name"] == "release_readiness" for dependency in status.json()["dependencies"])
+    assert any(
+        dependency["name"] == "release_readiness"
+        for dependency in status.json()["dependencies"]
+    )
     assert readiness.status_code == 200
-    assert {item["id"] for item in readiness.json()["items"]} >= {"installer_bundle", "update_plan", "core_service"}
-    public_guidance = next(item for item in readiness.json()["items"] if item["id"] == "update_plan")
+    assert {item["id"] for item in readiness.json()["items"]} >= {
+        "installer_bundle",
+        "update_plan",
+        "core_service",
+    }
+    public_guidance = next(
+        item for item in readiness.json()["items"] if item["id"] == "update_plan"
+    )
     assert public_guidance["status"] == "ready"
     assert update_plan.status_code == 200
     assert update_plan.json()["automaticUpdatesEnabled"] is False
     assert performance.status_code == 200
-    assert any(metric["name"] == "profileLatencyMs" for metric in performance.json()["metrics"])
+    assert any(
+        metric["name"] == "profileLatencyMs" for metric in performance.json()["metrics"]
+    )
     assert crash.status_code == 200
     assert crash.json()["currentSessionId"]
 
@@ -90,8 +104,12 @@ def test_release_privacy_export_and_connector_health_use_local_state(tmp_path) -
                 "contentMarkdown": "Decision: keep release export local.",
             },
         )
-        client.app.state.runtime.chat_store.append("user", "Summarize local release readiness.")
-        client.app.state.runtime.chat_store.append("assistant", "Release readiness is local.")
+        client.app.state.runtime.chat_store.append(
+            "user", "Summarize local release readiness."
+        )
+        client.app.state.runtime.chat_store.append(
+            "assistant", "Release readiness is local."
+        )
         client.post(
             "/privacy/test-request",
             json={

@@ -19,10 +19,8 @@ fn run() -> Result<(), String> {
 
 #[cfg(windows)]
 fn configure_binary_stdio() {
-    unsafe {
-        libc::_setmode(0, libc::O_BINARY);
-        libc::_setmode(1, libc::O_BINARY);
-    }
+    // Rust's standard library bypasses the C runtime's CRLF translation,
+    // so setmode is not necessary for std::io::stdin/stdout.
 }
 
 #[cfg(not(windows))]

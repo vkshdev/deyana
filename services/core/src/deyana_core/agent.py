@@ -8,9 +8,9 @@ from .identity import ASSISTANT_IDENTITY
 from .local_models import ModelRouter
 from .memory import MemoryStore
 from .models import (
-    ChatRoute,
     ChatMessageResponse,
     ChatRetrievalSummary,
+    ChatRoute,
     MemoryItem,
     MemorySourceReference,
     WebFetchRequest,
@@ -263,9 +263,15 @@ class ChatAgent:
             if route == "web_fetch":
                 url = extract_public_url(content)
                 if not url:
-                    return WebContext(content="", references=[], error="No public URL was found.")
+                    return WebContext(
+                        content="", references=[], error="No public URL was found."
+                    )
                 result = self.tool_service.fetch_page(
-                    WebFetchRequest(url=url, user_approved=True, max_characters=MAX_WEB_CONTEXT_CHARS)
+                    WebFetchRequest(
+                        url=url,
+                        user_approved=True,
+                        max_characters=MAX_WEB_CONTEXT_CHARS,
+                    )
                 )
                 reference = WebSourceReference(
                     title=result.title,
@@ -279,7 +285,9 @@ class ChatAgent:
                 )
 
             result = self.tool_service.web_search(
-                WebSearchRequest(query=content, limit=MAX_WEB_SOURCES, user_approved=True)
+                WebSearchRequest(
+                    query=content, limit=MAX_WEB_SOURCES, user_approved=True
+                )
             )
             references = [
                 WebSourceReference(
@@ -315,16 +323,7 @@ class ChatAgent:
 
 def weighted_text(item: MemoryItem) -> str:
     tags = " ".join(item.tags)
-    return " ".join(
-        [
-            item.title,
-            item.title,
-            item.summary,
-            item.summary,
-            tags,
-            item.content_markdown,
-        ]
-    ).lower()
+    return f"{item.title} {item.title} {item.summary} {item.summary} {tags} {item.content_markdown}".lower()
 
 
 def score_text(text: str, terms: list[str]) -> float:

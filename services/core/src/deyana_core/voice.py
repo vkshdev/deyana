@@ -58,19 +58,25 @@ class LocalVoiceService:
             return defaults
 
         return self.resolve_voice(settings)
+
     def patch_settings(self, patch: VoiceSettingsPatch) -> VoiceSettings:
         settings = self.read_settings()
         updates = patch.model_dump(exclude_unset=True)
         if "tts_voice" in updates:
             updates["tts_voice"] = self.validate_voice_selection(updates["tts_voice"])
-        next_settings = settings.model_copy(update={**updates, "updated_at": utc_timestamp()})
+        next_settings = settings.model_copy(
+            update={**updates, "updated_at": utc_timestamp()}
+        )
         self.write_settings(next_settings)
         return next_settings
 
     def write_settings(self, settings: VoiceSettings) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         temp_path = self.settings_path.with_suffix(".json.tmp")
-        temp_path.write_text(json.dumps(settings.model_dump(mode="json", by_alias=True), indent=2), encoding="utf-8")
+        temp_path.write_text(
+            json.dumps(settings.model_dump(mode="json", by_alias=True), indent=2),
+            encoding="utf-8",
+        )
         temp_path.replace(self.settings_path)
 
     def status(self) -> VoiceStatusResponse:
@@ -120,7 +126,9 @@ class LocalVoiceService:
         result = run_windows_stt(settings.language, duration)
         transcript = result.stdout.strip()
         if result.returncode != 0:
-            raise VoiceUnavailableError(result.stderr.strip() or "Local speech recognition failed.")
+            raise VoiceUnavailableError(
+                result.stderr.strip() or "Local speech recognition failed."
+            )
 
         return VoiceTranscriptResponse(
             transcript=transcript,
@@ -145,7 +153,9 @@ class LocalVoiceService:
             volume=settings.tts_volume,
         )
         if result.returncode != 0:
-            raise VoiceUnavailableError(result.stderr.strip() or "Local text-to-speech failed.")
+            raise VoiceUnavailableError(
+                result.stderr.strip() or "Local text-to-speech failed."
+            )
 
         return VoiceSpeakResponse(
             spoken=True,
@@ -168,7 +178,9 @@ class LocalVoiceService:
         if settings.muted:
             raise VoiceUnavailableError("Microphone input is muted.")
         if self.provider_status() != "available":
-            raise VoiceUnavailableError("A supported local speech recognition engine is not available.")
+            raise VoiceUnavailableError(
+                "A supported local speech recognition engine is not available."
+            )
 
     def require_tts_ready(self, settings: VoiceSettings) -> None:
         if not settings.enabled:
@@ -176,9 +188,13 @@ class LocalVoiceService:
         if not settings.tts_enabled:
             raise VoiceUnavailableError("Text-to-speech is disabled.")
         if self.provider_status() != "available":
-            raise VoiceUnavailableError("A supported local text-to-speech engine is not available.")
+            raise VoiceUnavailableError(
+                "A supported local text-to-speech engine is not available."
+            )
         if not settings.tts_voice:
-            raise VoiceUnavailableError("No installed female text-to-speech voice is available.")
+            raise VoiceUnavailableError(
+                "No installed female text-to-speech voice is available."
+            )
 
     def default_settings(self) -> VoiceSettings:
         return VoiceSettings(
@@ -197,7 +213,9 @@ class LocalVoiceService:
             canonical_name = canonical_voice_name(settings.tts_voice, catalog)
             if canonical_name:
                 return settings.model_copy(update={"tts_voice": canonical_name})
-        return settings.model_copy(update={"tts_voice": self.preferred_female_voice(catalog)})
+        return settings.model_copy(
+            update={"tts_voice": self.preferred_female_voice(catalog)}
+        )
 
     def validate_voice_selection(self, requested_voice: str | None) -> str | None:
         catalog = self.voice_catalog()
@@ -214,12 +232,18 @@ class LocalVoiceService:
     @staticmethod
     def preferred_female_voice(catalog: VoiceCatalog) -> str | None:
         female_voices = [voice for voice in catalog.voices if voice.gender == "female"]
-        zira = next((voice for voice in female_voices if "zira" in voice.name.casefold()), None)
+        zira = next(
+            (voice for voice in female_voices if "zira" in voice.name.casefold()), None
+        )
         if zira:
             return zira.name
 
         english_female = next(
-            (voice for voice in female_voices if voice.language.casefold().startswith("en")),
+            (
+                voice
+                for voice in female_voices
+                if voice.language.casefold().startswith("en")
+            ),
             None,
         )
         if english_female:
@@ -229,7 +253,10 @@ class LocalVoiceService:
 
 def canonical_voice_name(requested_voice: str, catalog: VoiceCatalog) -> str | None:
     normalized = requested_voice.strip().casefold()
-    return next((voice.name for voice in catalog.voices if voice.name.casefold() == normalized), None)
+    return next(
+        (voice.name for voice in catalog.voices if voice.name.casefold() == normalized),
+        None,
+    )
 
 
 def discover_windows_voice_catalog() -> VoiceCatalog:
@@ -331,7 +358,9 @@ try {
     )
 
 
-def run_windows_tts(*, text: str, voice: str | None, rate: int, volume: int) -> CommandResult:
+def run_windows_tts(
+    *, text: str, voice: str | None, rate: int, volume: int
+) -> CommandResult:
     script = r"""
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Speech
@@ -359,10 +388,16 @@ try {
     )
 
 
-def run_powershell(script: str, env_patch: dict[str, str], timeout: int) -> CommandResult:
+def run_powershell(
+    script: str, env_patch: dict[str, str], timeout: int
+) -> CommandResult:
     executable = powershell_path()
     if not executable:
-        return CommandResult(returncode=1, stdout="", stderr="PowerShell is required for Windows local voice.")
+        return CommandResult(
+            returncode=1,
+            stdout="",
+            stderr="PowerShell is required for Windows local voice.",
+        )
 
     env = {**os.environ, **env_patch}
     creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -385,7 +420,9 @@ def run_powershell(script: str, env_patch: dict[str, str], timeout: int) -> Comm
             check=False,
         )
     except subprocess.TimeoutExpired:
-        return CommandResult(returncode=1, stdout="", stderr="Local voice command timed out.")
+        return CommandResult(
+            returncode=1, stdout="", stderr="Local voice command timed out."
+        )
 
     return CommandResult(
         returncode=completed.returncode,
@@ -395,4 +432,8 @@ def run_powershell(script: str, env_patch: dict[str, str], timeout: int) -> Comm
 
 
 def powershell_path() -> str | None:
-    return shutil.which("powershell.exe") or shutil.which("pwsh.exe") or shutil.which("powershell")
+    return (
+        shutil.which("powershell.exe")
+        or shutil.which("pwsh.exe")
+        or shutil.which("powershell")
+    )

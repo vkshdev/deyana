@@ -11,7 +11,7 @@ const INSTALLATION_MARKER = "data-deyana-content-bridge";
 if (!document.documentElement.hasAttribute(INSTALLATION_MARKER)) {
   document.documentElement.setAttribute(INSTALLATION_MARKER, "1");
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    const candidate = message as Partial<CapturePageMessage & DisconnectPageMessage>;
+    const candidate = message as Partial<CapturePageMessage | DisconnectPageMessage>;
     if (candidate.type === "deyana.capture-page") {
       try {
         const context = genericPageAdapter.extract(

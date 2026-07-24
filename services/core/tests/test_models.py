@@ -6,12 +6,12 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-from fastapi.testclient import TestClient
-
 from deyana_core.app import create_app
 from deyana_core.models import ToolResultItem, ToolRunResponse
 from deyana_core.runtime import RuntimeState
 from deyana_core.settings import CoreSettings
+from fastapi.testclient import TestClient
+from typing_extensions import Self
 
 
 def make_client(tmp_path, ollama_endpoint: str) -> TestClient:
@@ -34,7 +34,7 @@ class FakeOllama:
         self.thread: threading.Thread | None = None
         self.endpoint = ""
 
-    def __enter__(self) -> "FakeOllama":
+    def __enter__(self) -> Self:
         parent = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -60,7 +60,9 @@ class FakeOllama:
                     return
 
                 prompt = payload.get("prompt", "")
-                response = "DEYANA_READY" if "DEYANA_READY" in prompt else "Local answer"
+                response = (
+                    "DEYANA_READY" if "DEYANA_READY" in prompt else "Local answer"
+                )
                 self.send_json(200, {"model": model, "response": response})
 
             def log_message(self, _format: str, *_args: object) -> None:
@@ -150,7 +152,9 @@ def test_model_test_prompt_uses_ollama_with_thinking_disabled(tmp_path) -> None:
 
 def test_chat_message_uses_local_model_and_stores_history(tmp_path) -> None:
     with FakeOllama() as ollama, make_client(tmp_path, ollama.endpoint) as client:
-        response = client.post("/chat/message", json={"content": "Give me a local reply."})
+        response = client.post(
+            "/chat/message", json={"content": "Give me a local reply."}
+        )
         history = client.get("/chat/history")
         deleted = client.delete("/chat/history")
         empty_history = client.get("/chat/history")
@@ -165,7 +169,10 @@ def test_chat_message_uses_local_model_and_stores_history(tmp_path) -> None:
     assert ollama.requests[-1]["think"] is False
 
     assert history.status_code == 200
-    assert [message["role"] for message in history.json()["messages"]] == ["user", "assistant"]
+    assert [message["role"] for message in history.json()["messages"]] == [
+        "user",
+        "assistant",
+    ]
     assert deleted.json()["deleted"] == 2
     assert empty_history.json()["messages"] == []
 
@@ -206,7 +213,10 @@ def test_chat_agent_retrieves_memory_and_persists_source_references(tmp_path) ->
     assert body["sources"][0]["title"] == "Local memory storage decision"
     assert body["sources"][0]["markdownPath"].endswith(".md")
     assert "locally" in body["sources"][0]["snippet"].lower()
-    assert "Sources: [S1] Local memory storage decision" in body["assistantMessage"]["content"]
+    assert (
+        "Sources: [S1] Local memory storage decision"
+        in body["assistantMessage"]["content"]
+    )
     assert body["assistantMessage"]["sourceReferences"][0]["id"] == created["id"]
 
     prompt = ollama.requests[-1]["prompt"]
@@ -217,7 +227,10 @@ def test_chat_agent_retrieves_memory_and_persists_source_references(tmp_path) ->
     assert len(prompt) < 4200
 
     assistant_from_history = history.json()["messages"][-1]
-    assert assistant_from_history["sourceReferences"][0]["title"] == "Local memory storage decision"
+    assert (
+        assistant_from_history["sourceReferences"][0]["title"]
+        == "Local memory storage decision"
+    )
 
 
 def test_chat_agent_can_skip_memory_retrieval(tmp_path) -> None:
@@ -287,7 +300,9 @@ def test_chat_routes_public_questions_to_web_search_and_persists_sources(
     assert body["retrieval"]["retrieved"] == 0
     assert body["retrieval"]["webRetrieved"] == 1
     assert body["webSources"][0]["url"] == "https://www.python.org/downloads/"
-    assert body["assistantMessage"]["webSourceReferences"][0]["title"] == "Python releases"
+    assert (
+        body["assistantMessage"]["webSourceReferences"][0]["title"] == "Python releases"
+    )
     assert "Web sources: [W1] Python releases" in body["assistantMessage"]["content"]
     assert history.json()["messages"][-1]["webSourceReferences"][0]["source"] == "bing"
     assert "PUBLIC WEB CONTEXT" in ollama.requests[-1]["prompt"]

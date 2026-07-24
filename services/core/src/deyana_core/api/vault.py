@@ -8,12 +8,16 @@ router = APIRouter(tags=["vault"])
 
 
 @router.post("/vault/select", response_model=VaultSelectResponse)
-async def select_vault(request: Request, payload: VaultSelectRequest) -> VaultSelectResponse:
+async def select_vault(
+    request: Request, payload: VaultSelectRequest
+) -> VaultSelectResponse:
     runtime = request.app.state.runtime
     try:
         state, settings, created_folders = runtime.store.select_vault(payload.path)
     except OSError as error:
-        raise HTTPException(status_code=400, detail=f"Unable to create vault: {error}") from error
+        raise HTTPException(
+            status_code=400, detail=f"Unable to create vault: {error}"
+        ) from error
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 

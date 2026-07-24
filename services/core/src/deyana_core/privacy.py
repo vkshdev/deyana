@@ -216,10 +216,12 @@ class PrivacyFirewall:
                 """,
                 (limit,),
             ).fetchall()
-            total = connection.execute("SELECT COUNT(*) AS count FROM privacy_audit_events").fetchone()[
-                "count"
-            ]
-        return PrivacyAuditListResponse(events=[row_to_event(row) for row in rows], total=total)
+            total = connection.execute(
+                "SELECT COUNT(*) AS count FROM privacy_audit_events"
+            ).fetchone()["count"]
+        return PrivacyAuditListResponse(
+            events=[row_to_event(row) for row in rows], total=total
+        )
 
     def status(self) -> PrivacyStatusResponse:
         self.initialize()
@@ -231,9 +233,9 @@ class PrivacyFirewall:
                     "SELECT decision, COUNT(*) AS count FROM privacy_audit_events GROUP BY decision"
                 ).fetchall()
             }
-            total = connection.execute("SELECT COUNT(*) AS count FROM privacy_audit_events").fetchone()[
-                "count"
-            ]
+            total = connection.execute(
+                "SELECT COUNT(*) AS count FROM privacy_audit_events"
+            ).fetchone()["count"]
             last_blocked_row = connection.execute(
                 """
                 SELECT * FROM privacy_audit_events
@@ -255,9 +257,8 @@ class PrivacyFirewall:
 
     def clear(self) -> PrivacyAuditDeleteResponse:
         self.initialize()
-        with self.connect() as connection:
-            with connection:
-                cursor = connection.execute("DELETE FROM privacy_audit_events")
+        with self.connect() as connection, connection:
+            cursor = connection.execute("DELETE FROM privacy_audit_events")
         return PrivacyAuditDeleteResponse(deleted=cursor.rowcount)
 
     def record(
@@ -274,7 +275,9 @@ class PrivacyFirewall:
     ) -> PrivacyAuditEvent:
         event = PrivacyAuditEvent(
             id=f"privacy_{uuid.uuid4().hex}",
-            event_type="privacy.request.blocked" if decision == "block" else "privacy.request.allowed",
+            event_type="privacy.request.blocked"
+            if decision == "block"
+            else "privacy.request.allowed",
             decision=decision,
             reason=reason,
             destination=destination,
@@ -289,10 +292,9 @@ class PrivacyFirewall:
             payload_character_count=len(request.payload_preview or ""),
             created_at=utc_timestamp(),
         )
-        with self.connect() as connection:
-            with connection:
-                connection.execute(
-                    """
+        with self.connect() as connection, connection:
+            connection.execute(
+                """
                     INSERT INTO privacy_audit_events (
                       id, event_type, decision, reason, destination,
                       destination_category, data_category, purpose, method,
@@ -301,24 +303,24 @@ class PrivacyFirewall:
                     )
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (
-                        event.id,
-                        event.event_type,
-                        event.decision,
-                        event.reason,
-                        event.destination,
-                        event.destination_category,
-                        event.data_category,
-                        event.purpose,
-                        event.method,
-                        1 if event.user_approved else 0,
-                        event.connector_id,
-                        event.safe_alternative,
-                        event.payload_sha256,
-                        event.payload_character_count,
-                        event.created_at,
-                    ),
-                )
+                (
+                    event.id,
+                    event.event_type,
+                    event.decision,
+                    event.reason,
+                    event.destination,
+                    event.destination_category,
+                    event.data_category,
+                    event.purpose,
+                    event.method,
+                    1 if event.user_approved else 0,
+                    event.connector_id,
+                    event.safe_alternative,
+                    event.payload_sha256,
+                    event.payload_character_count,
+                    event.created_at,
+                ),
+            )
         return event
 
 
@@ -364,7 +366,11 @@ def classify_destination(
             return "cloud_tts"
         return "cloud_ai"
 
-    if is_host_match(host, EMBEDDING_HOSTS) or "embedding" in path or "embeddings" in path:
+    if (
+        is_host_match(host, EMBEDDING_HOSTS)
+        or "embedding" in path
+        or "embeddings" in path
+    ):
         return "hosted_embedding"
     if "rerank" in path:
         return "hosted_reranker"
@@ -397,15 +403,24 @@ def classify_payload(request: PrivacyCheckRequest) -> PrivacyDataCategory:
     preview = (request.payload_preview or "").lower()
     if not preview:
         return "unknown"
-    if any(token in preview for token in ["source code", "private repo", "stack trace", "api_key"]):
+    if any(
+        token in preview
+        for token in ["source code", "private repo", "stack trace", "api_key"]
+    ):
         return "source_code"
-    if any(token in preview for token in ["gmail", "calendar", "slack", "notion", "connector"]):
+    if any(
+        token in preview
+        for token in ["gmail", "calendar", "slack", "notion", "connector"]
+    ):
         return "connector_metadata"
     if any(token in preview for token in ["voice recording", "audio", "microphone"]):
         return "audio"
     if any(token in preview for token in ["transcript", "dictation"]):
         return "transcript"
-    if any(token in preview for token in ["vault", "memory", "chat history", "summary", "private note"]):
+    if any(
+        token in preview
+        for token in ["vault", "memory", "chat history", "summary", "private note"]
+    ):
         return "memory_summary"
     return "public_query"
 
@@ -427,28 +442,46 @@ def decide(
 
     if destination_category == "oauth_connector":
         if purpose not in {"oauth_api_fetch", "connector_api_fetch"}:
-            return "block", "Connector endpoints are allowed only for approved OAuth or connector fetches."
+            return (
+                "block",
+                "Connector endpoints are allowed only for approved OAuth or connector fetches.",
+            )
         if not user_approved:
             return "block", "Connector/OAuth request requires explicit user approval."
         if external_write and method not in {"GET", "HEAD"}:
-            return "block", "External writes require a later confirmation flow before they can run."
+            return (
+                "block",
+                "External writes require a later confirmation flow before they can run.",
+            )
         if data_category not in OAUTH_DATA_CATEGORIES:
-            return "block", "Sensitive private payload cannot be sent to connector/OAuth endpoints."
+            return (
+                "block",
+                "Sensitive private payload cannot be sent to connector/OAuth endpoints.",
+            )
         return "allow", "Approved connector/OAuth request is allowed."
 
     if destination_category == "public_web":
         if purpose != "public_web_fetch":
-            return "block", "Public web access is limited to explicit public web fetch requests."
+            return (
+                "block",
+                "Public web access is limited to explicit public web fetch requests.",
+            )
         if method not in {"GET", "HEAD"}:
             return "block", "Public web fetch is read-only in this phase."
         if data_category not in PUBLIC_WEB_DATA_CATEGORIES:
-            return "block", "Sensitive private payload cannot be sent to public web endpoints."
+            return (
+                "block",
+                "Sensitive private payload cannot be sent to public web endpoints.",
+            )
         return "allow", "Public web fetch is allowed."
 
     if data_category in SENSITIVE_DATA_CATEGORIES:
         return "block", "Sensitive local data cannot leave the device."
 
-    return "block", "Unknown external destination is blocked until a policy explicitly allows it."
+    return (
+        "block",
+        "Unknown external destination is blocked until a policy explicitly allows it.",
+    )
 
 
 def blocked_destination_reason(category: PrivacyDestinationCategory) -> str:

@@ -6,6 +6,7 @@ import sqlite3
 import uuid
 from pathlib import Path
 
+from .memory_pipeline import analyze_memory, build_daily_summary, build_project_summary
 from .models import (
     DailySummaryRequest,
     MemoryCreateRequest,
@@ -13,15 +14,14 @@ from .models import (
     MemoryEntityListResponse,
     MemoryExportResponse,
     MemoryInsight,
-    MemoryInsightType,
     MemoryInsightListResponse,
+    MemoryInsightType,
     MemoryItem,
     MemoryListResponse,
     MemoryReindexResponse,
     MemoryUpdateRequest,
     ProjectSummaryRequest,
 )
-from .memory_pipeline import analyze_memory, build_daily_summary, build_project_summary
 from .runtime_time import utc_timestamp
 from .storage import CoreStore, create_vault_template
 
@@ -167,10 +167,9 @@ class MemoryStore:
         markdown_path.parent.mkdir(parents=True, exist_ok=True)
         markdown_path.write_text(markdown_content, encoding="utf-8")
 
-        with self.connect() as connection:
-            with connection:
-                connection.execute(
-                    """
+        with self.connect() as connection, connection:
+            connection.execute(
+                """
                     INSERT INTO memory_items (
                       id, type, title, summary, content_markdown, markdown_path,
                       source_type, source_id, source_uri, importance,
@@ -178,30 +177,30 @@ class MemoryStore:
                     )
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
                     """,
-                    (
-                        memory_id,
-                        request.type,
-                        request.title,
-                        analysis.summary,
-                        content_markdown,
-                        str(markdown_path),
-                        request.source_type,
-                        request.source_id,
-                        request.source_uri,
-                        analysis.importance,
-                        timestamp,
-                        timestamp,
-                    ),
-                )
-                self.replace_tags(connection, memory_id, list(analysis.tags))
-                self.replace_chunks(connection, memory_id, content_markdown, timestamp)
-                self.replace_entities(connection, memory_id, analysis.entities, timestamp)
-                self.replace_insights(
-                    connection,
+                (
                     memory_id,
-                    [*analysis.action_items, *analysis.decisions],
+                    request.type,
+                    request.title,
+                    analysis.summary,
+                    content_markdown,
+                    str(markdown_path),
+                    request.source_type,
+                    request.source_id,
+                    request.source_uri,
+                    analysis.importance,
                     timestamp,
-                )
+                    timestamp,
+                ),
+            )
+            self.replace_tags(connection, memory_id, list(analysis.tags))
+            self.replace_chunks(connection, memory_id, content_markdown, timestamp)
+            self.replace_entities(connection, memory_id, analysis.entities, timestamp)
+            self.replace_insights(
+                connection,
+                memory_id,
+                [*analysis.action_items, *analysis.decisions],
+                timestamp,
+            )
 
         return self.get(memory_id)
 
@@ -231,7 +230,9 @@ class MemoryStore:
               )
             """
             pattern = f"%{query_value.lower()}%"
-            params.extend([pattern, pattern, pattern, pattern, pattern, pattern, pattern])
+            params.extend(
+                [pattern, pattern, pattern, pattern, pattern, pattern, pattern]
+            )
 
         with self.connect() as connection:
             rows = connection.execute(
@@ -273,9 +274,13 @@ class MemoryStore:
         title = request.title if request.title is not None else current.title
         summary = request.summary if request.summary is not None else current.summary
         content_markdown = (
-            request.content_markdown if request.content_markdown is not None else current.content_markdown
+            request.content_markdown
+            if request.content_markdown is not None
+            else current.content_markdown
         )
-        importance = request.importance if request.importance is not None else current.importance
+        importance = (
+            request.importance if request.importance is not None else current.importance
+        )
         tags = request.tags if request.tags is not None else current.tags
         analysis = analyze_memory(
             title=title,
@@ -318,11 +323,20 @@ class MemoryStore:
                     SET title = ?, summary = ?, content_markdown = ?, importance = ?, updated_at = ?
                     WHERE id = ? AND deleted_at IS NULL
                     """,
-                    (title, summary, content_markdown, importance, timestamp, memory_id),
+                    (
+                        title,
+                        summary,
+                        content_markdown,
+                        importance,
+                        timestamp,
+                        memory_id,
+                    ),
                 )
                 self.replace_tags(connection, memory_id, tags)
                 self.replace_chunks(connection, memory_id, content_markdown, timestamp)
-                self.replace_entities(connection, memory_id, analysis.entities, timestamp)
+                self.replace_entities(
+                    connection, memory_id, analysis.entities, timestamp
+                )
                 self.replace_insights(
                     connection,
                     memory_id,
@@ -342,10 +356,18 @@ class MemoryStore:
                     "UPDATE memory_items SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL",
                     (timestamp, timestamp, memory_id),
                 )
-                connection.execute("DELETE FROM memory_tags WHERE memory_id = ?", (memory_id,))
-                connection.execute("DELETE FROM memory_chunks WHERE memory_id = ?", (memory_id,))
-                connection.execute("DELETE FROM memory_entities WHERE memory_id = ?", (memory_id,))
-                connection.execute("DELETE FROM memory_insights WHERE memory_id = ?", (memory_id,))
+                connection.execute(
+                    "DELETE FROM memory_tags WHERE memory_id = ?", (memory_id,)
+                )
+                connection.execute(
+                    "DELETE FROM memory_chunks WHERE memory_id = ?", (memory_id,)
+                )
+                connection.execute(
+                    "DELETE FROM memory_entities WHERE memory_id = ?", (memory_id,)
+                )
+                connection.execute(
+                    "DELETE FROM memory_insights WHERE memory_id = ?", (memory_id,)
+                )
 
         if current.markdown_path:
             try:
@@ -374,7 +396,9 @@ class MemoryStore:
                         continue
 
                     content = path.read_text(encoding="utf-8")
-                    title, summary, body = parse_markdown(content, fallback_title=row["title"])
+                    title, summary, body = parse_markdown(
+                        content, fallback_title=row["title"]
+                    )
                     existing_tags = [
                         tag_row["tag"]
                         for tag_row in connection.execute(
@@ -422,8 +446,12 @@ class MemoryStore:
                         ),
                     )
                     self.replace_tags(connection, row["id"], list(analysis.tags))
-                    self.replace_chunks(connection, row["id"], analysis.content_markdown, timestamp)
-                    self.replace_entities(connection, row["id"], analysis.entities, timestamp)
+                    self.replace_chunks(
+                        connection, row["id"], analysis.content_markdown, timestamp
+                    )
+                    self.replace_entities(
+                        connection, row["id"], analysis.entities, timestamp
+                    )
                     self.replace_insights(
                         connection,
                         row["id"],
@@ -432,7 +460,9 @@ class MemoryStore:
                     )
                     reindexed += 1
 
-        return MemoryReindexResponse(reindexed=reindexed, missing_markdown=missing_markdown)
+        return MemoryReindexResponse(
+            reindexed=reindexed, missing_markdown=missing_markdown
+        )
 
     def export(self) -> MemoryExportResponse:
         self.initialize()
@@ -558,10 +588,7 @@ class MemoryStore:
                 """,
                 (memory_id,),
             ).fetchall()
-        return [
-            self.row_to_entity(row)
-            for row in rows
-        ]
+        return [self.row_to_entity(row) for row in rows]
 
     def insights_for(self, memory_id: str, insight_type: str) -> list[MemoryInsight]:
         with self.connect() as connection:
@@ -573,10 +600,7 @@ class MemoryStore:
                 """,
                 (memory_id, insight_type),
             ).fetchall()
-        return [
-            self.row_to_insight(row)
-            for row in rows
-        ]
+        return [self.row_to_insight(row) for row in rows]
 
     @staticmethod
     def row_to_entity(row: sqlite3.Row) -> MemoryEntity:
@@ -829,14 +853,18 @@ class MemoryStore:
     def require_vault_root(self) -> Path:
         settings = self.core_store.read_settings()
         if not settings.vault_path:
-            raise ValueError("Complete onboarding and choose a vault before writing memory.")
+            raise ValueError(
+                "Complete onboarding and choose a vault before writing memory."
+            )
 
         vault_root = Path(settings.vault_path)
         create_vault_template(vault_root)
         return vault_root
 
     @staticmethod
-    def markdown_path(vault_root: Path, folder: str, title: str, memory_id: str) -> Path:
+    def markdown_path(
+        vault_root: Path, folder: str, title: str, memory_id: str
+    ) -> Path:
         slug = slugify(title) or "memory"
         return vault_root / folder / f"{slug}-{memory_id[-8:]}.md"
 
@@ -873,11 +901,24 @@ class MemoryStore:
         lines = ["---"]
         for key, value in frontmatter.items():
             lines.append(f"{key}: {json.dumps(value)}")
-        lines.extend(["---", "", f"# {title}", "", f"> {summary}", "", content_markdown.strip(), ""])
+        lines.extend(
+            [
+                "---",
+                "",
+                f"# {title}",
+                "",
+                f"> {summary}",
+                "",
+                content_markdown.strip(),
+                "",
+            ]
+        )
         return "\n".join(lines)
 
     @staticmethod
-    def replace_tags(connection: sqlite3.Connection, memory_id: str, tags: list[str]) -> None:
+    def replace_tags(
+        connection: sqlite3.Connection, memory_id: str, tags: list[str]
+    ) -> None:
         connection.execute("DELETE FROM memory_tags WHERE memory_id = ?", (memory_id,))
         for tag in sorted({tag.strip().lower() for tag in tags if tag.strip()}):
             connection.execute(
@@ -887,9 +928,14 @@ class MemoryStore:
 
     @staticmethod
     def replace_chunks(
-        connection: sqlite3.Connection, memory_id: str, content_markdown: str, created_at: str
+        connection: sqlite3.Connection,
+        memory_id: str,
+        content_markdown: str,
+        created_at: str,
     ) -> None:
-        connection.execute("DELETE FROM memory_chunks WHERE memory_id = ?", (memory_id,))
+        connection.execute(
+            "DELETE FROM memory_chunks WHERE memory_id = ?", (memory_id,)
+        )
         chunks = chunk_text(content_markdown)
         for index, chunk in enumerate(chunks):
             connection.execute(
@@ -917,7 +963,9 @@ class MemoryStore:
         entities,
         created_at: str,
     ) -> None:
-        connection.execute("DELETE FROM memory_entities WHERE memory_id = ?", (memory_id,))
+        connection.execute(
+            "DELETE FROM memory_entities WHERE memory_id = ?", (memory_id,)
+        )
         for entity in entities:
             connection.execute(
                 """
@@ -943,7 +991,9 @@ class MemoryStore:
         insights,
         created_at: str,
     ) -> None:
-        connection.execute("DELETE FROM memory_insights WHERE memory_id = ?", (memory_id,))
+        connection.execute(
+            "DELETE FROM memory_insights WHERE memory_id = ?", (memory_id,)
+        )
         for insight in insights:
             connection.execute(
                 """
@@ -970,12 +1020,14 @@ def slugify(value: str) -> str:
 
 
 def optional_row_value(row: sqlite3.Row, key: str) -> str | None:
-    return row[key] if key in row.keys() else None
+    return row.get(key, None)
 
 
 def folder_for_memory(memory_type: str, source_type: str) -> str:
     if memory_type == "connector_summary":
-        return CONNECTOR_SOURCE_TO_FOLDER.get(source_type, TYPE_TO_FOLDER["connector_summary"])
+        return CONNECTOR_SOURCE_TO_FOLDER.get(
+            source_type, TYPE_TO_FOLDER["connector_summary"]
+        )
     return TYPE_TO_FOLDER.get(memory_type, "Inbox")
 
 
@@ -983,7 +1035,9 @@ def chunk_text(content: str, size: int = 900) -> list[str]:
     normalized = content.strip()
     if not normalized:
         return []
-    return [normalized[index : index + size] for index in range(0, len(normalized), size)]
+    return [
+        normalized[index : index + size] for index in range(0, len(normalized), size)
+    ]
 
 
 def parse_markdown(content: str, fallback_title: str) -> tuple[str, str, str]:
