@@ -21,6 +21,11 @@ import {
 
 const SUPPORTED_OPTIONAL_ORIGINS = new Set([
   "https://web.whatsapp.com/*",
+  "https://www.messenger.com/*",
+  "https://www.facebook.com/messages/*",
+  "https://www.instagram.com/direct/*",
+  "https://discord.com/channels/*",
+  "https://web.telegram.org/*",
   "https://mail.google.com/*",
   "https://www.linkedin.com/*",
   "https://app.slack.com/*",
