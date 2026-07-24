@@ -1,7 +1,12 @@
 import {
   BROWSER_PROTOCOL_VERSION,
   type BrowserBridgeEnvelope,
+  type BrowserClearFieldRequest,
+  type BrowserClickActionRequest,
+  type BrowserClickActionResponse,
   type BrowserContextMode,
+  type BrowserFillFieldRequest,
+  type BrowserFillFieldResponse,
   type BrowserPageContext,
   type BrowserPermission
 } from "@deyana/schemas";
@@ -18,10 +23,30 @@ export interface DisconnectPageMessage {
   pageSessionId: string;
 }
 
+export interface FillFieldMessage extends BrowserFillFieldRequest {
+  type: "deyana.fill-field";
+}
+
+export interface ClearFieldMessage extends BrowserClearFieldRequest {
+  type: "deyana.clear-field";
+}
+
+export interface ClickActionMessage extends BrowserClickActionRequest {
+  type: "deyana.click-action";
+}
+
 export interface CapturePageResult {
   ok: boolean;
   context?: BrowserPageContext;
   instruction?: string;
+}
+
+export interface FillFieldResult extends BrowserFillFieldResponse {
+  ok: boolean;
+}
+
+export interface ClickActionResult extends BrowserClickActionResponse {
+  ok: boolean;
 }
 
 export interface PopupState {
@@ -30,10 +55,10 @@ export interface PopupState {
   instruction: string;
 }
 
-export function createEnvelope<TPayload extends Record<string, unknown>>(
+export function createEnvelope<TPayload extends object>(
   type: string,
   payload: TPayload,
-  requestId = crypto.randomUUID(),
+  requestId: string = crypto.randomUUID(),
   pageSessionId?: string | null
 ): BrowserBridgeEnvelope<TPayload> {
   return {
