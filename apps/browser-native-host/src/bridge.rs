@@ -37,8 +37,8 @@ pub fn run(credential: BrowserCredential, extension_origin: String) -> Result<()
         .map_err(|error| format!("unable to connect to local Deyana browser bridge: {error}"))?;
     if let MaybeTlsStream::Plain(stream) = socket.get_mut() {
         stream
-            .set_nonblocking(true)
-            .map_err(|error| format!("unable to configure browser bridge socket: {error}"))?;
+            .set_read_timeout(Some(Duration::from_millis(20)))
+            .map_err(|error| format!("unable to set browser bridge socket timeout: {error}"))?;
     }
 
     let (native_sender, native_receiver) = mpsc::channel();
@@ -123,9 +123,7 @@ pub fn run(credential: BrowserCredential, extension_origin: String) -> Result<()
             }
             Ok(Message::Close(_)) => return Ok(()),
             Ok(_) => {}
-            Err(WebSocketError::Io(error)) if error.kind() == io::ErrorKind::WouldBlock => {
-                thread::sleep(Duration::from_millis(20));
-            }
+            Err(WebSocketError::Io(error)) if error.kind() == io::ErrorKind::WouldBlock || error.kind() == io::ErrorKind::TimedOut => {}
             Err(WebSocketError::ConnectionClosed | WebSocketError::AlreadyClosed) => return Ok(()),
             Err(error) => return Err(format!("browser bridge connection failed: {error}")),
         }
