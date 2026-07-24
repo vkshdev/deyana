@@ -99,6 +99,7 @@ INBOUND_BRIDGE_MESSAGE_TYPES = {
     "browser.permission.request.completed",
     "browser.permission.revoke.completed",
     "browser.session.disconnect.completed",
+    "browser.wake_word.detected",
 }
 
 
@@ -276,6 +277,10 @@ class BrowserService:
                     "browser.page.session.closed",
                     {"pageSessionId": page_session_id},
                 )
+                
+        if envelope.type == "browser.wake_word.detected":
+            await self._publish("voice.wake_word.detected", {})
+            return
 
         if envelope.type == "browser.permission.changed":
             permissions = [
