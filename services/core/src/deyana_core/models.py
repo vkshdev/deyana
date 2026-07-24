@@ -55,7 +55,7 @@ class CoreEvent(BaseModel):
 
 
 PrivacyMode = Literal["local_only"]
-ModelProfile = Literal["low_spec", "balanced", "power"]
+ModelProfile = Literal["low_spec", "balanced", "power", "ultra"]
 SyncMode = Literal["manual", "low_frequency"]
 OnboardingStep = Literal["welcome", "privacy", "local_ai", "vault", "complete"]
 VaultStatus = Literal["not_selected", "ready", "missing", "error"]
