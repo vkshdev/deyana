@@ -212,13 +212,13 @@ export function BrowserAgentPanel({ snapshot }: BrowserAgentPanelProps) {
                 >
                   Preview insert
                 </button>
-                {snapshot.browserDraft.context?.adapterId === "whatsapp_web" ? (
+                {["whatsapp_web", "messenger", "instagram", "discord", "telegram", "gmail", "linkedin", "slack"].includes(snapshot.browserDraft.context?.adapterId ?? "") ? (
                   <button
                     type="button"
                     disabled={snapshot.browserBusy}
                     onClick={() => void assistantStore.previewWhatsAppSend()}
                   >
-                    Preview WhatsApp send
+                    Preview message send
                   </button>
                 ) : null}
                 <button
