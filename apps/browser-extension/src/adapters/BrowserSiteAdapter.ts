@@ -12,6 +12,9 @@ import type {
 export interface BrowserSiteAdapter {
   readonly id: string;
   readonly version: number;
+  readonly allowedOrigins?: readonly string[];
+  readonly allowedHostnames?: readonly string[];
+  readonly pathPrefixes?: readonly string[];
   matches(url: URL): boolean;
   extract(mode: BrowserContextMode): BrowserPageContext;
   listWritableFields(): BrowserWritableField[];

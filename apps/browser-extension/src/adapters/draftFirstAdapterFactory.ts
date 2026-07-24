@@ -17,7 +17,10 @@ const MAX_ELEMENTS = 60;
 
 export interface DraftFirstAdapterConfig {
   id: string;
-  origin: string;
+  origin?: string;
+  allowedOrigins?: readonly string[];
+  allowedHostnames?: readonly string[];
+  pathPrefixes?: readonly string[];
   titlePrefix: string;
   readLabel: string;
   draftLabel: string;
@@ -39,8 +42,34 @@ class DraftFirstAdapter implements BrowserSiteAdapter {
     return this.config.id;
   }
 
+  get allowedOrigins(): readonly string[] | undefined {
+    return this.config.allowedOrigins ?? (this.config.origin ? [this.config.origin] : undefined);
+  }
+
+  get allowedHostnames(): readonly string[] | undefined {
+    return this.config.allowedHostnames;
+  }
+
+  get pathPrefixes(): readonly string[] | undefined {
+    return this.config.pathPrefixes;
+  }
+
   matches(url: URL): boolean {
-    return url.origin === this.config.origin;
+    if (this.config.allowedOrigins?.length && !this.config.allowedOrigins.includes(url.origin)) {
+      if (!this.config.allowedHostnames?.length) {
+        return false;
+      }
+    }
+    if (this.config.allowedHostnames?.length && !this.config.allowedHostnames.includes(url.hostname)) {
+      return false;
+    }
+    if (this.config.origin && !this.config.allowedOrigins && url.origin !== this.config.origin) {
+      return false;
+    }
+    if (this.config.pathPrefixes?.length && !this.config.pathPrefixes.some((prefix) => url.pathname.startsWith(prefix))) {
+      return false;
+    }
+    return true;
   }
 
   extract(mode: BrowserContextMode): BrowserPageContext {

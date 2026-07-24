@@ -413,14 +413,18 @@ function fieldValue(element: HTMLElement): string {
 }
 
 function setFieldValue(element: HTMLElement, value: string): void {
+  element.focus();
+  element.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Process", code: "Unidentified" }));
+  element.dispatchEvent(new KeyboardEvent("keypress", { bubbles: true, key: "Process", code: "Unidentified" }));
+
   if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-    element.focus();
     element.value = value;
   } else {
-    element.focus();
     element.textContent = value;
   }
+
   element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value }));
+  element.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key: "Process", code: "Unidentified" }));
   element.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
