@@ -327,6 +327,9 @@ class BrowserEmergencyStopResponse(ApiModel):
 
 class WhatsAppBusyModePolicy(ApiModel):
     enabled: bool = False
+    enabled_platforms: list[str] = Field(
+        default_factory=lambda: ["whatsapp", "messenger", "instagram", "discord", "gmail", "telegram", "linkedin", "slack"]
+    )
     allowlisted_contacts: list[str] = Field(default_factory=list)
     allow_groups: bool = False
     timezone: str = "local"
@@ -338,6 +341,7 @@ class WhatsAppBusyModePolicy(ApiModel):
         "I am Deyana, Vikash's assistant. Vikash is busy right now. "
         "Please tell me if this is necessary or urgent."
     )
+    platform_templates: dict[str, str] = Field(default_factory=dict)
     emergency_stopped: bool = False
     permission_origin: str = "https://web.whatsapp.com/*"
     permission_granted: bool = False
