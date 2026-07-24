@@ -214,6 +214,25 @@ export type MemoryType =
   | "decision"
   | "action_item";
 
+export interface ModelConfig {
+  profile: ModelProfile;
+  privacy: PrivacyMode;
+}
+
+export type TriageScore = "URGENT" | "NORMAL" | "SPAM";
+export type TriageStatus = "pending" | "approved" | "discarded";
+
+export interface TriageMessage {
+  id: string;
+  platform: string;
+  sender: string;
+  content: string;
+  urgency_score: TriageScore;
+  auto_draft: string;
+  status: TriageStatus;
+  created_at: string;
+}
+
 export interface CoreAppSettings {
   privacyMode: PrivacyMode;
   modelProfile: ModelProfile;
