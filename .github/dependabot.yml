@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/" # Root if pnpm workspace, otherwise add separate entries
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "cargo"
+    directory: "/apps/browser-native-host"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "pip"
+    directory: "/services/core"
+    schedule:
+      interval: "weekly"

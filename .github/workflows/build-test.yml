@@ -1,0 +1,58 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  python-tests:
+    name: Python Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          cd services/core
+          python -m pip install -e ".[dev]"
+      - name: Run Pytest
+        run: |
+          cd services/core
+          pytest
+
+  rust-tests:
+    name: Rust Tests & Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cargo Build
+        run: |
+          cd apps/browser-native-host
+          cargo build --verbose
+      - name: Cargo Test
+        run: |
+          cd apps/browser-native-host
+          cargo test --verbose
+
+  react-builds:
+    name: React Extensions & Desktop Builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install pnpm
+        run: npm install -g pnpm
+      - name: Install dependencies
+        run: pnpm install
+      - name: Build
+        run: pnpm run build --if-present
