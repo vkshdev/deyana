@@ -119,6 +119,17 @@ class MemoryStore:
                   FOREIGN KEY (memory_id) REFERENCES memory_items(id) ON DELETE CASCADE
                 );
 
+                CREATE TABLE IF NOT EXISTS triage_inbox (
+                  id TEXT PRIMARY KEY,
+                  platform TEXT NOT NULL,
+                  sender TEXT NOT NULL,
+                  content TEXT NOT NULL,
+                  urgency_score TEXT NOT NULL,
+                  auto_draft TEXT NOT NULL,
+                  status TEXT NOT NULL DEFAULT 'pending',
+                  created_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_memory_items_deleted_at ON memory_items(deleted_at);
                 CREATE INDEX IF NOT EXISTS idx_memory_items_updated_at ON memory_items(updated_at);
                 CREATE INDEX IF NOT EXISTS idx_memory_items_type ON memory_items(type);
