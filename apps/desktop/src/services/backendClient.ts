@@ -1,6 +1,11 @@
 import { coreService } from "@deyana/config";
 import type {
   AppCoreEvent,
+  BrowserActionConfirmRequest,
+  BrowserActionPlanCreateRequest,
+  BrowserActionPlanListResponse,
+  BrowserActionPlanResponse,
+  BrowserEmergencyStopResponse,
   BackendHealthResponse,
   BackendStatusResponse,
   BrowserAuditListResponse,
@@ -8,9 +13,23 @@ import type {
   BrowserContextReadResponse,
   BrowserContextSummaryRequest,
   BrowserContextSummaryResponse,
+  BrowserClearFieldRequest,
+  BrowserContactTonePreference,
+  BrowserContactTonePreferenceRequest,
   BrowserDisconnectResponse,
+  BrowserDraftReplyRequest,
+  BrowserDraftReplyResponse,
+  BrowserFillFieldRequest,
+  BrowserFillFieldResponse,
+  BrowserMoodHint,
+  BrowserMoodInferRequest,
   BrowserOpenTabRequest,
   BrowserOpenTabResponse,
+  BrowserPersonalityPreviewRequest,
+  BrowserPersonalityPreviewResponse,
+  BrowserPersonalityProfile,
+  BrowserPersonalityProfilePatch,
+  BrowserPersonalitySettingsResponse,
   BrowserPermissionListResponse,
   BrowserPermissionRequest,
   BrowserPermissionResponse,
@@ -18,6 +37,13 @@ import type {
   BrowserSearchResponse,
   BrowserSessionListResponse,
   BrowserStatusResponse,
+  WhatsAppBusyModeEvaluationRequest,
+  WhatsAppBusyModeEvaluationResponse,
+  WhatsAppBusyModePolicy,
+  WhatsAppBusyModePolicyPatch,
+  WhatsAppBusyModePolicyResponse,
+  WhatsAppBusyModeSendRequest,
+  WhatsAppBusyModeSendResponse,
   ChatHistoryDeleteResponse,
   ChatHistoryResponse,
   ChatMessageRequest,
@@ -78,12 +104,15 @@ import type {
   VaultSelectRequest,
   VaultSelectResponse,
   VoiceSettings,
+  VoiceInterruptResponse,
   VoiceSettingsPatch,
   VoiceSpeakRequest,
   VoiceSpeakResponse,
   VoiceStatusResponse,
   VoiceTranscriptRequest,
   VoiceTranscriptResponse,
+  BrowserVoiceCommandRequest,
+  BrowserVoiceCommandResponse,
   WebFetchRequest,
   WebSearchRequest
 } from "@deyana/schemas";
@@ -221,8 +250,106 @@ export const backendClient = {
     return postBrowser<BrowserOpenTabResponse>("/browser/tabs/open", request);
   },
 
+  async draftBrowserReply(request: BrowserDraftReplyRequest): Promise<BrowserDraftReplyResponse> {
+    return postBrowser<BrowserDraftReplyResponse>("/browser/messages/draft-reply", request);
+  },
+
+  async fillBrowserField(request: BrowserFillFieldRequest): Promise<BrowserFillFieldResponse> {
+    return postBrowser<BrowserFillFieldResponse>("/browser/fields/fill", request);
+  },
+
+  async clearBrowserField(request: BrowserClearFieldRequest): Promise<BrowserFillFieldResponse> {
+    return postBrowser<BrowserFillFieldResponse>("/browser/fields/clear", request);
+  },
+
   async listBrowserAudit(): Promise<BrowserAuditListResponse> {
     return getJson<BrowserAuditListResponse>("/browser/audit?limit=20", "browser audit");
+  },
+
+  async listBrowserActionPlans(): Promise<BrowserActionPlanListResponse> {
+    return getJson<BrowserActionPlanListResponse>("/browser/actions/plans?limit=10", "browser action plans");
+  },
+
+  async createBrowserActionPlan(
+    request: BrowserActionPlanCreateRequest
+  ): Promise<BrowserActionPlanResponse> {
+    return postBrowser<BrowserActionPlanResponse>("/browser/actions/plans", request);
+  },
+
+  async confirmBrowserActionPlan(
+    request: BrowserActionConfirmRequest
+  ): Promise<BrowserActionPlanResponse> {
+    return postBrowser<BrowserActionPlanResponse>("/browser/actions/confirm", request);
+  },
+
+  async executeBrowserActionPlan(planId: string): Promise<BrowserActionPlanResponse> {
+    return postBrowser<BrowserActionPlanResponse>(
+      `/browser/actions/plans/${encodeURIComponent(planId)}/execute`,
+      {}
+    );
+  },
+
+  async cancelBrowserActionPlan(planId: string): Promise<BrowserActionPlanResponse> {
+    return postBrowser<BrowserActionPlanResponse>(
+      `/browser/actions/plans/${encodeURIComponent(planId)}/cancel`,
+      {}
+    );
+  },
+
+  async browserEmergencyStop(): Promise<BrowserEmergencyStopResponse> {
+    return postBrowser<BrowserEmergencyStopResponse>("/browser/actions/emergency-stop", {});
+  },
+
+  async getWhatsAppBusyModePolicy(): Promise<WhatsAppBusyModePolicy> {
+    return getJson<WhatsAppBusyModePolicy>("/browser/whatsapp/busy-mode", "WhatsApp busy mode");
+  },
+
+  async patchWhatsAppBusyModePolicy(
+    request: WhatsAppBusyModePolicyPatch
+  ): Promise<WhatsAppBusyModePolicyResponse> {
+    return postBrowser<WhatsAppBusyModePolicyResponse>("/browser/whatsapp/busy-mode", request, "PATCH");
+  },
+
+  async evaluateWhatsAppBusyMode(
+    request: WhatsAppBusyModeEvaluationRequest
+  ): Promise<WhatsAppBusyModeEvaluationResponse> {
+    return postBrowser<WhatsAppBusyModeEvaluationResponse>("/browser/whatsapp/busy-mode/evaluate", request);
+  },
+
+  async sendWhatsAppBusyReply(
+    request: WhatsAppBusyModeSendRequest
+  ): Promise<WhatsAppBusyModeSendResponse> {
+    return postBrowser<WhatsAppBusyModeSendResponse>("/browser/whatsapp/busy-mode/send", request);
+  },
+
+  async getBrowserPersonality(): Promise<BrowserPersonalitySettingsResponse> {
+    return getJson<BrowserPersonalitySettingsResponse>("/browser/personality", "browser personality");
+  },
+
+  async patchBrowserPersonalityProfile(
+    request: BrowserPersonalityProfilePatch
+  ): Promise<BrowserPersonalityProfile> {
+    return postBrowser<BrowserPersonalityProfile>("/browser/personality/profile", request, "PATCH");
+  },
+
+  async saveBrowserContactTone(
+    request: BrowserContactTonePreferenceRequest
+  ): Promise<BrowserContactTonePreference> {
+    return postBrowser<BrowserContactTonePreference>("/browser/personality/contact-tones", request);
+  },
+
+  async inferBrowserMood(request: BrowserMoodInferRequest): Promise<BrowserMoodHint> {
+    return postBrowser<BrowserMoodHint>("/browser/personality/mood/infer", request);
+  },
+
+  async previewBrowserPersonality(
+    request: BrowserPersonalityPreviewRequest
+  ): Promise<BrowserPersonalityPreviewResponse> {
+    return postBrowser<BrowserPersonalityPreviewResponse>("/browser/personality/preview", request);
+  },
+
+  async routeBrowserVoiceCommand(request: BrowserVoiceCommandRequest): Promise<BrowserVoiceCommandResponse> {
+    return postBrowser<BrowserVoiceCommandResponse>("/browser/voice/command", request);
   },
 
   async listTools(): Promise<ToolListResponse> {
@@ -318,6 +445,19 @@ export const backendClient = {
       throw new Error(detail || `voice speech returned ${response.status}`);
     }
     return response.json() as Promise<VoiceSpeakResponse>;
+  },
+
+  async interruptVoice(): Promise<VoiceInterruptResponse> {
+    const response = await fetch(`${coreService.endpoint}/voice/interrupt`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}"
+    });
+    if (!response.ok) {
+      const detail = await readErrorDetail(response);
+      throw new Error(detail || `voice interrupt returned ${response.status}`);
+    }
+    return response.json() as Promise<VoiceInterruptResponse>;
   },
 
   async getReleaseReadiness(): Promise<ReleaseReadinessResponse> {
@@ -872,9 +1012,9 @@ const getJson = async <T>(path: string, label: string): Promise<T> => {
   return response.json() as Promise<T>;
 };
 
-const postBrowser = async <T>(path: string, request: object): Promise<T> => {
+const postBrowser = async <T>(path: string, request: object, method: "POST" | "PATCH" = "POST"): Promise<T> => {
   const response = await fetch(`${coreService.endpoint}${path}`, {
-    method: "POST",
+    method,
     headers: { "content-type": "application/json" },
     body: JSON.stringify(request)
   });

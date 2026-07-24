@@ -30,12 +30,14 @@ PROFILE_CHAT_MODELS: dict[ModelProfile, list[str]] = {
     "low_spec": ["qwen3:1.7b", "llama3.2:1b"],
     "balanced": ["qwen3:1.7b", "llama3.2:3b", "llama3.2:1b"],
     "power": ["qwen3:1.7b", "llama3.2:3b", "qwen2.5-coder:3b"],
+    "ultra": ["llama3:70b", "qwen2:72b", "mistral-large:latest"],
 }
 
 PROFILE_EMBEDDING_MODELS: dict[ModelProfile, list[str]] = {
     "low_spec": ["all-minilm:latest"],
     "balanced": ["all-minilm:latest", "nomic-embed-text:latest"],
     "power": ["all-minilm:latest", "nomic-embed-text:latest"],
+    "ultra": ["all-minilm:latest", "nomic-embed-text:latest"],
 }
 
 MODEL_DETAILS: dict[str, str] = {
@@ -43,6 +45,9 @@ MODEL_DETAILS: dict[str, str] = {
     "llama3.2:1b": "Fallback local chat model when qwen3:1.7b is unavailable.",
     "llama3.2:3b": "Optional stronger local chat model after local latency testing.",
     "qwen2.5-coder:3b": "Optional coding model for future benchmarked workflows.",
+    "llama3:70b": "Heavyweight reasoning model for 64GB RAM ultra setups.",
+    "qwen2:72b": "Massive general-purpose model for 64GB RAM setups.",
+    "mistral-large:latest": "Powerful instruction following model for ultra profiles.",
     "all-minilm:latest": "Default tiny local embedding model for future retrieval.",
     "nomic-embed-text:latest": "Optional stronger local embedding model.",
 }

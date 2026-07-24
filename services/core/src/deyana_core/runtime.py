@@ -21,6 +21,7 @@ from .settings import CoreSettings
 from .storage import CoreStore
 from .tools import ToolService
 from .voice import LocalVoiceService
+from .triage import TriageDaemon
 
 
 class RuntimeState:
@@ -70,6 +71,7 @@ class RuntimeState:
             voice_service=self.voice_service,
         )
         self.release_service.mark_startup()
+        self.triage_daemon = TriageDaemon(self.model_router, str(self.memory_store.database_path))
 
     @property
     def uptime_seconds(self) -> float:
@@ -162,6 +164,32 @@ class RuntimeState:
                 "browserActivePage": True,
                 "browserSearch": True,
                 "browserOpenTab": True,
+                "browserAdapterSdk": True,
+                "browserInlineDrafts": True,
+                "browserFillField": True,
+                "messageDraftReply": True,
+                "browserActionPlans": True,
+                "browserActionConfirmation": True,
+                "browserEmergencyStop": True,
+                "whatsappVisibleThread": True,
+                "whatsappDraftFirst": True,
+                "whatsappConfirmedSend": True,
+                "whatsappBusyMode": True,
+                "whatsappBusyModeAllowlist": True,
+                "whatsappBusyModeRateLimits": True,
+                "gmailDraftAdapter": True,
+                "slackDraftAdapter": True,
+                "githubDraftAdapter": True,
+                "linkedinDraftAdapter": True,
+                "browserPersonalityProfiles": True,
+                "browserContactTone": True,
+                "browserEphemeralMood": True,
+                "browserVoiceCommands": True,
+                "localTtsInterruption": True,
+                "voiceBrowserVisualConfirmation": True,
+                "browserReleaseReadiness": True,
+                "browserSecurityGates": True,
+                "browserDiagnosticsRedaction": True,
                 "connectors": True,
                 "expandedConnectors": True,
                 "connectorScheduler": True,

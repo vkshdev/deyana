@@ -12,6 +12,7 @@ use tungstenite::{connect, Error as WebSocketError, Message};
 
 enum NativeInput {
     Message(Value),
+    WakeWord(Value),
     Closed,
     Failed(String),
 }
@@ -36,11 +37,13 @@ pub fn run(credential: BrowserCredential, extension_origin: String) -> Result<()
         .map_err(|error| format!("unable to connect to local Deyana browser bridge: {error}"))?;
     if let MaybeTlsStream::Plain(stream) = socket.get_mut() {
         stream
-            .set_nonblocking(true)
-            .map_err(|error| format!("unable to configure browser bridge socket: {error}"))?;
+            .set_read_timeout(Some(Duration::from_millis(20)))
+            .map_err(|error| format!("unable to set browser bridge socket timeout: {error}"))?;
     }
 
     let (native_sender, native_receiver) = mpsc::channel();
+    
+    let ww_sender = native_sender.clone();
     thread::spawn(move || {
         let stdin = io::stdin();
         let mut reader = stdin.lock();
@@ -62,12 +65,29 @@ pub fn run(credential: BrowserCredential, extension_origin: String) -> Result<()
             }
         }
     });
+    thread::spawn(move || {
+        // NOTE: Stub for Wake Word Engine (e.g. pvporcupine or rust-vosk).
+        // A real implementation requires microphone stream (cpal) and wake word model.
+        // For demonstration, we simply let the thread idle.
+        loop {
+            thread::sleep(Duration::from_secs(3600));
+            /*
+            let timestamp = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+            let payload = serde_json::json!({
+                "type": "browser.wake_word.detected",
+                "timestamp": timestamp,
+                "payload": {}
+            });
+            let _ = ww_sender.send(NativeInput::WakeWord(payload));
+            */
+        }
+    });
 
     let stdout = io::stdout();
     let mut writer = stdout.lock();
     loop {
         match native_receiver.try_recv() {
-            Ok(NativeInput::Message(value)) => {
+            Ok(NativeInput::Message(value)) | Ok(NativeInput::WakeWord(value)) => {
                 let serialized = serde_json::to_string(&value)
                     .map_err(|error| format!("unable to serialize extension message: {error}"))?;
                 socket
@@ -103,9 +123,7 @@ pub fn run(credential: BrowserCredential, extension_origin: String) -> Result<()
             }
             Ok(Message::Close(_)) => return Ok(()),
             Ok(_) => {}
-            Err(WebSocketError::Io(error)) if error.kind() == io::ErrorKind::WouldBlock => {
-                thread::sleep(Duration::from_millis(20));
-            }
+            Err(WebSocketError::Io(error)) if error.kind() == io::ErrorKind::WouldBlock || error.kind() == io::ErrorKind::TimedOut => {}
             Err(WebSocketError::ConnectionClosed | WebSocketError::AlreadyClosed) => return Ok(()),
             Err(error) => return Err(format!("browser bridge connection failed: {error}")),
         }

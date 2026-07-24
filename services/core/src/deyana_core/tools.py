@@ -22,6 +22,7 @@ from .models import (
     ToolRunResponse,
     WebFetchRequest,
     WebSearchRequest,
+    OSAutomationRequest,
 )
 from .privacy import PrivacyFirewall
 from .runtime_time import utc_timestamp
@@ -85,6 +86,15 @@ TOOL_MANIFESTS = [
         description="Create a local day plan from user-provided commitments and local action items.",
         risk="low",
         requires_approval=False,
+    ),
+    ToolManifest(
+        tool_id="os_automation",
+        name="OS Automation",
+        description="Executes strictly allowlisted operating system commands (like locking the PC or controlling volume).",
+        risk="dangerous",
+        requires_approval=True,
+        dangerous=True,
+        applies_changes=True,
     ),
 ]
 
@@ -262,6 +272,73 @@ class ToolService:
             summary=f"Local day plan with {len(focus)} focus blocks and {len(actions)} memory action items.",
             content="\n".join(lines),
         )
+
+    def os_automation(self, request: OSAutomationRequest) -> ToolRunResponse:
+        if not request.user_approved:
+            return permission_required("os_automation", "OS Automation requires approval.")
+            
+        import json
+        import os
+        allowlist_path = Path(os.path.expanduser("~/.deyana/automation_allowlist.json"))
+        
+        allowlist = {
+            "lock_system": "rundll32.exe user32.dll,LockWorkStation",
+            "mute_audio": "nircmd.exe mutesysvolume 1",
+            "unmute_audio": "nircmd.exe mutesysvolume 0",
+        }
+        
+        if allowlist_path.exists():
+            try:
+                with open(allowlist_path, "r", encoding="utf-8") as f:
+                    user_config = json.load(f)
+                    if isinstance(user_config, dict):
+                        allowlist.update(user_config)
+            except Exception:
+                pass
+        else:
+            try:
+                allowlist_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(allowlist_path, "w", encoding="utf-8") as f:
+                    json.dump(allowlist, f, indent=2)
+            except Exception:
+                pass
+                
+        if request.macro_name not in allowlist:
+            return ToolRunResponse(
+                tool_id="os_automation",
+                status="failed",
+                title="Automation Failed",
+                summary=f"Macro '{request.macro_name}' is not in the allowlist.",
+                content=f"Allowed macros are: {', '.join(allowlist.keys())}"
+            )
+            
+        command = allowlist[request.macro_name]
+        try:
+            result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                return ToolRunResponse(
+                    tool_id="os_automation",
+                    status="completed",
+                    title="Automation Executed",
+                    summary=f"Successfully executed '{request.macro_name}'.",
+                    content=result.stdout.strip()
+                )
+            else:
+                return ToolRunResponse(
+                    tool_id="os_automation",
+                    status="failed",
+                    title="Automation Failed",
+                    summary=f"Command '{request.macro_name}' returned error {result.returncode}.",
+                    content=result.stderr.strip()
+                )
+        except Exception as e:
+            return ToolRunResponse(
+                tool_id="os_automation",
+                status="failed",
+                title="Automation Error",
+                summary=f"Failed to execute '{request.macro_name}'.",
+                content=str(e)
+            )
 
 
 def permission_required(tool_id: str, message: str) -> ToolRunResponse:

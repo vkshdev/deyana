@@ -1,14 +1,19 @@
 import type { AssistantSnapshot } from "../../stores/assistantStore";
-import type { BrowserContextMode } from "@deyana/schemas";
+import type { BrowserContextMode, BrowserPersonalityPreset, BrowserWritableField } from "@deyana/schemas";
 import {
   BookOpenText,
+  Eraser,
   ExternalLink,
   Globe2,
   Link2,
+  PenLine,
   RefreshCw,
   Search,
   ShieldCheck,
+  ShieldX,
   Unplug,
+  Undo2,
+  Wand2,
   X
 } from "lucide-react";
 import { assistantStore } from "../../stores/assistantStore";
@@ -114,6 +119,172 @@ export function BrowserAgentPanel({ snapshot }: BrowserAgentPanelProps) {
           </span>
           <p>{contextPreview(snapshot)}</p>
         </article>
+      ) : null}
+
+      {snapshot.browserContext ? (
+        <section className="browser-draft-panel" aria-label="Inline browser draft assistance">
+          <div className="browser-adapter-health">
+            <strong>{snapshot.browserContext.adapterHealth.adapterId}</strong>
+            <span>{snapshot.browserContext.adapterHealth.detail}</span>
+          </div>
+          <div className="browser-field-row">
+            <PenLine size={13} aria-hidden="true" />
+            <select
+              aria-label="Draft target text field"
+              disabled={snapshot.browserBusy || !snapshot.browserContext.writableFields.length}
+              value={
+                snapshot.browserDraftTarget?.handle ??
+                snapshot.browserDraft?.field?.handle ??
+                snapshot.browserContext.writableFields[0]?.handle ??
+                ""
+              }
+              onChange={(event) => assistantStore.setBrowserDraftTarget(event.target.value)}
+            >
+              {!snapshot.browserContext.writableFields.length ? (
+                <option value="">No safe visible text field</option>
+              ) : null}
+              {snapshot.browserContext.writableFields.map((field) => (
+                <option value={field.handle} key={field.handle}>
+                  {fieldLabel(field)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="browser-draft-row">
+            <Wand2 size={13} aria-hidden="true" />
+            <input
+              value={snapshot.browserDraftInstruction}
+              placeholder="Draft instruction, e.g. reply politely that I am busy"
+              aria-label="Draft instruction"
+              disabled={snapshot.browserBusy}
+              onChange={(event) => assistantStore.setBrowserDraftInstruction(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  void assistantStore.draftBrowserReply("reply");
+                }
+              }}
+            />
+            <button
+              type="button"
+              disabled={snapshot.browserBusy || !connected || !snapshot.browserContext.writableFields.length}
+              onClick={() => void assistantStore.draftBrowserReply("reply")}
+            >
+              Draft
+            </button>
+          </div>
+          <div className="browser-draft-actions">
+            <button
+              type="button"
+              disabled={snapshot.browserBusy || !connected || !snapshot.browserContext.writableFields.length}
+              onClick={() => void assistantStore.draftBrowserReply("regenerate")}
+            >
+              Regenerate
+            </button>
+            <button
+              type="button"
+              disabled={snapshot.browserBusy || !connected || !snapshot.browserContext.writableFields.length}
+              onClick={() => void assistantStore.draftBrowserReply("shorten")}
+            >
+              Shorten
+            </button>
+            <button
+              type="button"
+              disabled={snapshot.browserBusy || !connected || !snapshot.browserContext.writableFields.length}
+              onClick={() => void assistantStore.draftBrowserReply("formalize")}
+            >
+              Formalize
+            </button>
+          </div>
+
+          {snapshot.browserDraft?.draft ? (
+            <article className="browser-draft-preview">
+              <strong>Review before insertion</strong>
+              <p>{snapshot.browserDraft.draft}</p>
+              <small>
+                Target: {snapshot.browserDraft.field ? fieldLabel(snapshot.browserDraft.field) : "selected field"}
+                {snapshot.browserDraft.model ? ` · ${snapshot.browserDraft.model}` : " · local fallback"}
+              </small>
+              <div className="browser-draft-actions">
+                <button
+                  type="button"
+                  disabled={snapshot.browserBusy}
+                  onClick={() => void assistantStore.insertBrowserDraft()}
+                >
+                  Preview insert
+                </button>
+                {["whatsapp_web", "messenger", "instagram", "discord", "telegram", "gmail", "linkedin", "slack"].includes(snapshot.browserDraft.context?.adapterId ?? "") ? (
+                  <button
+                    type="button"
+                    disabled={snapshot.browserBusy}
+                    onClick={() => void assistantStore.previewWhatsAppSend()}
+                  >
+                    Preview message send
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={snapshot.browserBusy}
+                  onClick={() => void assistantStore.restoreBrowserDraftField(true)}
+                >
+                  <Undo2 size={12} aria-hidden="true" />
+                  Restore
+                </button>
+                <button
+                  type="button"
+                  disabled={snapshot.browserBusy}
+                  onClick={() => void assistantStore.restoreBrowserDraftField(false)}
+                >
+                  <Eraser size={12} aria-hidden="true" />
+                  Clear field
+                </button>
+                <button
+                  type="button"
+                  disabled={snapshot.browserBusy}
+                  onClick={() => assistantStore.clearBrowserDraft()}
+                >
+                  Dismiss
+                </button>
+              </div>
+            </article>
+          ) : null}
+
+          {snapshot.browserActionPlan ? (
+            <article className="browser-action-preview">
+              <strong>Confirmed action preview</strong>
+              <p>{snapshot.browserActionPlan.previewMarkdown}</p>
+              <small>
+                Status: {snapshot.browserActionPlan.status} · expires {new Date(snapshot.browserActionPlan.expiresAt).toLocaleTimeString()}
+              </small>
+              <div className="browser-draft-actions">
+                <button
+                  type="button"
+                  disabled={snapshot.browserBusy || snapshot.browserActionPlan.status !== "pending_confirmation"}
+                  onClick={() => void assistantStore.confirmAndExecuteBrowserAction()}
+                >
+                  Confirm and execute
+                </button>
+                <button
+                  type="button"
+                  disabled={snapshot.browserBusy}
+                  onClick={() => void assistantStore.cancelBrowserActionPlan()}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={snapshot.browserBusy}
+                  onClick={() => void assistantStore.emergencyStopBrowserActions()}
+                >
+                  <ShieldX size={12} aria-hidden="true" />
+                  Emergency stop
+                </button>
+              </div>
+            </article>
+          ) : null}
+
+          <WhatsAppBusyModePanel snapshot={snapshot} connected={connected} />
+          <BrowserPersonalityPanel snapshot={snapshot} />
+        </section>
       ) : null}
 
       {snapshot.browserSummary?.summary ? (
@@ -269,6 +440,164 @@ export function BrowserAgentPanel({ snapshot }: BrowserAgentPanelProps) {
   );
 }
 
+function WhatsAppBusyModePanel({
+  snapshot,
+  connected
+}: {
+  snapshot: AssistantSnapshot;
+  connected: boolean;
+}) {
+  const policy = snapshot.whatsappBusyModePolicy;
+  const isWhatsApp = snapshot.browserContext?.adapterId === "whatsapp_web";
+  const allowlistDraft =
+    snapshot.whatsappBusyModeAllowlistDraft || policy?.allowlistedContacts.join("\n") || "";
+
+  if (!policy) {
+    return null;
+  }
+
+  return (
+    <article className="browser-busy-mode-panel">
+      <div className="browser-busy-heading">
+        <strong>WhatsApp busy mode</strong>
+        <span>{policy.enabled ? "restricted automation on" : "off by default"}</span>
+      </div>
+      <label className="browser-toggle-row">
+        <input
+          type="checkbox"
+          checked={policy.enabled}
+          disabled={snapshot.browserBusy}
+          onChange={(event) =>
+            void assistantStore.patchWhatsAppBusyModePolicy({ enabled: event.currentTarget.checked })
+          }
+        />
+        <span>Enable allowlisted automatic busy replies</span>
+      </label>
+      <textarea
+        value={allowlistDraft}
+        placeholder="One allowed WhatsApp contact per line"
+        disabled={snapshot.browserBusy}
+        onChange={(event) => assistantStore.setWhatsAppBusyModeAllowlistDraft(event.currentTarget.value)}
+      />
+      <div className="browser-busy-controls">
+        <input
+          value={policy.windowStart}
+          aria-label="Busy mode start time"
+          disabled={snapshot.browserBusy}
+          onChange={(event) =>
+            void assistantStore.patchWhatsAppBusyModePolicy({ windowStart: event.currentTarget.value })
+          }
+        />
+        <input
+          value={policy.windowEnd}
+          aria-label="Busy mode end time"
+          disabled={snapshot.browserBusy}
+          onChange={(event) =>
+            void assistantStore.patchWhatsAppBusyModePolicy({ windowEnd: event.currentTarget.value })
+          }
+        />
+        <button type="button" disabled={snapshot.browserBusy} onClick={() => void assistantStore.saveWhatsAppBusyAllowlist()}>
+          Save allowlist
+        </button>
+        {policy.emergencyStopped ? (
+          <button
+            type="button"
+            disabled={snapshot.browserBusy}
+            onClick={() => void assistantStore.patchWhatsAppBusyModePolicy({ resetEmergencyStop: true })}
+          >
+            Reset stop
+          </button>
+        ) : null}
+      </div>
+      <small>
+        Permission: {policy.permissionGranted ? "granted" : "not granted"} · groups{" "}
+        {policy.allowGroups ? "allowed" : "blocked"} · cooldown {policy.cooldownMinutes}m · daily limit{" "}
+        {policy.dailyLimit}
+      </small>
+      <p className="browser-busy-template">{policy.template}</p>
+      <div className="browser-draft-actions">
+        <button
+          type="button"
+          disabled={snapshot.browserBusy || !connected || !isWhatsApp}
+          onClick={() => void assistantStore.evaluateWhatsAppBusyMode()}
+        >
+          Evaluate visible chat
+        </button>
+        <button
+          type="button"
+          disabled={snapshot.browserBusy || !connected || !isWhatsApp || !policy.enabled}
+          onClick={() => void assistantStore.sendWhatsAppBusyReply()}
+        >
+          Send policy reply
+        </button>
+      </div>
+      {snapshot.whatsappBusyModeEvaluation ? (
+        <small>
+          Decision: {snapshot.whatsappBusyModeEvaluation.decision} ·{" "}
+          {snapshot.whatsappBusyModeEvaluation.reason}
+        </small>
+      ) : null}
+    </article>
+  );
+}
+
+function BrowserPersonalityPanel({ snapshot }: { snapshot: AssistantSnapshot }) {
+  const profile = snapshot.browserPersonalityProfile;
+  if (!profile) {
+    return null;
+  }
+
+  return (
+    <article className="browser-personality-panel">
+      <div className="browser-busy-heading">
+        <strong>Draft personality</strong>
+        <span>{snapshot.browserMoodHint ? `mood: ${snapshot.browserMoodHint.label}` : "planner stays deterministic"}</span>
+      </div>
+      <div className="browser-busy-controls">
+        <select
+          value={profile.preset}
+          disabled={snapshot.browserBusy}
+          aria-label="Draft personality preset"
+          onChange={(event) =>
+            void assistantStore.patchBrowserPersonalityProfile({
+              preset: event.currentTarget.value as BrowserPersonalityPreset
+            })
+          }
+        >
+          <option value="supportive">Supportive</option>
+          <option value="concise">Concise</option>
+          <option value="professional">Professional</option>
+          <option value="playful">Playful</option>
+          <option value="custom">Custom</option>
+        </select>
+        <button type="button" disabled={snapshot.browserBusy} onClick={() => void assistantStore.inferBrowserMoodFromDraftInstruction()}>
+          Infer mood
+        </button>
+        <button type="button" disabled={snapshot.browserBusy} onClick={() => void assistantStore.previewBrowserPersonality()}>
+          Preview style
+        </button>
+      </div>
+      <textarea
+        defaultValue={profile.customInstruction}
+        placeholder="Optional custom writer style. This cannot change browser permissions."
+        disabled={snapshot.browserBusy}
+        onBlur={(event) =>
+          void assistantStore.patchBrowserPersonalityProfile({
+            preset: "custom",
+            customInstruction: event.currentTarget.value
+          })
+        }
+      />
+      <small>
+        Writer temperature {profile.writerTemperature.toFixed(2)} · max {profile.maxDraftCharacters} characters · automation disclosure stays required
+      </small>
+      {snapshot.browserPersonalityPreview ? (
+        <p className="browser-busy-template">{snapshot.browserPersonalityPreview.preview}</p>
+      ) : null}
+    </article>
+  );
+}
+
 function contextPreview(snapshot: AssistantSnapshot): string {
   const context = snapshot.browserContext;
   if (!context) {
@@ -281,4 +610,9 @@ function contextPreview(snapshot: AssistantSnapshot): string {
         ? context.mainText
         : context.visibleText;
   return content.slice(0, 900);
+}
+
+function fieldLabel(field: BrowserWritableField): string {
+  const suffix = field.valueCharacterCount ? ` · ${field.valueCharacterCount} chars` : "";
+  return `${field.label || field.placeholder || field.kind}${suffix}`;
 }

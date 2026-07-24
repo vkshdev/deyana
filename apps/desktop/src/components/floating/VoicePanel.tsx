@@ -1,5 +1,5 @@
 import type { AssistantSnapshot } from "../../stores/assistantStore";
-import { Mic, MicOff, Volume2, VolumeX } from "lucide-react";
+import { Mic, MicOff, Square, Volume2, VolumeX } from "lucide-react";
 import { assistantStore } from "../../stores/assistantStore";
 
 interface VoicePanelProps {
@@ -67,6 +67,16 @@ export function VoicePanel({ snapshot }: VoicePanelProps) {
           onClick={() => void assistantStore.patchVoiceSettings({ ttsEnabled: !ttsEnabled })}
         >
           {ttsEnabled ? <Volume2 size={17} aria-hidden="true" /> : <VolumeX size={17} aria-hidden="true" />}
+        </button>
+        <button
+          className="icon-button"
+          type="button"
+          title="Stop speech"
+          aria-label="Stop speech"
+          disabled={!ttsEnabled}
+          onClick={() => void assistantStore.interruptVoice()}
+        >
+          <Square size={15} aria-hidden="true" />
         </button>
         <button
           className="icon-button"
