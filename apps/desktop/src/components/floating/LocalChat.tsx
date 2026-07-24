@@ -1,7 +1,8 @@
 import type { AssistantSnapshot } from "../../stores/assistantStore";
 import type { MemorySourceReference, WebSourceReference } from "@deyana/schemas";
-import { MessageSquare, Send, Trash2 } from "lucide-react";
+import { MessageSquare, Trash2 } from "lucide-react";
 import { assistantStore } from "../../stores/assistantStore";
+import { ChatInput } from "../chat/ChatInput";
 
 interface LocalChatProps {
   snapshot: AssistantSnapshot;
@@ -69,30 +70,7 @@ export function LocalChat({ snapshot }: LocalChatProps) {
         )}
       </div>
 
-      <form
-        className="chat-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void assistantStore.sendChatMessage();
-        }}
-      >
-        <input
-          value={snapshot.chatDraft}
-          placeholder="Message local model"
-          aria-label="Message local model"
-          disabled={disabled}
-          onChange={(event) => assistantStore.setChatDraft(event.target.value)}
-        />
-        <button
-          className="icon-button"
-          type="submit"
-          title="Send"
-          aria-label="Send"
-          disabled={disabled || !snapshot.chatDraft.trim()}
-        >
-          <Send size={15} aria-hidden="true" />
-        </button>
-      </form>
+      <ChatInput snapshot={snapshot} />
     </section>
   );
 }
