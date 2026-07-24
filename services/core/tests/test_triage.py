@@ -26,7 +26,8 @@ def client(runtime_state):
 def test_triage_incoming_enqueue(client):
     response = client.post(
         "/api/triage/incoming",
-        json={"platform": "discord", "sender": "test_user", "content": "hello"}
+        json={"platform": "discord", "sender": "test_user", "content": "hello"},
+        headers={"x-deyana-client": "true"}
     )
     assert response.status_code == 200
     assert response.json() == {"status": "enqueued"}
@@ -41,14 +42,16 @@ def test_triage_flow(client, runtime_state):
     # Enqueue a message
     client.post(
         "/api/triage/incoming",
-        json={"platform": "test_platform", "sender": "bot", "content": "test_message"}
+        json={"platform": "test_platform", "sender": "bot", "content": "test_message"},
+        headers={"x-deyana-client": "true"}
     )
     
     # Normally the daemon would pick this up and write to DB
     # We simulate the daemon's DB write directly to test the /pending and /resolve endpoints
     from deyana_core.triage import IncomingTriageRequest
     req = IncomingTriageRequest(platform="test_platform", sender="bot", content="test_message")
-    runtime_state.triage_daemon._save_triage_result(req, "URGENT", "Mock draft")
+    import asyncio
+    asyncio.run(runtime_state.triage_daemon._save_triage_result(req, "URGENT", "Mock draft"))
 
     # Fetch pending
     res = client.get("/api/triage/pending")
