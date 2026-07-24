@@ -21,6 +21,7 @@ from .settings import CoreSettings
 from .storage import CoreStore
 from .tools import ToolService
 from .voice import LocalVoiceService
+from .triage import TriageDaemon
 
 
 class RuntimeState:
@@ -70,6 +71,7 @@ class RuntimeState:
             voice_service=self.voice_service,
         )
         self.release_service.mark_startup()
+        self.triage_daemon = TriageDaemon(self.model_router, str(self.memory_store.database_path))
 
     @property
     def uptime_seconds(self) -> float:
