@@ -7,14 +7,27 @@ import {
   type AppCoreEvent,
   type BackendProcessStatus,
   type BackendStatusResponse,
+  type BrowserActionPlanCreateRequest,
+  type BrowserActionPlan,
   type BrowserAuditEvent,
+  type BrowserContactTonePreference,
   type BrowserContextMode,
   type BrowserContextSummaryResponse,
+  type BrowserDraftReplyResponse,
+  type BrowserDraftTone,
+  type BrowserMoodHint,
   type BrowserPageContext,
+  type BrowserPersonalityPreviewResponse,
+  type BrowserPersonalityProfile,
+  type BrowserPersonalityProfilePatch,
   type BrowserPermission,
   type BrowserSearchResponse,
   type BrowserSession,
   type BrowserStatusResponse,
+  type BrowserWritableField,
+  type WhatsAppBusyModeEvaluationResponse,
+  type WhatsAppBusyModePolicy,
+  type WhatsAppBusyModePolicyPatch,
   type ChatMessageItem,
   type ChatMessageResponse,
   type ConnectorItem,
@@ -81,6 +94,19 @@ export interface AssistantSnapshot {
   browserSearchQuery: string;
   browserSearchResult?: BrowserSearchResponse;
   browserOpenUrl: string;
+  browserDraftInstruction: string;
+  browserDraft?: BrowserDraftReplyResponse;
+  browserDraftTarget?: BrowserWritableField;
+  browserActionPlans: BrowserActionPlan[];
+  browserActionPlan?: BrowserActionPlan;
+  browserConfirmationToken: string;
+  whatsappBusyModePolicy?: WhatsAppBusyModePolicy;
+  whatsappBusyModeEvaluation?: WhatsAppBusyModeEvaluationResponse;
+  whatsappBusyModeAllowlistDraft: string;
+  browserPersonalityProfile?: BrowserPersonalityProfile;
+  browserContactTones: BrowserContactTonePreference[];
+  browserMoodHint?: BrowserMoodHint;
+  browserPersonalityPreview?: BrowserPersonalityPreviewResponse;
   browserBusy: boolean;
   lastBackendEventType?: string;
   connectors: ConnectorItem[];
@@ -191,6 +217,11 @@ const initialSnapshot: AssistantSnapshot = {
   browserContextMode: "main",
   browserSearchQuery: "",
   browserOpenUrl: "",
+  browserDraftInstruction: "",
+  browserActionPlans: [],
+  browserConfirmationToken: "",
+  whatsappBusyModeAllowlistDraft: "",
+  browserContactTones: [],
   browserBusy: false,
   connectors: defaultConnectors(),
   connectorSyncRuns: [],
@@ -929,6 +960,7 @@ class AssistantStore {
       return;
     }
 
+    await backendClient.interruptVoice().catch(() => undefined);
     this.setSnapshot({
       voiceBusy: true,
       voiceTranscript: undefined,
@@ -952,6 +984,29 @@ class AssistantStore {
           assistantState: this.restingAssistantState(),
           error: "No local speech was recognized."
         });
+        return;
+      }
+
+      if (isBrowserVoiceCommand(transcript)) {
+        const browserResponse = await backendClient.routeBrowserVoiceCommand({
+          transcript,
+          mode: this.snapshot.browserContextMode,
+          pageSessionId: this.snapshot.browserContext?.pageSessionId ?? null,
+          userApproved: true
+        });
+        this.setSnapshot({
+          browserSummary: browserResponse.summary ?? this.snapshot.browserSummary,
+          browserDraft: browserResponse.draft ?? this.snapshot.browserDraft,
+          browserDraftTarget: browserResponse.draft?.field ?? this.snapshot.browserDraftTarget,
+          browserContext: browserResponse.summary?.context ?? browserResponse.draft?.context ?? this.snapshot.browserContext,
+          browserSearchResult: browserResponse.search ?? this.snapshot.browserSearchResult,
+          browserActionPlan: browserResponse.actionPlan ?? this.snapshot.browserActionPlan,
+          browserConfirmationToken: browserResponse.actionPlan?.confirmationToken ?? this.snapshot.browserConfirmationToken,
+          voiceBusy: false,
+          assistantState: this.restingAssistantState(),
+          error: browserResponse.status === "completed" ? undefined : browserResponse.instruction
+        });
+        await this.loadBrowser();
         return;
       }
 
@@ -1433,20 +1488,33 @@ class AssistantStore {
       let browserSessions = this.snapshot.browserSessions;
       let browserPermissions = this.snapshot.browserPermissions;
       let browserAuditEvents = this.snapshot.browserAuditEvents;
+      let browserActionPlans = this.snapshot.browserActionPlans;
+      let whatsappBusyModePolicy = this.snapshot.whatsappBusyModePolicy;
+      let browserPersonalityProfile = this.snapshot.browserPersonalityProfile;
+      let browserContactTones = this.snapshot.browserContactTones;
+      let browserMoodHint = this.snapshot.browserMoodHint;
       let browserContext = this.snapshot.browserContext;
       let browserSummary = this.snapshot.browserSummary;
       try {
-        const [status, sessions, permissions, audit] = await Promise.all([
+        const [status, sessions, permissions, audit, actionPlans, busyPolicy, personality] = await Promise.all([
           backendClient.getBrowserStatus(),
           backendClient.listBrowserSessions(),
           backendClient.listBrowserPermissions(),
-          backendClient.listBrowserAudit()
+          backendClient.listBrowserAudit(),
+          backendClient.listBrowserActionPlans(),
+          backendClient.getWhatsAppBusyModePolicy(),
+          backendClient.getBrowserPersonality()
         ]);
         const activeSessionIds = new Set(sessions.items.map((session) => session.id));
         browserStatus = status;
         browserSessions = sessions.items;
         browserPermissions = permissions.items;
         browserAuditEvents = audit.items;
+        browserActionPlans = actionPlans.items;
+        whatsappBusyModePolicy = busyPolicy;
+        browserPersonalityProfile = personality.profile;
+        browserContactTones = personality.contactTones;
+        browserMoodHint = personality.moodHint ?? undefined;
         browserContext =
           browserContext && activeSessionIds.has(browserContext.pageSessionId) ? browserContext : undefined;
         browserSummary = browserContext ? browserSummary : undefined;
@@ -1457,6 +1525,11 @@ class AssistantStore {
         browserSessions = [];
         browserPermissions = [];
         browserAuditEvents = [];
+        browserActionPlans = [];
+        whatsappBusyModePolicy = undefined;
+        browserPersonalityProfile = undefined;
+        browserContactTones = [];
+        browserMoodHint = undefined;
         browserContext = undefined;
         browserSummary = undefined;
       }
@@ -1489,6 +1562,11 @@ class AssistantStore {
         browserSessions,
         browserPermissions,
         browserAuditEvents,
+        browserActionPlans,
+        whatsappBusyModePolicy,
+        browserPersonalityProfile,
+        browserContactTones,
+        browserMoodHint,
         browserContext,
         browserSummary,
         syncStatus: deriveSyncStatus(connectors.items),
@@ -1952,13 +2030,26 @@ class AssistantStore {
     }, delayMs);
   };
 
+  interruptVoice = async () => {
+    try {
+      await backendClient.interruptVoice();
+      this.setSnapshot({ voiceBusy: false, assistantState: this.restingAssistantState(), error: undefined });
+      await this.loadVoice();
+    } catch (error) {
+      this.setSnapshot({ error: error instanceof Error ? error.message : "Unable to interrupt local speech" });
+    }
+  };
+
   loadBrowser = async () => {
     try {
-      const [status, sessions, permissions, audit] = await Promise.all([
+      const [status, sessions, permissions, audit, actionPlans, busyPolicy, personality] = await Promise.all([
         backendClient.getBrowserStatus(),
         backendClient.listBrowserSessions(),
         backendClient.listBrowserPermissions(),
-        backendClient.listBrowserAudit()
+        backendClient.listBrowserAudit(),
+        backendClient.listBrowserActionPlans(),
+        backendClient.getWhatsAppBusyModePolicy(),
+        backendClient.getBrowserPersonality()
       ]);
       const activeSessionIds = new Set(sessions.items.map((session) => session.id));
       const browserContext =
@@ -1970,6 +2061,11 @@ class AssistantStore {
         browserSessions: sessions.items,
         browserPermissions: permissions.items,
         browserAuditEvents: audit.items,
+        browserActionPlans: actionPlans.items,
+        whatsappBusyModePolicy: busyPolicy,
+        browserPersonalityProfile: personality.profile,
+        browserContactTones: personality.contactTones,
+        browserMoodHint: personality.moodHint ?? undefined,
         browserContext,
         browserSummary: browserContext ? this.snapshot.browserSummary : undefined
       });
@@ -1981,6 +2077,11 @@ class AssistantStore {
         browserSessions: [],
         browserPermissions: [],
         browserAuditEvents: [],
+        browserActionPlans: [],
+        whatsappBusyModePolicy: undefined,
+        browserPersonalityProfile: undefined,
+        browserContactTones: [],
+        browserMoodHint: undefined,
         browserContext: undefined,
         browserSummary: undefined
       });
@@ -1997,6 +2098,25 @@ class AssistantStore {
 
   setBrowserOpenUrl = (browserOpenUrl: string) => {
     this.setSnapshot({ browserOpenUrl });
+  };
+
+  setBrowserDraftInstruction = (browserDraftInstruction: string) => {
+    this.setSnapshot({ browserDraftInstruction });
+  };
+
+  setBrowserDraftTarget = (fieldHandle: string) => {
+    const browserDraftTarget = this.snapshot.browserContext?.writableFields.find(
+      (field) => field.handle === fieldHandle
+    );
+    this.setSnapshot({ browserDraftTarget });
+  };
+
+  clearBrowserDraft = () => {
+    this.setSnapshot({
+      browserDraft: undefined,
+      browserDraftTarget: undefined,
+      error: undefined
+    });
   };
 
   readBrowserPage = async () => {
@@ -2073,6 +2193,348 @@ class AssistantStore {
         browserBusy: false,
         assistantState: this.restingAssistantState(),
         error: error instanceof Error ? error.message : "Unable to search the public web"
+      });
+    }
+  };
+
+  draftBrowserReply = async (tone: BrowserDraftTone = "reply") => {
+    const instruction =
+      this.snapshot.browserDraftInstruction.trim() ||
+      "Draft a concise, polite reply for the selected visible text field.";
+    const targetField =
+      this.snapshot.browserDraftTarget ?? this.snapshot.browserContext?.writableFields[0];
+    this.setSnapshot({ browserBusy: true, assistantState: "THINKING", error: undefined });
+    try {
+      const response = await backendClient.draftBrowserReply({
+        instruction,
+        tone,
+        mode: this.snapshot.browserContextMode,
+        pageSessionId: this.snapshot.browserContext?.pageSessionId ?? null,
+        fieldHandle: targetField?.handle ?? null,
+        userApproved: true
+      });
+      this.setSnapshot({
+        browserBusy: false,
+        browserDraft: response.status === "completed" ? response : this.snapshot.browserDraft,
+        browserDraftTarget: response.field ?? targetField,
+        browserContext: response.context ?? this.snapshot.browserContext,
+        assistantState: this.restingAssistantState(),
+        error: response.status === "completed" ? response.instruction ?? undefined : response.instruction ?? "Unable to draft reply"
+      });
+      await this.loadBrowser();
+    } catch (error) {
+      this.setSnapshot({
+        browserBusy: false,
+        assistantState: this.restingAssistantState(),
+        error: error instanceof Error ? error.message : "Unable to draft reply"
+      });
+    }
+  };
+
+  insertBrowserDraft = async () => {
+    await this.createBrowserDraftActionPlan("fill_field");
+  };
+
+  previewWhatsAppSend = async () => {
+    await this.createBrowserDraftActionPlan("whatsapp_send");
+  };
+
+  private createBrowserDraftActionPlan = async (chain: BrowserActionPlanCreateRequest["chain"]) => {
+    const draft = this.snapshot.browserDraft;
+    const field = draft?.field ?? this.snapshot.browserDraftTarget;
+    const context = draft?.context ?? this.snapshot.browserContext;
+    if (!draft?.draft.trim() || !field || !context) {
+      this.setSnapshot({ error: "Generate and review a browser draft before inserting it." });
+      return;
+    }
+    if (chain === "whatsapp_send" && context.adapterId !== "whatsapp_web") {
+      this.setSnapshot({ error: "Confirmed send is currently available only for the visible WhatsApp Web conversation." });
+      return;
+    }
+    this.setSnapshot({ browserBusy: true, assistantState: "WAITING_FOR_CONFIRMATION", error: undefined });
+    try {
+      const response = await backendClient.createBrowserActionPlan({
+        chain,
+        pageSessionId: context.pageSessionId,
+        fieldHandle: field.handle,
+        value: draft.draft,
+        targetLabel: context.title.replace(/^WhatsApp(?:\s+Group)?\s*-\s*/i, ""),
+        userApproved: true
+      });
+      this.setSnapshot({
+        browserBusy: false,
+        browserActionPlan: response.plan ?? this.snapshot.browserActionPlan,
+        browserConfirmationToken: response.plan?.confirmationToken ?? "",
+        assistantState: this.restingAssistantState(),
+        error: response.status === "completed" ? response.instruction ?? undefined : response.instruction ?? "Unable to create action preview"
+      });
+      await this.loadBrowser();
+    } catch (error) {
+      this.setSnapshot({
+        browserBusy: false,
+        assistantState: this.restingAssistantState(),
+        error: error instanceof Error ? error.message : "Unable to create action preview"
+      });
+    }
+  };
+
+  setBrowserConfirmationToken = (browserConfirmationToken: string) => {
+    this.setSnapshot({ browserConfirmationToken });
+  };
+
+  confirmAndExecuteBrowserAction = async () => {
+    const plan = this.snapshot.browserActionPlan;
+    const token = this.snapshot.browserConfirmationToken.trim();
+    if (!plan || !token) {
+      this.setSnapshot({ error: "Create an action preview and keep its confirmation token before executing." });
+      return;
+    }
+    this.setSnapshot({ browserBusy: true, assistantState: "WAITING_FOR_CONFIRMATION", error: undefined });
+    try {
+      const confirmed = await backendClient.confirmBrowserActionPlan({
+        planId: plan.id,
+        confirmationToken: token
+      });
+      if (confirmed.status !== "completed" || !confirmed.plan) {
+        this.setSnapshot({
+          browserBusy: false,
+          assistantState: this.restingAssistantState(),
+          error: confirmed.instruction ?? "Unable to confirm action plan"
+        });
+        return;
+      }
+      const executed = await backendClient.executeBrowserActionPlan(confirmed.plan.id);
+      this.setSnapshot({
+        browserBusy: false,
+        browserActionPlan: executed.plan ?? confirmed.plan,
+        browserConfirmationToken: "",
+        assistantState: this.restingAssistantState(),
+        error: executed.status === "completed" ? executed.plan?.resultDetail ?? undefined : executed.instruction ?? "Unable to execute action"
+      });
+      await this.loadBrowser();
+    } catch (error) {
+      this.setSnapshot({
+        browserBusy: false,
+        assistantState: this.restingAssistantState(),
+        error: error instanceof Error ? error.message : "Unable to execute browser action"
+      });
+    }
+  };
+
+  cancelBrowserActionPlan = async () => {
+    const plan = this.snapshot.browserActionPlan;
+    if (!plan) {
+      this.setSnapshot({ error: "No browser action preview is active." });
+      return;
+    }
+    this.setSnapshot({ browserBusy: true, error: undefined });
+    try {
+      const response = await backendClient.cancelBrowserActionPlan(plan.id);
+      this.setSnapshot({
+        browserBusy: false,
+        browserActionPlan: response.plan ?? undefined,
+        browserConfirmationToken: "",
+        error: response.status === "completed" ? undefined : response.instruction ?? "Unable to cancel action"
+      });
+      await this.loadBrowser();
+    } catch (error) {
+      this.setSnapshot({
+        browserBusy: false,
+        error: error instanceof Error ? error.message : "Unable to cancel action"
+      });
+    }
+  };
+
+  emergencyStopBrowserActions = async () => {
+    this.setSnapshot({ browserBusy: true, error: undefined });
+    try {
+      const response = await backendClient.browserEmergencyStop();
+      this.setSnapshot({
+        browserBusy: false,
+        browserActionPlan: undefined,
+        browserConfirmationToken: "",
+        error: response.instruction
+      });
+      await this.loadBrowser();
+    } catch (error) {
+      this.setSnapshot({
+        browserBusy: false,
+        error: error instanceof Error ? error.message : "Unable to stop browser actions"
+      });
+    }
+  };
+
+  setWhatsAppBusyModeAllowlistDraft = (whatsappBusyModeAllowlistDraft: string) => {
+    this.setSnapshot({ whatsappBusyModeAllowlistDraft });
+  };
+
+  patchWhatsAppBusyModePolicy = async (patch: WhatsAppBusyModePolicyPatch) => {
+    this.setSnapshot({ browserBusy: true, error: undefined });
+    try {
+      const response = await backendClient.patchWhatsAppBusyModePolicy(patch);
+      this.setSnapshot({
+        browserBusy: false,
+        whatsappBusyModePolicy: response.policy,
+        whatsappBusyModeAllowlistDraft: response.policy.allowlistedContacts.join("\n"),
+        error:
+          response.status === "completed"
+            ? response.instruction ?? undefined
+            : response.instruction ?? "Unable to update WhatsApp busy mode"
+      });
+      await this.loadBrowser();
+    } catch (error) {
+      this.setSnapshot({
+        browserBusy: false,
+        error: error instanceof Error ? error.message : "Unable to update WhatsApp busy mode"
+      });
+    }
+  };
+
+  saveWhatsAppBusyAllowlist = async () => {
+    const allowlistedContacts = this.snapshot.whatsappBusyModeAllowlistDraft
+      .split(/\r?\n|,/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+    await this.patchWhatsAppBusyModePolicy({ allowlistedContacts });
+  };
+
+  evaluateWhatsAppBusyMode = async () => {
+    const context = this.snapshot.browserContext;
+    if (!context || context.adapterId !== "whatsapp_web") {
+      this.setSnapshot({ error: "Read the visible WhatsApp Web conversation before evaluating busy mode." });
+      return;
+    }
+    this.setSnapshot({ browserBusy: true, error: undefined });
+    try {
+      const evaluation = await backendClient.evaluateWhatsAppBusyMode({
+        pageSessionId: context.pageSessionId,
+        userApproved: true
+      });
+      this.setSnapshot({
+        browserBusy: false,
+        whatsappBusyModeEvaluation: evaluation,
+        error: evaluation.allowed ? undefined : evaluation.reason
+      });
+    } catch (error) {
+      this.setSnapshot({
+        browserBusy: false,
+        error: error instanceof Error ? error.message : "Unable to evaluate WhatsApp busy mode"
+      });
+    }
+  };
+
+  sendWhatsAppBusyReply = async () => {
+    const context = this.snapshot.browserContext;
+    const field = this.snapshot.browserDraftTarget ?? context?.writableFields[0];
+    if (!context || context.adapterId !== "whatsapp_web") {
+      this.setSnapshot({ error: "Read the visible WhatsApp Web conversation before busy-mode send." });
+      return;
+    }
+    this.setSnapshot({ browserBusy: true, assistantState: "WAITING_FOR_CONFIRMATION", error: undefined });
+    try {
+      const response = await backendClient.sendWhatsAppBusyReply({
+        pageSessionId: context.pageSessionId,
+        fieldHandle: field?.handle ?? null,
+        userApproved: true
+      });
+      this.setSnapshot({
+        browserBusy: false,
+        whatsappBusyModeEvaluation: response.evaluation,
+        browserActionPlan: response.plan ?? this.snapshot.browserActionPlan,
+        assistantState: this.restingAssistantState(),
+        error: response.status === "completed" ? response.instruction ?? undefined : response.instruction ?? response.evaluation.reason
+      });
+      await this.loadBrowser();
+    } catch (error) {
+      this.setSnapshot({
+        browserBusy: false,
+        assistantState: this.restingAssistantState(),
+        error: error instanceof Error ? error.message : "Unable to send WhatsApp busy reply"
+      });
+    }
+  };
+
+  patchBrowserPersonalityProfile = async (patch: BrowserPersonalityProfilePatch) => {
+    this.setSnapshot({ browserBusy: true, error: undefined });
+    try {
+      const profile = await backendClient.patchBrowserPersonalityProfile(patch);
+      this.setSnapshot({ browserBusy: false, browserPersonalityProfile: profile, error: undefined });
+      await this.previewBrowserPersonality();
+    } catch (error) {
+      this.setSnapshot({
+        browserBusy: false,
+        error: error instanceof Error ? error.message : "Unable to update browser personality"
+      });
+    }
+  };
+
+  inferBrowserMoodFromDraftInstruction = async () => {
+    const text = this.snapshot.browserDraftInstruction.trim();
+    if (!text) {
+      this.setSnapshot({ error: "Type or say something before inferring a temporary mood hint." });
+      return;
+    }
+    this.setSnapshot({ browserBusy: true, error: undefined });
+    try {
+      const mood = await backendClient.inferBrowserMood({ text, ttlSeconds: 900 });
+      this.setSnapshot({ browserBusy: false, browserMoodHint: mood, error: undefined });
+    } catch (error) {
+      this.setSnapshot({
+        browserBusy: false,
+        error: error instanceof Error ? error.message : "Unable to infer temporary mood"
+      });
+    }
+  };
+
+  previewBrowserPersonality = async () => {
+    this.setSnapshot({ browserBusy: true, error: undefined });
+    try {
+      const context = this.snapshot.browserContext;
+      const preview = await backendClient.previewBrowserPersonality({
+        adapterId: context?.adapterId ?? null,
+        contactLabel: context?.title?.replace(/^WhatsApp(?:\s+Group)?\s*-\s*/i, "") ?? null,
+        sampleText: this.snapshot.browserDraftInstruction || undefined
+      });
+      this.setSnapshot({
+        browserBusy: false,
+        browserPersonalityPreview: preview,
+        browserPersonalityProfile: preview.profile,
+        browserMoodHint: preview.moodHint ?? undefined,
+        error: undefined
+      });
+    } catch (error) {
+      this.setSnapshot({
+        browserBusy: false,
+        error: error instanceof Error ? error.message : "Unable to preview browser personality"
+      });
+    }
+  };
+
+  restoreBrowserDraftField = async (restoreOriginal = true) => {
+    const draft = this.snapshot.browserDraft;
+    const field = draft?.field ?? this.snapshot.browserDraftTarget;
+    const context = draft?.context ?? this.snapshot.browserContext;
+    if (!field || !context) {
+      this.setSnapshot({ error: "No browser draft field is selected." });
+      return;
+    }
+    this.setSnapshot({ browserBusy: true, error: undefined });
+    try {
+      const response = await backendClient.clearBrowserField({
+        pageSessionId: context.pageSessionId,
+        fieldHandle: field.handle,
+        restoreOriginal,
+        userApproved: true
+      });
+      this.setSnapshot({
+        browserBusy: false,
+        error: response.status === "completed" ? response.instruction ?? undefined : response.instruction ?? "Unable to update field"
+      });
+      await this.loadBrowser();
+    } catch (error) {
+      this.setSnapshot({
+        browserBusy: false,
+        error: error instanceof Error ? error.message : "Unable to update browser field"
       });
     }
   };
@@ -2245,3 +2707,9 @@ const deriveSyncStatus = (connectors: ConnectorItem[]): SyncStatus => {
   }
   return "idle";
 };
+
+const isBrowserVoiceCommand = (transcript: string): boolean =>
+  /\b(browser|page|tab|website|search|internet|draft|reply|whatsapp|gmail|slack|github|linkedin)\b/i.test(
+    transcript
+  ) &&
+  /\b(read|summarize|summary|search|open|draft|reply|respond|write)\b/i.test(transcript);
