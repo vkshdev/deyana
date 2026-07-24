@@ -43,6 +43,10 @@ CONVERSATION_PATTERN = re.compile(
     r"who are you|what can you do)[.!?\s]*$",
     re.IGNORECASE,
 )
+SCREEN_INTENT_PATTERN = re.compile(
+    r"\b(?:what is on my screen|what am i looking at|read my screen|describe my screen|what's on my screen|what am i seeing|screenshot)\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -70,6 +74,8 @@ class WebContext:
 
 class ChatIntentRouter:
     def route(self, content: str, *, use_memory: bool, allow_web: bool) -> ChatRoute:
+        if SCREEN_INTENT_PATTERN.search(content):
+            return "screen_query"
         if not allow_web:
             return "memory" if use_memory else "conversation"
         if extract_public_url(content):
@@ -204,6 +210,28 @@ class ChatAgent:
             use_memory=use_memory,
             allow_web=allow_web,
         )
+
+        if route == "screen_query":
+            from .vision import VisionService
+            vision = VisionService()
+            vision_response = vision.query_screen(clean_content)
+            
+            user_msg = self.chat_store.append("user", clean_content, "llava:latest")
+            assistant_msg = self.chat_store.append("assistant", vision_response, "llava:latest")
+            return ChatMessageResponse(
+                user_message=user_msg,
+                assistant_message=assistant_msg,
+                model="llava:latest",
+                latency_ms=0,
+                retrieval=ChatRetrievalSummary(
+                    query=clean_content,
+                    route=route,
+                    retrieved=0,
+                    compressed_characters=0,
+                    context_tokens_estimate=0,
+                ),
+            )
+
         retrieved = self.retriever.retrieve(clean_content) if route == "memory" else []
         web_context = self.retrieve_web_context(clean_content, route)
         recent_history = self.recent_history_lines()
