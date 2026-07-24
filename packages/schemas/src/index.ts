@@ -193,7 +193,7 @@ export type CoreWebSocketEvent = AppReadyEvent | BackendHeartbeatEvent | Backend
 export const PRIVACY_MODES = ["local_only"] as const;
 export type PrivacyMode = (typeof PRIVACY_MODES)[number];
 
-export const MODEL_PROFILES = ["low_spec", "balanced", "power"] as const;
+export const MODEL_PROFILES = ["low_spec", "balanced", "power", "ultra"] as const;
 export type ModelProfile = (typeof MODEL_PROFILES)[number];
 
 export const SYNC_MODES = ["manual", "low_frequency"] as const;
@@ -213,6 +213,25 @@ export type MemoryType =
   | "project_summary"
   | "decision"
   | "action_item";
+
+export interface ModelConfig {
+  profile: ModelProfile;
+  privacy: PrivacyMode;
+}
+
+export type TriageScore = "URGENT" | "NORMAL" | "SPAM";
+export type TriageStatus = "pending" | "approved" | "discarded";
+
+export interface TriageMessage {
+  id: string;
+  platform: string;
+  sender: string;
+  content: string;
+  urgency_score: TriageScore;
+  auto_draft: string;
+  status: TriageStatus;
+  created_at: string;
+}
 
 export interface CoreAppSettings {
   privacyMode: PrivacyMode;
@@ -721,6 +740,13 @@ export interface VoiceSpeakResponse {
   engine: string;
   characters: number;
   rawAudioStored: boolean;
+  createdAt: string;
+}
+
+export interface VoiceInterruptResponse {
+  interrupted: boolean;
+  engine: string;
+  detail: string;
   createdAt: string;
 }
 

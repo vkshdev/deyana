@@ -19,9 +19,13 @@ fn run() -> Result<(), String> {
 
 #[cfg(windows)]
 fn configure_binary_stdio() {
+    extern "C" {
+        fn _setmode(fd: std::os::raw::c_int, mode: std::os::raw::c_int) -> std::os::raw::c_int;
+    }
+    const O_BINARY: std::os::raw::c_int = 0x8000;
     unsafe {
-        libc::_setmode(0, libc::O_BINARY);
-        libc::_setmode(1, libc::O_BINARY);
+        _setmode(0, O_BINARY);
+        _setmode(1, O_BINARY);
     }
 }
 

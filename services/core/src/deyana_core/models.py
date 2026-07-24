@@ -55,7 +55,7 @@ class CoreEvent(BaseModel):
 
 
 PrivacyMode = Literal["local_only"]
-ModelProfile = Literal["low_spec", "balanced", "power"]
+ModelProfile = Literal["low_spec", "balanced", "power", "ultra"]
 SyncMode = Literal["manual", "low_frequency"]
 OnboardingStep = Literal["welcome", "privacy", "local_ai", "vault", "complete"]
 VaultStatus = Literal["not_selected", "ready", "missing", "error"]
@@ -263,7 +263,7 @@ ModelTask = Literal[
     "coding",
 ]
 ChatRole = Literal["user", "assistant"]
-ChatRoute = Literal["conversation", "memory", "web_search", "web_fetch"]
+ChatRoute = Literal["conversation", "memory", "web_search", "web_fetch", "screen_query"]
 PrivacyDecision = Literal["allow", "block"]
 PrivacyDestinationCategory = Literal[
     "local",
@@ -311,6 +311,7 @@ ToolId = Literal[
     "commit_message",
     "code_task",
     "day_planner",
+    "os_automation",
 ]
 ToolRisk = Literal["low", "public_web", "local_file", "source_code", "dangerous"]
 VoiceEngineStatus = Literal["available", "disabled", "muted", "unsupported", "missing", "error"]
@@ -561,6 +562,11 @@ class DayPlannerRequest(ApiModel):
     notes: str = ""
 
 
+class OSAutomationRequest(ApiModel):
+    macro_name: str
+    user_approved: bool = False
+
+
 class VoiceSettings(ApiModel):
     enabled: bool = False
     muted: bool = True
@@ -633,6 +639,13 @@ class VoiceSpeakResponse(ApiModel):
     engine: str
     characters: int
     raw_audio_stored: bool = False
+    created_at: str
+
+
+class VoiceInterruptResponse(ApiModel):
+    interrupted: bool
+    engine: str
+    detail: str
     created_at: str
 
 

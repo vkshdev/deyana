@@ -73,7 +73,7 @@ fn unprotect(ciphertext: &[u8]) -> Result<Vec<u8>, String> {
     use windows_sys::Win32::Security::Cryptography::{
         CryptUnprotectData, CRYPT_INTEGER_BLOB,
     };
-    use windows_sys::Win32::System::Memory::LocalFree;
+    use windows_sys::Win32::Foundation::LocalFree;
 
     let mut input = CRYPT_INTEGER_BLOB {
         cbData: ciphertext.len() as u32,
@@ -100,7 +100,7 @@ fn unprotect(ciphertext: &[u8]) -> Result<Vec<u8>, String> {
 
     let plaintext = unsafe {
         let bytes = std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec();
-        LocalFree(output.pbData as isize);
+        LocalFree(output.pbData as *mut _);
         bytes
     };
     Ok(plaintext)

@@ -5,6 +5,7 @@ import os
 import platform
 import shutil
 import subprocess
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from .models import (
     VoiceOption,
     VoiceSettings,
     VoiceSettingsPatch,
+    VoiceInterruptResponse,
     VoiceSpeakRequest,
     VoiceSpeakResponse,
     VoiceStatusResponse,
@@ -44,6 +46,8 @@ class LocalVoiceService:
         self.data_dir = data_dir
         self.settings_path = data_dir / "voice-settings.json"
         self._voice_catalog: VoiceCatalog | None = None
+        self._tts_lock = threading.Lock()
+        self._active_tts_process: subprocess.Popen[str] | None = None
 
     def read_settings(self) -> VoiceSettings:
         defaults = self.default_settings()
@@ -138,12 +142,15 @@ class LocalVoiceService:
             raise ValueError("Speech text is required.")
 
         self.require_tts_ready(settings)
+        self.interrupt_speech()
         result = run_windows_tts(
             text=text,
             voice=settings.tts_voice,
             rate=settings.tts_rate,
             volume=settings.tts_volume,
+            process_callback=self._set_active_tts_process,
         )
+        self._clear_active_tts_process()
         if result.returncode != 0:
             raise VoiceUnavailableError(result.stderr.strip() or "Local text-to-speech failed.")
 
@@ -154,6 +161,45 @@ class LocalVoiceService:
             raw_audio_stored=False,
             created_at=utc_timestamp(),
         )
+
+    def interrupt_speech(self) -> VoiceInterruptResponse:
+        with self._tts_lock:
+            process = self._active_tts_process
+            self._active_tts_process = None
+        if process is None or process.poll() is not None:
+            return VoiceInterruptResponse(
+                interrupted=False,
+                engine="windows_speech",
+                detail="No active local speech was running.",
+                created_at=utc_timestamp(),
+            )
+        try:
+            process.terminate()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                process.kill()
+        except OSError as error:
+            return VoiceInterruptResponse(
+                interrupted=False,
+                engine="windows_speech",
+                detail=f"Unable to interrupt local speech: {error}",
+                created_at=utc_timestamp(),
+            )
+        return VoiceInterruptResponse(
+            interrupted=True,
+            engine="windows_speech",
+            detail="Local speech was interrupted.",
+            created_at=utc_timestamp(),
+        )
+
+    def _set_active_tts_process(self, process: subprocess.Popen[str]) -> None:
+        with self._tts_lock:
+            self._active_tts_process = process
+
+    def _clear_active_tts_process(self) -> None:
+        with self._tts_lock:
+            self._active_tts_process = None
 
     def provider_status(self) -> str:
         if platform.system().lower() != "windows":
@@ -331,7 +377,14 @@ try {
     )
 
 
-def run_windows_tts(*, text: str, voice: str | None, rate: int, volume: int) -> CommandResult:
+def run_windows_tts(
+    *,
+    text: str,
+    voice: str | None,
+    rate: int,
+    volume: int,
+    process_callback=None,
+) -> CommandResult:
     script = r"""
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Speech
@@ -356,18 +409,20 @@ try {
             "DEYANA_TTS_VOLUME": str(volume),
         },
         timeout=max(10, min(60, len(text) // 12 + 10)),
+        process_callback=process_callback,
     )
 
 
-def run_powershell(script: str, env_patch: dict[str, str], timeout: int) -> CommandResult:
+def run_powershell(script: str, env_patch: dict[str, str], timeout: int, process_callback=None) -> CommandResult:
     executable = powershell_path()
     if not executable:
         return CommandResult(returncode=1, stdout="", stderr="PowerShell is required for Windows local voice.")
 
     env = {**os.environ, **env_patch}
     creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    process: subprocess.Popen[str] | None = None
     try:
-        completed = subprocess.run(
+        process = subprocess.Popen(
             [
                 executable,
                 "-NoProfile",
@@ -377,20 +432,24 @@ def run_powershell(script: str, env_patch: dict[str, str], timeout: int) -> Comm
                 "-Command",
                 script,
             ],
-            capture_output=True,
             text=True,
-            timeout=timeout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             env=env,
             creationflags=creationflags,
-            check=False,
         )
+        if process_callback:
+            process_callback(process)
+        stdout, stderr = process.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
+        if process is not None:
+            process.kill()
         return CommandResult(returncode=1, stdout="", stderr="Local voice command timed out.")
 
     return CommandResult(
-        returncode=completed.returncode,
-        stdout=completed.stdout,
-        stderr=completed.stderr,
+        returncode=process.returncode if process is not None else 1,
+        stdout=stdout,
+        stderr=stderr,
     )
 
 

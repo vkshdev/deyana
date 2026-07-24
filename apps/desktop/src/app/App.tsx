@@ -1,6 +1,6 @@
 import { MotionConfig, motion } from "framer-motion";
 import { useEffect } from "react";
-import { FloatingOrb } from "../components/floating/FloatingOrb";
+import { CompactCommandBar } from "../components/floating/CompactCommandBar";
 import { FloatingPanel } from "../components/floating/FloatingPanel";
 import { OnboardingFlow } from "../components/onboarding/OnboardingFlow";
 import { assistantStore, useAssistantSnapshot } from "../stores/assistantStore";
@@ -30,7 +30,7 @@ export function App() {
         ) : isExpanded ? (
           <FloatingPanel snapshot={snapshot} />
         ) : (
-          <FloatingOrb snapshot={snapshot} />
+          <CompactCommandBar snapshot={snapshot} />
         )}
       </motion.main>
     </MotionConfig>

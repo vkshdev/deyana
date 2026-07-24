@@ -22,7 +22,6 @@ from .tools import ToolExecutionError, ToolService
 
 MAX_SOURCES = 4
 MAX_SOURCE_CHARS = 720
-MAX_CONTEXT_CHARS = 2600
 MAX_WEB_CONTEXT_CHARS = 7000
 MAX_WEB_SOURCES = 5
 URL_PATTERN = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
@@ -41,6 +40,10 @@ WEB_INTENT_PATTERN = re.compile(
 CONVERSATION_PATTERN = re.compile(
     r"^(?:hi|hello|hey|thanks|thank you|good (?:morning|afternoon|evening)|"
     r"who are you|what can you do)[.!?\s]*$",
+    re.IGNORECASE,
+)
+SCREEN_INTENT_PATTERN = re.compile(
+    r"\b(?:what is on my screen|what am i looking at|read my screen|describe my screen|what's on my screen|what am i seeing|screenshot)\b",
     re.IGNORECASE,
 )
 
@@ -70,6 +73,8 @@ class WebContext:
 
 class ChatIntentRouter:
     def route(self, content: str, *, use_memory: bool, allow_web: bool) -> ChatRoute:
+        if SCREEN_INTENT_PATTERN.search(content):
+            return "screen_query"
         if not allow_web:
             return "memory" if use_memory else "conversation"
         if extract_public_url(content):
@@ -122,6 +127,7 @@ class ContextBuilder:
         recent_history: list[str],
         route: ChatRoute,
         web_context: WebContext,
+        max_context_chars: int,
     ) -> BuiltContext:
         references = [
             MemorySourceReference(
@@ -137,7 +143,7 @@ class ContextBuilder:
             )
             for index, result in enumerate(retrieved, start=1)
         ]
-        memory_context = render_memory_context(references)
+        memory_context = render_memory_context(references, max_context_chars)
         public_web_context = web_context.content.strip()
         history_context = render_history_context(recent_history)
         compressed_characters = len(memory_context) + len(public_web_context)
@@ -204,6 +210,33 @@ class ChatAgent:
             use_memory=use_memory,
             allow_web=allow_web,
         )
+
+        if route == "screen_query":
+            from .vision import VisionService
+            profile = self.model_router.store.read_settings().model_profile
+            vision = VisionService(profile=profile)
+            vision_response = vision.query_screen(clean_content)
+            
+            user_msg = self.chat_store.append("user", clean_content, vision.model)
+            assistant_msg = self.chat_store.append("assistant", vision_response, vision.model)
+            return ChatMessageResponse(
+                user_message=user_msg,
+                assistant_message=assistant_msg,
+                model=vision.model,
+                latency_ms=0,
+                retrieval=ChatRetrievalSummary(
+                    query=clean_content,
+                    route=route,
+                    retrieved=0,
+                    compressed_characters=0,
+                    context_tokens_estimate=0,
+                ),
+            )
+
+        profile = self.model_router.store.read_settings().model_profile
+        max_context_chars = 64000 if profile == "ultra" else (16000 if profile == "power" else 2600)
+        num_predict_tokens = 2048 if profile == "ultra" else (1024 if profile == "power" else 640)
+
         retrieved = self.retriever.retrieve(clean_content) if route == "memory" else []
         web_context = self.retrieve_web_context(clean_content, route)
         recent_history = self.recent_history_lines()
@@ -213,11 +246,12 @@ class ChatAgent:
             recent_history,
             route,
             web_context,
+            max_context_chars=max_context_chars,
         )
         generation = self.model_router.generate_prompt(
             context.prompt,
             temperature=0.22,
-            num_predict=640,
+            num_predict=num_predict_tokens,
         )
         response_text = ensure_source_footer(
             generation.response,
@@ -365,7 +399,7 @@ def compress_memory(item: MemoryItem, terms: list[str], max_chars: int) -> str:
     return normalize_space(" ".join(selected))[:max_chars]
 
 
-def render_memory_context(references: list[MemorySourceReference]) -> str:
+def render_memory_context(references: list[MemorySourceReference], max_context_chars: int) -> str:
     lines: list[str] = []
     total = 0
     for reference in references:
@@ -376,7 +410,7 @@ def render_memory_context(references: list[MemorySourceReference]) -> str:
             f"Updated: {reference.updated_at}\n"
             f"Compressed snippet: {reference.snippet}\n"
         )
-        if total + len(block) > MAX_CONTEXT_CHARS:
+        if total + len(block) > max_context_chars:
             break
         lines.append(block)
         total += len(block)

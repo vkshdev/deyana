@@ -120,9 +120,12 @@ class ReleaseService:
         tauri_config = read_json(self.repo_root / "apps" / "desktop" / "src-tauri" / "tauri.conf.json")
         root_package = read_json(self.repo_root / "package.json")
         desktop_package = read_json(self.repo_root / "apps" / "desktop" / "package.json")
+        extension_manifest = read_json(self.repo_root / "apps" / "browser-extension" / "public" / "manifest.json")
         bundle = tauri_config.get("bundle") if isinstance(tauri_config.get("bundle"), dict) else {}
         scripts = root_package.get("scripts") if isinstance(root_package.get("scripts"), dict) else {}
         desktop_scripts = desktop_package.get("scripts") if isinstance(desktop_package.get("scripts"), dict) else {}
+        extension_permissions = extension_manifest.get("permissions", [])
+        optional_origins = extension_manifest.get("optional_host_permissions", [])
         public_release_docs = [
             self.repo_root / "README.md",
             self.repo_root / "ARCHITECTURE.md",
@@ -167,6 +170,51 @@ class ReleaseService:
                 (self.repo_root / "apps" / "browser-native-host" / "Cargo.toml").is_file()
                 and (self.repo_root / "apps" / "browser-native-host" / "scripts" / "register.ps1").is_file(),
                 "Native messaging host source and registration script are available.",
+            ),
+            check_item(
+                "browser_permissions",
+                "Browser extension permissions",
+                "<all_urls>" not in optional_origins
+                and "<all_urls>" not in extension_permissions
+                and "activeTab" in extension_permissions
+                and "nativeMessaging" in extension_permissions,
+                "Extension keeps temporary activeTab by default and avoids required all-URL access.",
+            ),
+            check_item(
+                "browser_optional_origins",
+                "Origin-specific optional permissions",
+                all(
+                    origin in optional_origins
+                    for origin in [
+                        "https://web.whatsapp.com/*",
+                        "https://mail.google.com/*",
+                        "https://www.linkedin.com/*",
+                        "https://app.slack.com/*",
+                        "https://github.com/*",
+                    ]
+                ),
+                "Supported browser adapters request independent optional origins.",
+            ),
+            check_item(
+                "browser_adapters",
+                "Browser adapter modules",
+                all(
+                    (self.repo_root / "apps" / "browser-extension" / "src" / "adapters" / name).is_file()
+                    for name in [
+                        "whatsappWebAdapter.ts",
+                        "gmailAdapter.ts",
+                        "slackAdapter.ts",
+                        "githubAdapter.ts",
+                        "linkedinAdapter.ts",
+                    ]
+                ),
+                "WhatsApp, Gmail, Slack, GitHub, and LinkedIn adapters are present.",
+            ),
+            check_item(
+                "browser_release_checklist",
+                "Browser release checklist",
+                (self.repo_root / "docs" / "BROWSER_AGENT_RELEASE_CHECKLIST.md").is_file(),
+                "Browser-agent release gates and troubleshooting checklist are documented.",
             ),
             check_item(
                 "privacy_firewall",
@@ -250,6 +298,8 @@ class ReleaseService:
         browser_sessions = self.browser_service.list_sessions()
         browser_permissions = self.browser_service.list_permissions()
         browser_audit = self.browser_service.list_audit(limit=200)
+        whatsapp_busy_policy = self.browser_service.get_whatsapp_busy_policy()
+        browser_personality = self.browser_service.get_personality_settings()
 
         sections = {
             "settings": settings.model_dump(mode="json", by_alias=True),
@@ -268,6 +318,8 @@ class ReleaseService:
                 "sessions": browser_sessions.model_dump(mode="json", by_alias=True),
                 "permissions": browser_permissions.model_dump(mode="json", by_alias=True),
                 "audit": browser_audit.model_dump(mode="json", by_alias=True),
+                "whatsappBusyModePolicy": whatsapp_busy_policy.model_dump(mode="json", by_alias=True),
+                "personality": browser_personality.model_dump(mode="json", by_alias=True),
             },
         }
         counts = {
@@ -279,6 +331,7 @@ class ReleaseService:
             "browserSessions": browser_sessions.total,
             "browserPermissions": browser_permissions.total,
             "browserAuditEvents": browser_audit.total,
+            "browserContactTonePreferences": len(browser_personality.contact_tones),
         }
         return ReleasePrivacyExportResponse(
             exported_at=utc_timestamp(),
@@ -320,6 +373,9 @@ class ReleaseService:
             PerformanceMetric(name="privacyAuditEvents", value=float(sqlite_count(self.privacy_firewall.database_path, "privacy_audit_events")), unit="count", detail="Privacy audit events."),
             PerformanceMetric(name="connectorSyncRuns", value=float(sqlite_count(self.connector_manager.database_path, "connector_sync_runs")), unit="count", detail="Connector sync run records."),
             PerformanceMetric(name="connectorItems", value=float(sqlite_count(self.connector_manager.database_path, "connector_items")), unit="count", detail="Normalized connector records."),
+            PerformanceMetric(name="browserAuditEvents", value=float(sqlite_count(self.browser_service.store.database_path, "browser_audit_events")), unit="count", detail="Browser-agent redacted audit events."),
+            PerformanceMetric(name="browserActionPlans", value=float(sqlite_count(self.browser_service.store.database_path, "browser_action_plans")), unit="count", detail="Browser action-plan records."),
+            PerformanceMetric(name="browserBusyEvents", value=float(sqlite_count(self.browser_service.store.database_path, "browser_whatsapp_busy_events")), unit="count", detail="WhatsApp busy-mode policy decisions."),
             PerformanceMetric(name="profileLatencyMs", value=round((time.perf_counter() - started) * 1000, 3), unit="ms", detail="Time to capture this lightweight profile."),
         ]
         return PerformanceProfileResponse(
