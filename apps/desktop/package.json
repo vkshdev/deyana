@@ -13,7 +13,7 @@
     "@deyana/config": "workspace:*",
     "@deyana/schemas": "workspace:*",
     "@tauri-apps/api": "^2.11.0",
-    "@tauri-apps/plugin-dialog": "^2.7.1",
+    "@tauri-apps/plugin-dialog": "^2.7.2",
     "framer-motion": "^12.40.0",
     "lucide-react": "^0.544.0",
     "react": "^19.0.0",
