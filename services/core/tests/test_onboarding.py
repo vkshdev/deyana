@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from fastapi.testclient import TestClient
-
 from deyana_core.app import create_app
 from deyana_core.runtime import RuntimeState
 from deyana_core.settings import CoreSettings
 from deyana_core.storage import VAULT_FOLDERS
+from fastapi.testclient import TestClient
 
 
 def make_client(tmp_path):

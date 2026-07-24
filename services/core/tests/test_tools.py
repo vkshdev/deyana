@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from fastapi.testclient import TestClient
-
 from deyana_core.app import create_app
 from deyana_core.runtime import RuntimeState
 from deyana_core.settings import CoreSettings
 from deyana_core.tools import parse_bing_rss_results
+from fastapi.testclient import TestClient
 
 
 def make_client(tmp_path) -> TestClient:
@@ -15,7 +14,9 @@ def make_client(tmp_path) -> TestClient:
 
 def complete_onboarding(client: TestClient, tmp_path) -> None:
     vault_path = tmp_path / "vault"
-    assert client.post("/vault/select", json={"path": str(vault_path)}).status_code == 200
+    assert (
+        client.post("/vault/select", json={"path": str(vault_path)}).status_code == 200
+    )
     assert (
         client.post(
             "/onboarding/complete",
@@ -59,11 +60,19 @@ def test_public_and_local_tools_are_permission_gated(tmp_path) -> None:
         web = client.post("/tools/web-search", json={"query": "public docs"})
         blocked_file = client.post(
             "/tools/read-file",
-            json={"path": str(file_path), "allowedRoot": str(tmp_path / "other"), "userApproved": True},
+            json={
+                "path": str(file_path),
+                "allowedRoot": str(tmp_path / "other"),
+                "userApproved": True,
+            },
         )
         file_result = client.post(
             "/tools/read-file",
-            json={"path": str(file_path), "allowedRoot": str(file_path.parent), "userApproved": True},
+            json={
+                "path": str(file_path),
+                "allowedRoot": str(file_path.parent),
+                "userApproved": True,
+            },
         )
 
     assert web.status_code == 200
@@ -75,7 +84,9 @@ def test_public_and_local_tools_are_permission_gated(tmp_path) -> None:
     assert "Private local content" in file_result.json()["content"]
 
 
-def test_code_task_is_proposal_only_and_day_planner_uses_local_actions(tmp_path) -> None:
+def test_code_task_is_proposal_only_and_day_planner_uses_local_actions(
+    tmp_path,
+) -> None:
     with make_client(tmp_path) as client:
         complete_onboarding(client, tmp_path)
         client.post(
@@ -85,10 +96,16 @@ def test_code_task_is_proposal_only_and_day_planner_uses_local_actions(tmp_path)
                 "contentMarkdown": "Next step: update launch checklist by 2026-06-30.",
             },
         )
-        code_without_approval = client.post("/tools/code/task", json={"goal": "Explain this module"})
+        code_without_approval = client.post(
+            "/tools/code/task", json={"goal": "Explain this module"}
+        )
         code = client.post(
             "/tools/code/task",
-            json={"goal": "Explain this module", "context": "def add(a, b): return a + b", "userApproved": True},
+            json={
+                "goal": "Explain this module",
+                "context": "def add(a, b): return a + b",
+                "userApproved": True,
+            },
         )
         plan = client.post("/tools/day-planner", json={"focus": ["Ship Phase 11"]})
 

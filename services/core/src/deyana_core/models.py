@@ -313,7 +313,9 @@ ToolId = Literal[
     "day_planner",
 ]
 ToolRisk = Literal["low", "public_web", "local_file", "source_code", "dangerous"]
-VoiceEngineStatus = Literal["available", "disabled", "muted", "unsupported", "missing", "error"]
+VoiceEngineStatus = Literal[
+    "available", "disabled", "muted", "unsupported", "missing", "error"
+]
 
 
 class LocalModelInfo(ApiModel):
@@ -512,7 +514,9 @@ class ToolResultItem(ApiModel):
 
 class ToolRunResponse(ApiModel):
     tool_id: ToolId
-    status: Literal["completed", "permission_required", "confirmation_required", "blocked", "failed"]
+    status: Literal[
+        "completed", "permission_required", "confirmation_required", "blocked", "failed"
+    ]
     title: str
     summary: str
     content: str
@@ -639,7 +643,9 @@ class VoiceSpeakResponse(ApiModel):
 ConnectorStatus = Literal["not_connected", "connected", "syncing", "paused", "error"]
 ConnectorSyncRunStatus = Literal["queued", "running", "completed", "failed", "skipped"]
 ReleaseCheckStatus = Literal["ready", "warning", "missing", "blocked"]
-ConnectorHealthStatus = Literal["healthy", "not_connected", "paused", "syncing", "error", "attention"]
+ConnectorHealthStatus = Literal[
+    "healthy", "not_connected", "paused", "syncing", "error", "attention"
+]
 
 
 class ConnectorItem(ApiModel):

@@ -17,8 +17,8 @@ from .voice import router as voice_router
 from .websocket import router as websocket_router
 
 __all__ = [
-    "browser_router",
     "browser_bridge_router",
+    "browser_router",
     "chat_router",
     "connectors_router",
     "health_router",

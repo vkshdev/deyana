@@ -68,7 +68,9 @@ async def day_planner(request: Request, payload: DayPlannerRequest) -> ToolRunRe
 async def run_tool(request: Request, method_name: str, payload) -> ToolRunResponse:
     runtime = request.app.state.runtime
     try:
-        result = await asyncio.to_thread(getattr(runtime.tool_service, method_name), payload)
+        result = await asyncio.to_thread(
+            getattr(runtime.tool_service, method_name), payload
+        )
     except PrivacyPolicyError as error:
         result = ToolRunResponse(
             tool_id=method_name,
@@ -84,7 +86,9 @@ async def run_tool(request: Request, method_name: str, payload) -> ToolRunRespon
     except ToolExecutionError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
-    event_type = "tool.permission.required" if result.permission_required else "tool.completed"
+    event_type = (
+        "tool.permission.required" if result.permission_required else "tool.completed"
+    )
     await publish_tool_event(runtime, event_type, result)
     if result.privacy:
         await publish_privacy_event(runtime, result.privacy)
@@ -92,11 +96,15 @@ async def run_tool(request: Request, method_name: str, payload) -> ToolRunRespon
 
 
 async def publish_tool_event(runtime, event_type: str, result: ToolRunResponse) -> None:
-    await runtime.event_bus.publish(runtime.event(event_type, result.model_dump(mode="json", by_alias=True)))
+    await runtime.event_bus.publish(
+        runtime.event(event_type, result.model_dump(mode="json", by_alias=True))
+    )
 
 
 async def publish_privacy_event(runtime, result) -> None:
-    event_type = "privacy.request.blocked" if not result.allowed else "privacy.request.allowed"
+    event_type = (
+        "privacy.request.blocked" if not result.allowed else "privacy.request.allowed"
+    )
     await runtime.event_bus.publish(
         runtime.event(
             event_type,

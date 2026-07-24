@@ -17,11 +17,11 @@ from .models import (
     ConnectorItem,
     ConnectorListResponse,
     ConnectorOAuthStartResponse,
+    ConnectorStatus,
     ConnectorSyncResponse,
     ConnectorSyncRun,
     ConnectorSyncRunsResponse,
     ConnectorSyncRunStatus,
-    ConnectorStatus,
     MemoryCreateRequest,
     PrivacyCheckRequest,
     PrivacyCheckResponse,
@@ -29,7 +29,6 @@ from .models import (
 from .privacy import PrivacyFirewall, PrivacyPolicyError
 from .runtime_time import utc_timestamp
 from .token_vault import TokenVault
-
 
 DEFAULT_SYNC_INTERVAL_MINUTES = 360
 
@@ -88,7 +87,7 @@ class ConnectorDefinition:
 @dataclass(frozen=True)
 class ConnectorSyncContext:
     token: dict[str, object]
-    http_client: "ConnectorHttpClient"
+    http_client: ConnectorHttpClient
 
 
 class BaseConnector:
@@ -126,7 +125,9 @@ class BaseConnector:
 
     def api_base_url(self) -> str:
         if self.definition.api_base_url_env:
-            return os.getenv(self.definition.api_base_url_env, self.definition.api_base_url).rstrip("/")
+            return os.getenv(
+                self.definition.api_base_url_env, self.definition.api_base_url
+            ).rstrip("/")
         return self.definition.api_base_url.rstrip("/")
 
     def api_probe_url(self) -> str:
@@ -153,7 +154,7 @@ class BaseConnector:
         code: str,
         redirect_uri: str,
         issued_at: str,
-        http_client: "ConnectorHttpClient",
+        http_client: ConnectorHttpClient,
         user_approved: bool,
     ) -> dict[str, object]:
         client_id = self.oauth_client_id()
@@ -188,11 +189,15 @@ class BaseConnector:
             "tokenType": "Bearer",
             "scopes": self.scopes,
             "issuedAt": issued_at,
-            "expiresAt": (datetime.now(UTC) + timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
+            "expiresAt": (datetime.now(UTC) + timedelta(hours=1))
+            .isoformat()
+            .replace("+00:00", "Z"),
             "mock": True,
         }
 
-    def token_payload_from_response(self, response: dict[str, object], *, issued_at: str) -> dict[str, object]:
+    def token_payload_from_response(
+        self, response: dict[str, object], *, issued_at: str
+    ) -> dict[str, object]:
         access_token = response.get("access_token")
         if not isinstance(access_token, str) or not access_token:
             raise ConnectorStateError("OAuth provider did not return an access token.")
@@ -200,7 +205,11 @@ class BaseConnector:
         expires_in = response.get("expires_in")
         expires_at = None
         if isinstance(expires_in, int):
-            expires_at = (datetime.now(UTC) + timedelta(seconds=expires_in)).isoformat().replace("+00:00", "Z")
+            expires_at = (
+                (datetime.now(UTC) + timedelta(seconds=expires_in))
+                .isoformat()
+                .replace("+00:00", "Z")
+            )
 
         return {
             "schemaVersion": 1,
@@ -263,7 +272,11 @@ class GmailConnector(BaseConnector):
                 payload_preview="Gmail message metadata detail",
             )
             records.append(gmail_record(detail, message_id))
-        return ConnectorSyncResult(items_seen=len(records), records=tuple(records), detail="Gmail metadata synced.")
+        return ConnectorSyncResult(
+            items_seen=len(records),
+            records=tuple(records),
+            detail="Gmail metadata synced.",
+        )
 
 
 class CalendarConnector(BaseConnector):
@@ -274,7 +287,9 @@ class CalendarConnector(BaseConnector):
         if context.token.get("mock"):
             return super().sync(context)
         self.validate_token(context.token)
-        time_min = (datetime.now(UTC) - timedelta(days=1)).isoformat().replace("+00:00", "Z")
+        time_min = (
+            (datetime.now(UTC) - timedelta(days=1)).isoformat().replace("+00:00", "Z")
+        )
         query = urlencode(
             {
                 "maxResults": 20,
@@ -311,7 +326,7 @@ class GitHubConnector(BaseConnector):
         code: str,
         redirect_uri: str,
         issued_at: str,
-        http_client: "ConnectorHttpClient",
+        http_client: ConnectorHttpClient,
         user_approved: bool,
     ) -> dict[str, object]:
         client_id = self.oauth_client_id()
@@ -367,15 +382,28 @@ class DriveConnector(BaseConnector):
         if context.token.get("mock"):
             return super().sync(context)
         self.validate_token(context.token)
-        query = urlencode({"pageSize": 20, "fields": "files(id,name,mimeType,modifiedTime,webViewLink)"})
+        query = urlencode(
+            {
+                "pageSize": 20,
+                "fields": "files(id,name,mimeType,modifiedTime,webViewLink)",
+            }
+        )
         response = context.http_client.get_json(
             f"{self.api_base_url()}/files?{query}",
             token=context.token,
             payload_preview="Google Drive file metadata list",
         )
         files = response.get("files") if isinstance(response, dict) else []
-        records = [drive_record(item) for item in files if isinstance(item, dict) and isinstance(item.get("id"), str)]
-        return ConnectorSyncResult(items_seen=len(records), records=tuple(records), detail="Google Drive files synced.")
+        records = [
+            drive_record(item)
+            for item in files
+            if isinstance(item, dict) and isinstance(item.get("id"), str)
+        ]
+        return ConnectorSyncResult(
+            items_seen=len(records),
+            records=tuple(records),
+            detail="Google Drive files synced.",
+        )
 
 
 class SlackConnector(BaseConnector):
@@ -391,7 +419,11 @@ class SlackConnector(BaseConnector):
             token=context.token,
             payload_preview="Slack channel metadata list",
         )
-        channels = channels_response.get("channels") if isinstance(channels_response, dict) else []
+        channels = (
+            channels_response.get("channels")
+            if isinstance(channels_response, dict)
+            else []
+        )
         records: list[ConnectorRecord] = []
         for channel in channels if isinstance(channels, list) else []:
             channel_id = channel.get("id") if isinstance(channel, dict) else None
@@ -405,11 +437,17 @@ class SlackConnector(BaseConnector):
             )
             messages = response.get("messages") if isinstance(response, dict) else []
             records.extend(
-                slack_record(item, channel_name if isinstance(channel_name, str) else channel_id)
+                slack_record(
+                    item, channel_name if isinstance(channel_name, str) else channel_id
+                )
                 for item in messages
                 if isinstance(item, dict) and item.get("ts")
             )
-        return ConnectorSyncResult(items_seen=len(records), records=tuple(records), detail="Slack messages synced.")
+        return ConnectorSyncResult(
+            items_seen=len(records),
+            records=tuple(records),
+            detail="Slack messages synced.",
+        )
 
 
 class NotionConnector(BaseConnector):
@@ -428,8 +466,16 @@ class NotionConnector(BaseConnector):
             headers={"notion-version": "2022-06-28"},
         )
         results = response.get("results") if isinstance(response, dict) else []
-        records = [notion_record(item) for item in results if isinstance(item, dict) and isinstance(item.get("id"), str)]
-        return ConnectorSyncResult(items_seen=len(records), records=tuple(records), detail="Notion pages synced.")
+        records = [
+            notion_record(item)
+            for item in results
+            if isinstance(item, dict) and isinstance(item.get("id"), str)
+        ]
+        return ConnectorSyncResult(
+            items_seen=len(records),
+            records=tuple(records),
+            detail="Notion pages synced.",
+        )
 
 
 class JiraConnector(BaseConnector):
@@ -440,15 +486,25 @@ class JiraConnector(BaseConnector):
         if context.token.get("mock"):
             return super().sync(context)
         self.validate_token(context.token)
-        query = urlencode({"jql": "updated >= -14d ORDER BY updated DESC", "maxResults": 20})
+        query = urlencode(
+            {"jql": "updated >= -14d ORDER BY updated DESC", "maxResults": 20}
+        )
         response = context.http_client.get_json(
             f"{self.api_base_url()}/search?{query}",
             token=context.token,
             payload_preview="Jira issue metadata search",
         )
         issues = response.get("issues") if isinstance(response, dict) else []
-        records = [jira_record(item, self.api_base_url()) for item in issues if isinstance(item, dict) and item.get("id")]
-        return ConnectorSyncResult(items_seen=len(records), records=tuple(records), detail="Jira issues synced.")
+        records = [
+            jira_record(item, self.api_base_url())
+            for item in issues
+            if isinstance(item, dict) and item.get("id")
+        ]
+        return ConnectorSyncResult(
+            items_seen=len(records),
+            records=tuple(records),
+            detail="Jira issues synced.",
+        )
 
 
 class LinearConnector(BaseConnector):
@@ -470,9 +526,21 @@ class LinearConnector(BaseConnector):
             token=context.token,
             payload_preview="Linear issue metadata query",
         )
-        nodes = response.get("data", {}).get("issues", {}).get("nodes", []) if isinstance(response, dict) else []
-        records = [linear_record(item) for item in nodes if isinstance(item, dict) and isinstance(item.get("id"), str)]
-        return ConnectorSyncResult(items_seen=len(records), records=tuple(records), detail="Linear issues synced.")
+        nodes = (
+            response.get("data", {}).get("issues", {}).get("nodes", [])
+            if isinstance(response, dict)
+            else []
+        )
+        records = [
+            linear_record(item)
+            for item in nodes
+            if isinstance(item, dict) and isinstance(item.get("id"), str)
+        ]
+        return ConnectorSyncResult(
+            items_seen=len(records),
+            records=tuple(records),
+            detail="Linear issues synced.",
+        )
 
 
 CONNECTOR_DEFINITIONS = [
@@ -714,9 +782,13 @@ class ConnectorHttpClient:
             with urlopen(request, timeout=20) as response:
                 raw_body = response.read().decode("utf-8")
         except HTTPError as error:
-            raise ConnectorHttpError(f"Connector request failed with HTTP {error.code}.") from error
+            raise ConnectorHttpError(
+                f"Connector request failed with HTTP {error.code}."
+            ) from error
         except URLError as error:
-            raise ConnectorHttpError(f"Connector request failed: {error.reason}") from error
+            raise ConnectorHttpError(
+                f"Connector request failed: {error.reason}"
+            ) from error
 
         if not raw_body:
             return {}
@@ -793,7 +865,9 @@ def calendar_record(payload: dict[str, Any]) -> ConnectorRecord:
         title=f"Calendar: {title}",
         summary=summary,
         content_markdown="\n".join(content_lines),
-        source_uri=payload.get("htmlLink") if isinstance(payload.get("htmlLink"), str) else None,
+        source_uri=payload.get("htmlLink")
+        if isinstance(payload.get("htmlLink"), str)
+        else None,
         item_timestamp=start,
         tags=("connector", "calendar", "event"),
         normalized={
@@ -811,7 +885,11 @@ def github_record(payload: dict[str, Any]) -> ConnectorRecord:
     full_name = str(payload.get("full_name") or payload.get("name") or external_id)
     description = str(payload.get("description") or "").strip()
     language = str(payload.get("language") or "").strip()
-    updated_at = payload.get("updated_at") if isinstance(payload.get("updated_at"), str) else None
+    updated_at = (
+        payload.get("updated_at")
+        if isinstance(payload.get("updated_at"), str)
+        else None
+    )
     visibility = "private" if payload.get("private") else "public"
     summary = compact_sentence(
         f"GitHub repository {full_name} is {visibility}"
@@ -836,7 +914,9 @@ def github_record(payload: dict[str, Any]) -> ConnectorRecord:
         title=f"GitHub: {full_name}",
         summary=summary,
         content_markdown=content,
-        source_uri=payload.get("html_url") if isinstance(payload.get("html_url"), str) else None,
+        source_uri=payload.get("html_url")
+        if isinstance(payload.get("html_url"), str)
+        else None,
         item_timestamp=updated_at,
         tags=("connector", "github", "repository"),
         normalized={
@@ -853,8 +933,14 @@ def drive_record(payload: dict[str, Any]) -> ConnectorRecord:
     file_id = str(payload["id"])
     name = str(payload.get("name") or f"Drive file {file_id}")
     mime_type = str(payload.get("mimeType") or "unknown")
-    modified = payload.get("modifiedTime") if isinstance(payload.get("modifiedTime"), str) else None
-    summary = compact_sentence(f"Google Drive file {name} has type {mime_type} and was modified {modified or 'at an unknown time'}.")
+    modified = (
+        payload.get("modifiedTime")
+        if isinstance(payload.get("modifiedTime"), str)
+        else None
+    )
+    summary = compact_sentence(
+        f"Google Drive file {name} has type {mime_type} and was modified {modified or 'at an unknown time'}."
+    )
     return ConnectorRecord(
         external_id=file_id,
         title=f"Drive: {name}",
@@ -868,10 +954,17 @@ def drive_record(payload: dict[str, Any]) -> ConnectorRecord:
                 f"- Modified: {modified or 'Unknown'}",
             ]
         ),
-        source_uri=payload.get("webViewLink") if isinstance(payload.get("webViewLink"), str) else None,
+        source_uri=payload.get("webViewLink")
+        if isinstance(payload.get("webViewLink"), str)
+        else None,
         item_timestamp=modified,
         tags=("connector", "drive", "file"),
-        normalized={"fileId": file_id, "name": name, "mimeType": mime_type, "modifiedTime": modified},
+        normalized={
+            "fileId": file_id,
+            "name": name,
+            "mimeType": mime_type,
+            "modifiedTime": modified,
+        },
     )
 
 
@@ -879,38 +972,70 @@ def slack_record(payload: dict[str, Any], channel: str) -> ConnectorRecord:
     timestamp = str(payload.get("ts"))
     text = str(payload.get("text") or "").strip()
     user = str(payload.get("user") or payload.get("username") or "unknown")
-    summary = compact_sentence(f"Slack message in {channel} from {user}: {text or 'No message text returned.'}")
+    summary = compact_sentence(
+        f"Slack message in {channel} from {user}: {text or 'No message text returned.'}"
+    )
     return ConnectorRecord(
         external_id=f"{channel}:{timestamp}",
         title=f"Slack: {channel} - {compact_sentence(text or timestamp, 80)}",
         summary=summary,
         content_markdown="\n".join(
-            ["## Slack message summary", "", f"- Channel: {channel}", f"- User: {user}", f"- Timestamp: {timestamp}", "", text]
+            [
+                "## Slack message summary",
+                "",
+                f"- Channel: {channel}",
+                f"- User: {user}",
+                f"- Timestamp: {timestamp}",
+                "",
+                text,
+            ]
         ),
         source_uri=None,
         item_timestamp=timestamp,
         tags=("connector", "slack", "message"),
-        normalized={"timestamp": timestamp, "channel": channel, "user": user, "text": text},
+        normalized={
+            "timestamp": timestamp,
+            "channel": channel,
+            "user": user,
+            "text": text,
+        },
     )
 
 
 def notion_record(payload: dict[str, Any]) -> ConnectorRecord:
     page_id = str(payload["id"])
     title = notion_title(payload) or f"Notion page {page_id}"
-    updated = payload.get("last_edited_time") if isinstance(payload.get("last_edited_time"), str) else None
+    updated = (
+        payload.get("last_edited_time")
+        if isinstance(payload.get("last_edited_time"), str)
+        else None
+    )
     object_type = str(payload.get("object") or "page")
-    summary = compact_sentence(f"Notion {object_type} {title} was last edited {updated or 'at an unknown time'}.")
+    summary = compact_sentence(
+        f"Notion {object_type} {title} was last edited {updated or 'at an unknown time'}."
+    )
     return ConnectorRecord(
         external_id=page_id,
         title=f"Notion: {title}",
         summary=summary,
         content_markdown="\n".join(
-            ["## Notion summary", "", f"- Title: {title}", f"- Type: {object_type}", f"- Last edited: {updated or 'Unknown'}"]
+            [
+                "## Notion summary",
+                "",
+                f"- Title: {title}",
+                f"- Type: {object_type}",
+                f"- Last edited: {updated or 'Unknown'}",
+            ]
         ),
         source_uri=payload.get("url") if isinstance(payload.get("url"), str) else None,
         item_timestamp=updated,
         tags=("connector", "notion", object_type),
-        normalized={"pageId": page_id, "title": title, "lastEditedTime": updated, "object": object_type},
+        normalized={
+            "pageId": page_id,
+            "title": title,
+            "lastEditedTime": updated,
+            "object": object_type,
+        },
     )
 
 
@@ -926,11 +1051,27 @@ def jira_record(payload: dict[str, Any], api_base_url: str) -> ConnectorRecord:
         external_id=issue_id,
         title=f"Jira: {key} {title}",
         summary=summary,
-        content_markdown="\n".join(["## Jira issue summary", "", f"- Issue: {key}", f"- Status: {status}", f"- Updated: {updated or 'Unknown'}", "", title]),
+        content_markdown="\n".join(
+            [
+                "## Jira issue summary",
+                "",
+                f"- Issue: {key}",
+                f"- Status: {status}",
+                f"- Updated: {updated or 'Unknown'}",
+                "",
+                title,
+            ]
+        ),
         source_uri=jira_issue_url(api_base_url, key),
         item_timestamp=updated,
         tags=("connector", "jira", "issue", status.lower().replace(" ", "-")),
-        normalized={"issueId": issue_id, "key": key, "summary": title, "status": status, "updated": updated},
+        normalized={
+            "issueId": issue_id,
+            "key": key,
+            "summary": title,
+            "status": status,
+            "updated": updated,
+        },
     )
 
 
@@ -940,17 +1081,39 @@ def linear_record(payload: dict[str, Any]) -> ConnectorRecord:
     title = str(payload.get("title") or f"Linear issue {identifier}")
     status = nested_name(payload.get("state")) or "Unknown"
     assignee = nested_name(payload.get("assignee")) or "Unassigned"
-    updated = payload.get("updatedAt") if isinstance(payload.get("updatedAt"), str) else None
-    summary = compact_sentence(f"Linear issue {identifier} is {status}, assigned to {assignee}: {title}")
+    updated = (
+        payload.get("updatedAt") if isinstance(payload.get("updatedAt"), str) else None
+    )
+    summary = compact_sentence(
+        f"Linear issue {identifier} is {status}, assigned to {assignee}: {title}"
+    )
     return ConnectorRecord(
         external_id=issue_id,
         title=f"Linear: {identifier} {title}",
         summary=summary,
-        content_markdown="\n".join(["## Linear issue summary", "", f"- Issue: {identifier}", f"- Status: {status}", f"- Assignee: {assignee}", f"- Updated: {updated or 'Unknown'}", "", title]),
+        content_markdown="\n".join(
+            [
+                "## Linear issue summary",
+                "",
+                f"- Issue: {identifier}",
+                f"- Status: {status}",
+                f"- Assignee: {assignee}",
+                f"- Updated: {updated or 'Unknown'}",
+                "",
+                title,
+            ]
+        ),
         source_uri=payload.get("url") if isinstance(payload.get("url"), str) else None,
         item_timestamp=updated,
         tags=("connector", "linear", "issue", status.lower().replace(" ", "-")),
-        normalized={"issueId": issue_id, "identifier": identifier, "title": title, "status": status, "assignee": assignee, "updatedAt": updated},
+        normalized={
+            "issueId": issue_id,
+            "identifier": identifier,
+            "title": title,
+            "status": status,
+            "assignee": assignee,
+            "updatedAt": updated,
+        },
     )
 
 
@@ -1019,13 +1182,25 @@ def compact_sentence(value: str, limit: int = 220) -> str:
 
 
 class ConnectorScheduler:
-    def next_sync_at(self, connector: ConnectorItem, *, from_time: datetime | None = None) -> str | None:
-        if not connector.enabled or not connector.token_stored or connector.status in {"not_connected", "error"}:
+    def next_sync_at(
+        self, connector: ConnectorItem, *, from_time: datetime | None = None
+    ) -> str | None:
+        if (
+            not connector.enabled
+            or not connector.token_stored
+            or connector.status in {"not_connected", "error"}
+        ):
             return None
         base = from_time or datetime.now(UTC)
-        return (base + timedelta(minutes=connector.sync_interval_minutes)).isoformat().replace("+00:00", "Z")
+        return (
+            (base + timedelta(minutes=connector.sync_interval_minutes))
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
 
-    def is_due(self, connector: ConnectorItem, *, at_time: datetime | None = None) -> bool:
+    def is_due(
+        self, connector: ConnectorItem, *, at_time: datetime | None = None
+    ) -> bool:
         if not connector.next_sync_at:
             return False
         due_at = datetime.fromisoformat(connector.next_sync_at.replace("Z", "+00:00"))
@@ -1033,7 +1208,12 @@ class ConnectorScheduler:
 
 
 class ConnectorManager:
-    def __init__(self, data_dir: Path, privacy_firewall: PrivacyFirewall, memory_store: MemoryStore) -> None:
+    def __init__(
+        self,
+        data_dir: Path,
+        privacy_firewall: PrivacyFirewall,
+        memory_store: MemoryStore,
+    ) -> None:
         self.data_dir = data_dir
         self.database_path = data_dir / "connectors.sqlite3"
         self.privacy_firewall = privacy_firewall
@@ -1120,34 +1300,33 @@ class ConnectorManager:
 
     def register(self, connector: BaseConnector) -> ConnectorItem:
         timestamp = utc_timestamp()
-        with self.connect() as connection:
-            with connection:
-                existing = connection.execute(
-                    "SELECT created_at FROM connectors WHERE id = ?",
-                    (connector.id,),
-                ).fetchone()
-                connection.execute(
-                    """
-                    INSERT INTO connectors (
-                      id, name, status, enabled, scopes_json, sync_interval_minutes,
-                      last_sync_at, next_sync_at, token_stored, token_updated_at,
-                      last_error, created_at, updated_at
-                    )
-                    VALUES (?, ?, 'not_connected', 0, ?, ?, NULL, NULL, 0, NULL, NULL, ?, ?)
-                    ON CONFLICT(id) DO UPDATE SET
-                      name = excluded.name,
-                      scopes_json = excluded.scopes_json,
-                      updated_at = excluded.updated_at
-                    """,
-                    (
-                        connector.id,
-                        connector.name,
-                        json.dumps(connector.scopes),
-                        connector.definition.default_sync_interval_minutes,
-                        existing["created_at"] if existing else timestamp,
-                        timestamp,
-                    ),
+        with self.connect() as connection, connection:
+            existing = connection.execute(
+                "SELECT created_at FROM connectors WHERE id = ?",
+                (connector.id,),
+            ).fetchone()
+            connection.execute(
+                """
+                INSERT INTO connectors (
+                  id, name, status, enabled, scopes_json, sync_interval_minutes,
+                  last_sync_at, next_sync_at, token_stored, token_updated_at,
+                  last_error, created_at, updated_at
                 )
+                VALUES (?, ?, 'not_connected', 0, ?, ?, NULL, NULL, 0, NULL, NULL, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                  name = excluded.name,
+                  scopes_json = excluded.scopes_json,
+                  updated_at = excluded.updated_at
+                """,
+                (
+                    connector.id,
+                    connector.name,
+                    json.dumps(connector.scopes),
+                    connector.definition.default_sync_interval_minutes,
+                    existing["created_at"] if existing else timestamp,
+                    timestamp,
+                ),
+            )
         return self.get_connector(connector.id)
 
     def list_connectors(self) -> ConnectorListResponse:
@@ -1155,11 +1334,19 @@ class ConnectorManager:
         with self.connect() as connection:
             rows = connection.execute("SELECT * FROM connectors").fetchall()
         by_id = {row["id"]: self._row_to_connector(row) for row in rows}
-        return ConnectorListResponse(items=[by_id[connector_id] for connector_id in self.registry if connector_id in by_id])
+        return ConnectorListResponse(
+            items=[
+                by_id[connector_id]
+                for connector_id in self.registry
+                if connector_id in by_id
+            ]
+        )
 
     def get_connector(self, connector_id: str) -> ConnectorItem:
         with self.connect() as connection:
-            row = connection.execute("SELECT * FROM connectors WHERE id = ?", (connector_id,)).fetchone()
+            row = connection.execute(
+                "SELECT * FROM connectors WHERE id = ?", (connector_id,)
+            ).fetchone()
         if not row:
             raise ConnectorNotFoundError(f"Unknown connector: {connector_id}")
         return self._row_to_connector(row)
@@ -1173,7 +1360,11 @@ class ConnectorManager:
     ) -> ConnectorItem:
         connector = self.get_connector(connector_id)
         next_enabled = connector.enabled if enabled is None else enabled
-        next_interval = connector.sync_interval_minutes if sync_interval_minutes is None else sync_interval_minutes
+        next_interval = (
+            connector.sync_interval_minutes
+            if sync_interval_minutes is None
+            else sync_interval_minutes
+        )
         status: ConnectorStatus = connector.status
         if connector.token_stored:
             status = "connected" if next_enabled else "paused"
@@ -1187,46 +1378,52 @@ class ConnectorManager:
             )
         )
         timestamp = utc_timestamp()
-        with self.connect() as connection:
-            with connection:
-                connection.execute(
-                    """
+        with self.connect() as connection, connection:
+            connection.execute(
+                """
                     UPDATE connectors
                     SET enabled = ?, sync_interval_minutes = ?, status = ?,
                         next_sync_at = ?, last_error = NULL, updated_at = ?
                     WHERE id = ?
                     """,
-                    (
-                        1 if next_enabled else 0,
-                        next_interval,
-                        status,
-                        next_sync_at,
-                        timestamp,
-                        connector_id,
-                    ),
-                )
+                (
+                    1 if next_enabled else 0,
+                    next_interval,
+                    status,
+                    next_sync_at,
+                    timestamp,
+                    connector_id,
+                ),
+            )
         return self.get_connector(connector_id)
 
-    def start_oauth(self, connector_id: str, redirect_uri: str | None = None) -> ConnectorOAuthStartResponse:
+    def start_oauth(
+        self, connector_id: str, redirect_uri: str | None = None
+    ) -> ConnectorOAuthStartResponse:
         connector = self._registered_connector(connector_id)
         redirect = redirect_uri or "deyana://oauth/callback"
         state = f"oauth_{uuid.uuid4().hex}"
         created_at = utc_timestamp()
-        expires_at = (datetime.now(UTC) + timedelta(minutes=10)).isoformat().replace("+00:00", "Z")
-        with self.connect() as connection:
-            with connection:
-                connection.execute(
-                    """
+        expires_at = (
+            (datetime.now(UTC) + timedelta(minutes=10))
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
+        with self.connect() as connection, connection:
+            connection.execute(
+                """
                     INSERT INTO connector_oauth_states (
                       state, connector_id, redirect_uri, created_at, expires_at, used_at
                     )
                     VALUES (?, ?, ?, ?, ?, NULL)
                     """,
-                    (state, connector_id, redirect, created_at, expires_at),
-                )
+                (state, connector_id, redirect, created_at, expires_at),
+            )
         return ConnectorOAuthStartResponse(
             connector=self.get_connector(connector_id),
-            authorization_url=connector.build_authorization_url(state=state, redirect_uri=redirect),
+            authorization_url=connector.build_authorization_url(
+                state=state, redirect_uri=redirect
+            ),
             state=state,
             scopes=connector.scopes,
             redirect_uri=redirect,
@@ -1274,88 +1471,103 @@ class ConnectorManager:
         token_updated_at = self.token_vault.store(connector_id, token_payload)
         current = self.get_connector(connector_id)
         next_sync_at = self.scheduler.next_sync_at(
-            current.model_copy(update={"enabled": True, "token_stored": True, "status": "connected"})
+            current.model_copy(
+                update={"enabled": True, "token_stored": True, "status": "connected"}
+            )
         )
-        with self.connect() as connection:
-            with connection:
-                connection.execute(
-                    """
+        with self.connect() as connection, connection:
+            connection.execute(
+                """
                     UPDATE connector_oauth_states
                     SET used_at = ?
                     WHERE state = ?
                     """,
-                    (issued_at, oauth_state["state"]),
-                )
-                connection.execute(
-                    """
+                (issued_at, oauth_state["state"]),
+            )
+            connection.execute(
+                """
                     UPDATE connectors
                     SET status = 'connected', enabled = 1, token_stored = 1,
                         token_updated_at = ?, next_sync_at = ?, last_error = NULL,
                         updated_at = ?
                     WHERE id = ?
                     """,
-                    (token_updated_at, next_sync_at, issued_at, connector_id),
-                )
+                (token_updated_at, next_sync_at, issued_at, connector_id),
+            )
         return self.get_connector(connector_id), privacy_result
 
     def disconnect(self, connector_id: str) -> tuple[ConnectorItem, bool]:
         self._registered_connector(connector_id)
         token_deleted = self.token_vault.delete(connector_id)
         timestamp = utc_timestamp()
-        with self.connect() as connection:
-            with connection:
-                connection.execute(
-                    """
-                    UPDATE connectors
-                    SET status = 'not_connected', enabled = 0, token_stored = 0,
-                        token_updated_at = NULL, last_sync_at = NULL, next_sync_at = NULL,
-                        last_error = NULL, updated_at = ?
-                    WHERE id = ?
-                    """,
-                    (timestamp, connector_id),
-                )
+        with self.connect() as connection, connection:
+            connection.execute(
+                """
+                UPDATE connectors
+                SET status = 'not_connected', enabled = 0, token_stored = 0,
+                    token_updated_at = NULL, last_sync_at = NULL, next_sync_at = NULL,
+                    last_error = NULL, updated_at = ?
+                WHERE id = ?
+                """,
+                (timestamp, connector_id),
+            )
         return self.get_connector(connector_id), token_deleted
 
-    def start_sync(self, connector_id: str, *, reason: str = "manual") -> ConnectorSyncResponse:
+    def start_sync(
+        self, connector_id: str, *, reason: str = "manual"
+    ) -> ConnectorSyncResponse:
         connector = self.get_connector(connector_id)
         if not connector.token_stored:
             run = self._create_sync_run(connector_id, reason=reason, status="failed")
-            run = self._complete_sync_run(run.id, status="failed", error_message="Connector is not connected.")
+            run = self._complete_sync_run(
+                run.id, status="failed", error_message="Connector is not connected."
+            )
             self._set_connector_error(connector_id, "Connector is not connected.")
             raise ConnectorStateError("Connector is not connected.")
         if not connector.enabled:
             run = self._create_sync_run(connector_id, reason=reason, status="skipped")
-            run = self._complete_sync_run(run.id, status="skipped", error_message="Connector sync is paused.")
+            run = self._complete_sync_run(
+                run.id, status="skipped", error_message="Connector sync is paused."
+            )
             return ConnectorSyncResponse(connector=connector, run=run)
 
         run = self._create_sync_run(connector_id, reason=reason, status="running")
         timestamp = utc_timestamp()
-        with self.connect() as connection:
-            with connection:
-                connection.execute(
-                    """
+        with self.connect() as connection, connection:
+            connection.execute(
+                """
                     UPDATE connectors
                     SET status = 'syncing', last_error = NULL, updated_at = ?
                     WHERE id = ?
                     """,
-                    (timestamp, connector_id),
-                )
-        return ConnectorSyncResponse(connector=self.get_connector(connector_id), run=run)
+                (timestamp, connector_id),
+            )
+        return ConnectorSyncResponse(
+            connector=self.get_connector(connector_id), run=run
+        )
 
-    def finish_sync(self, connector_id: str, run_id: str) -> tuple[ConnectorSyncResponse, PrivacyCheckResponse | None]:
+    def finish_sync(
+        self, connector_id: str, run_id: str
+    ) -> tuple[ConnectorSyncResponse, PrivacyCheckResponse | None]:
         connector = self._registered_connector(connector_id)
         token = self.token_vault.read(connector_id)
         if not token:
-            run = self._complete_sync_run(run_id, status="failed", error_message="Connector token is missing.")
+            run = self._complete_sync_run(
+                run_id, status="failed", error_message="Connector token is missing."
+            )
             self._set_connector_error(connector_id, "Connector token is missing.")
             raise ConnectorStateError("Connector token is missing.")
         if not token.get("mock"):
             try:
                 self.memory_store.require_vault_root()
             except ValueError as error:
-                run = self._complete_sync_run(run_id, status="failed", error_message=str(error))
+                run = self._complete_sync_run(
+                    run_id, status="failed", error_message=str(error)
+                )
                 self._set_connector_error(connector_id, str(error))
-                return ConnectorSyncResponse(connector=self.get_connector(connector_id), run=run), None
+                return ConnectorSyncResponse(
+                    connector=self.get_connector(connector_id), run=run
+                ), None
 
         privacy_result = self.privacy_firewall.check(
             PrivacyCheckRequest(
@@ -1369,18 +1581,26 @@ class ConnectorManager:
             )
         )
         if not privacy_result.allowed:
-            run = self._complete_sync_run(run_id, status="failed", error_message=privacy_result.reason)
+            run = self._complete_sync_run(
+                run_id, status="failed", error_message=privacy_result.reason
+            )
             self._set_connector_error(connector_id, privacy_result.reason)
             raise PrivacyPolicyError(privacy_result)
 
         try:
             http_client = ConnectorHttpClient(self.privacy_firewall, connector_id)
-            result = connector.sync(ConnectorSyncContext(token=token, http_client=http_client))
+            result = connector.sync(
+                ConnectorSyncContext(token=token, http_client=http_client)
+            )
             items_written = self._write_connector_records(connector_id, result.records)
         except (ConnectorError, ValueError) as error:
-            run = self._complete_sync_run(run_id, status="failed", error_message=str(error))
+            run = self._complete_sync_run(
+                run_id, status="failed", error_message=str(error)
+            )
             self._set_connector_error(connector_id, str(error))
-            return ConnectorSyncResponse(connector=self.get_connector(connector_id), run=run), privacy_result
+            return ConnectorSyncResponse(
+                connector=self.get_connector(connector_id), run=run
+            ), privacy_result
 
         run = self._complete_sync_run(
             run_id,
@@ -1390,19 +1610,22 @@ class ConnectorManager:
         )
         current = self.get_connector(connector_id)
         completed_at = run.completed_at or utc_timestamp()
-        next_sync_at = self.scheduler.next_sync_at(current.model_copy(update={"status": "connected"}))
-        with self.connect() as connection:
-            with connection:
-                connection.execute(
-                    """
+        next_sync_at = self.scheduler.next_sync_at(
+            current.model_copy(update={"status": "connected"})
+        )
+        with self.connect() as connection, connection:
+            connection.execute(
+                """
                     UPDATE connectors
                     SET status = 'connected', last_sync_at = ?, next_sync_at = ?,
                         last_error = NULL, updated_at = ?
                     WHERE id = ?
                     """,
-                    (completed_at, next_sync_at, completed_at, connector_id),
-                )
-        return ConnectorSyncResponse(connector=self.get_connector(connector_id), run=run), privacy_result
+                (completed_at, next_sync_at, completed_at, connector_id),
+            )
+        return ConnectorSyncResponse(
+            connector=self.get_connector(connector_id), run=run
+        ), privacy_result
 
     def list_sync_runs(self, *, limit: int = 20) -> ConnectorSyncRunsResponse:
         self.initialize()
@@ -1416,11 +1639,19 @@ class ConnectorManager:
                 """,
                 (limit,),
             ).fetchall()
-            total = connection.execute("SELECT COUNT(*) AS count FROM connector_sync_runs").fetchone()["count"]
-        return ConnectorSyncRunsResponse(items=[self._row_to_run(row) for row in rows], total=total)
+            total = connection.execute(
+                "SELECT COUNT(*) AS count FROM connector_sync_runs"
+            ).fetchone()["count"]
+        return ConnectorSyncRunsResponse(
+            items=[self._row_to_run(row) for row in rows], total=total
+        )
 
     def due_connectors(self) -> list[ConnectorItem]:
-        return [connector for connector in self.list_connectors().items if self.scheduler.is_due(connector)]
+        return [
+            connector
+            for connector in self.list_connectors().items
+            if self.scheduler.is_due(connector)
+        ]
 
     def _registered_connector(self, connector_id: str) -> BaseConnector:
         connector = self.registry.get(connector_id)
@@ -1455,19 +1686,20 @@ class ConnectorManager:
     ) -> ConnectorSyncRun:
         run_id = f"sync_{uuid.uuid4().hex}"
         started_at = utc_timestamp()
-        completed_at = started_at if status in {"completed", "failed", "skipped"} else None
-        with self.connect() as connection:
-            with connection:
-                connection.execute(
-                    """
+        completed_at = (
+            started_at if status in {"completed", "failed", "skipped"} else None
+        )
+        with self.connect() as connection, connection:
+            connection.execute(
+                """
                     INSERT INTO connector_sync_runs (
                       id, connector_id, status, reason, started_at, completed_at,
                       items_seen, items_written, error_message
                     )
                     VALUES (?, ?, ?, ?, ?, ?, 0, 0, NULL)
                     """,
-                    (run_id, connector_id, status, reason, started_at, completed_at),
-                )
+                (run_id, connector_id, status, reason, started_at, completed_at),
+            )
         return self._get_sync_run(run_id)
 
     def _complete_sync_run(
@@ -1480,40 +1712,49 @@ class ConnectorManager:
         error_message: str | None = None,
     ) -> ConnectorSyncRun:
         completed_at = utc_timestamp()
-        with self.connect() as connection:
-            with connection:
-                connection.execute(
-                    """
-                    UPDATE connector_sync_runs
-                    SET status = ?, completed_at = ?, items_seen = ?,
-                        items_written = ?, error_message = ?
-                    WHERE id = ?
-                    """,
-                    (status, completed_at, items_seen, items_written, error_message, run_id),
-                )
+        with self.connect() as connection, connection:
+            connection.execute(
+                """
+                UPDATE connector_sync_runs
+                SET status = ?, completed_at = ?, items_seen = ?,
+                    items_written = ?, error_message = ?
+                WHERE id = ?
+                """,
+                (
+                    status,
+                    completed_at,
+                    items_seen,
+                    items_written,
+                    error_message,
+                    run_id,
+                ),
+            )
         return self._get_sync_run(run_id)
 
     def _get_sync_run(self, run_id: str) -> ConnectorSyncRun:
         with self.connect() as connection:
-            row = connection.execute("SELECT * FROM connector_sync_runs WHERE id = ?", (run_id,)).fetchone()
+            row = connection.execute(
+                "SELECT * FROM connector_sync_runs WHERE id = ?", (run_id,)
+            ).fetchone()
         if not row:
             raise ConnectorStateError("Sync run is missing.")
         return self._row_to_run(row)
 
     def _set_connector_error(self, connector_id: str, message: str) -> None:
         timestamp = utc_timestamp()
-        with self.connect() as connection:
-            with connection:
-                connection.execute(
-                    """
+        with self.connect() as connection, connection:
+            connection.execute(
+                """
                     UPDATE connectors
                     SET status = 'error', last_error = ?, updated_at = ?
                     WHERE id = ?
                     """,
-                    (message, timestamp, connector_id),
-                )
+                (message, timestamp, connector_id),
+            )
 
-    def _write_connector_records(self, connector_id: str, records: tuple[ConnectorRecord, ...]) -> int:
+    def _write_connector_records(
+        self, connector_id: str, records: tuple[ConnectorRecord, ...]
+    ) -> int:
         written = 0
         for record in records:
             if self._connector_record_exists(connector_id, record.external_id):
@@ -1547,31 +1788,32 @@ class ConnectorManager:
             ).fetchone()
         return row is not None
 
-    def _insert_connector_record(self, connector_id: str, record: ConnectorRecord, memory_id: str) -> None:
+    def _insert_connector_record(
+        self, connector_id: str, record: ConnectorRecord, memory_id: str
+    ) -> None:
         timestamp = utc_timestamp()
-        with self.connect() as connection:
-            with connection:
-                connection.execute(
-                    """
+        with self.connect() as connection, connection:
+            connection.execute(
+                """
                     INSERT INTO connector_items (
                       id, connector_id, external_id, title, summary, source_uri,
                       item_timestamp, normalized_json, memory_id, fetched_at
                     )
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (
-                        f"connector_item_{uuid.uuid4().hex}",
-                        connector_id,
-                        record.external_id,
-                        record.title,
-                        record.summary,
-                        record.source_uri,
-                        record.item_timestamp,
-                        json.dumps(record.normalized, sort_keys=True),
-                        memory_id,
-                        timestamp,
-                    ),
-                )
+                (
+                    f"connector_item_{uuid.uuid4().hex}",
+                    connector_id,
+                    record.external_id,
+                    record.title,
+                    record.summary,
+                    record.source_uri,
+                    record.item_timestamp,
+                    json.dumps(record.normalized, sort_keys=True),
+                    memory_id,
+                    timestamp,
+                ),
+            )
 
     def _row_to_connector(self, row: sqlite3.Row) -> ConnectorItem:
         connector = self.registry.get(row["id"])

@@ -60,30 +60,35 @@ class ChatStore:
             web_source_references=web_references,
             created_at=utc_timestamp(),
         )
-        with self.connect() as connection:
-            with connection:
-                connection.execute(
-                    """
-                    INSERT INTO chat_messages (
-                      id, role, content, model, source_context_json,
-                      web_source_context_json, created_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        message.id,
-                        message.role,
-                        message.content,
-                        message.model,
-                        json.dumps(
-                            [reference.model_dump(mode="json", by_alias=True) for reference in references]
-                        ),
-                        json.dumps(
-                            [reference.model_dump(mode="json", by_alias=True) for reference in web_references]
-                        ),
-                        message.created_at,
-                    ),
+        with self.connect() as connection, connection:
+            connection.execute(
+                """
+                INSERT INTO chat_messages (
+                  id, role, content, model, source_context_json,
+                  web_source_context_json, created_at
                 )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    message.id,
+                    message.role,
+                    message.content,
+                    message.model,
+                    json.dumps(
+                        [
+                            reference.model_dump(mode="json", by_alias=True)
+                            for reference in references
+                        ]
+                    ),
+                    json.dumps(
+                        [
+                            reference.model_dump(mode="json", by_alias=True)
+                            for reference in web_references
+                        ]
+                    ),
+                    message.created_at,
+                ),
+            )
         return message
 
     def history(self, limit: int = 50) -> list[ChatMessageItem]:
@@ -102,9 +107,8 @@ class ChatStore:
 
     def clear(self) -> int:
         self.initialize()
-        with self.connect() as connection:
-            with connection:
-                cursor = connection.execute("DELETE FROM chat_messages")
+        with self.connect() as connection, connection:
+            cursor = connection.execute("DELETE FROM chat_messages")
         return cursor.rowcount
 
     @staticmethod

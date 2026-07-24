@@ -33,7 +33,9 @@ async def check_privacy_request(
 ) -> PrivacyCheckResponse:
     runtime = request.app.state.runtime
     result = runtime.privacy_firewall.check(payload)
-    event_type = "privacy.request.blocked" if not result.allowed else "privacy.request.allowed"
+    event_type = (
+        "privacy.request.blocked" if not result.allowed else "privacy.request.allowed"
+    )
     await runtime.event_bus.publish(
         runtime.event(
             event_type,

@@ -56,7 +56,9 @@ class RuntimeState:
             self.tool_service,
         )
         self.voice_service = LocalVoiceService(settings.data_dir)
-        self.connector_manager = ConnectorManager(settings.data_dir, self.privacy_firewall, self.memory_store)
+        self.connector_manager = ConnectorManager(
+            settings.data_dir, self.privacy_firewall, self.memory_store
+        )
         self.connector_manager.initialize()
         self.release_service = ReleaseService(
             settings=settings,
@@ -127,7 +129,9 @@ class RuntimeState:
                 ),
                 DependencyStatus(
                     name="local_voice",
-                    status="available" if self.voice_service.provider_status() == "available" else "deferred",
+                    status="available"
+                    if self.voice_service.provider_status() == "available"
+                    else "deferred",
                     detail="Local OS speech engine for push-to-talk and TTS; disabled by default in settings.",
                 ),
                 DependencyStatus(

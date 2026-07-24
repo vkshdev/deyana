@@ -30,7 +30,9 @@ async def browser_bridge(websocket: WebSocket) -> None:
             await service.handle_bridge_message(message, websocket=websocket)
     except WebSocketDisconnect as error:
         if error.code not in {1000, 1001}:
-            disconnect_reason = f"Browser extension connection closed with code {error.code}."
+            disconnect_reason = (
+                f"Browser extension connection closed with code {error.code}."
+            )
             disconnect_is_error = True
     except ValidationError:
         disconnect_reason = "Browser extension sent an invalid bridge message."

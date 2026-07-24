@@ -44,9 +44,13 @@ class BrowserBridgeCredentialStore:
             return None
 
         try:
-            payload = decrypt_token_payload(envelope["encryptedCredential"], self._local_key)
+            payload = decrypt_token_payload(
+                envelope["encryptedCredential"], self._local_key
+            )
         except (KeyError, TypeError, ValueError, TokenVaultError) as error:
-            raise BrowserCredentialError("Browser bridge credential is invalid.") from error
+            raise BrowserCredentialError(
+                "Browser bridge credential is invalid."
+            ) from error
         token = payload.get("token")
         if not isinstance(token, str) or len(token) < 32:
             raise BrowserCredentialError("Browser bridge credential token is invalid.")

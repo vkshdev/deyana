@@ -6,9 +6,9 @@ from fastapi import APIRouter, HTTPException, Query, Request
 
 from ..models import (
     ConnectorHealthResponse,
+    CrashRecoveryResponse,
     DeleteLocalDataRequest,
     DeleteLocalDataResponse,
-    CrashRecoveryResponse,
     PerformanceProfileResponse,
     ReleaseLogListResponse,
     ReleaseLogReadResponse,
@@ -42,7 +42,9 @@ async def release_logs(request: Request) -> ReleaseLogListResponse:
 async def read_release_log(
     request: Request,
     path: str = Query(..., min_length=1),
-    max_characters: int = Query(default=20000, ge=1000, le=100000, alias="maxCharacters"),
+    max_characters: int = Query(
+        default=20000, ge=1000, le=100000, alias="maxCharacters"
+    ),
 ) -> ReleaseLogReadResponse:
     try:
         return await asyncio.to_thread(
@@ -58,11 +60,15 @@ async def read_release_log(
 
 @router.get("/privacy-export", response_model=ReleasePrivacyExportResponse)
 async def release_privacy_export(request: Request) -> ReleasePrivacyExportResponse:
-    return await asyncio.to_thread(request.app.state.runtime.release_service.privacy_export)
+    return await asyncio.to_thread(
+        request.app.state.runtime.release_service.privacy_export
+    )
 
 
 @router.post("/delete-local-data", response_model=DeleteLocalDataResponse)
-async def delete_local_data(request: Request, payload: DeleteLocalDataRequest) -> DeleteLocalDataResponse:
+async def delete_local_data(
+    request: Request, payload: DeleteLocalDataRequest
+) -> DeleteLocalDataResponse:
     runtime = request.app.state.runtime
     try:
         response = await asyncio.to_thread(
@@ -85,13 +91,17 @@ async def delete_local_data(request: Request, payload: DeleteLocalDataRequest) -
 
 @router.get("/connector-health", response_model=ConnectorHealthResponse)
 async def connector_health(request: Request) -> ConnectorHealthResponse:
-    return await asyncio.to_thread(request.app.state.runtime.release_service.connector_health)
+    return await asyncio.to_thread(
+        request.app.state.runtime.release_service.connector_health
+    )
 
 
 @router.get("/performance", response_model=PerformanceProfileResponse)
 async def performance_profile(request: Request) -> PerformanceProfileResponse:
     runtime = request.app.state.runtime
-    return await asyncio.to_thread(runtime.release_service.performance_profile, runtime.uptime_seconds)
+    return await asyncio.to_thread(
+        runtime.release_service.performance_profile, runtime.uptime_seconds
+    )
 
 
 @router.get("/crash-recovery", response_model=CrashRecoveryResponse)

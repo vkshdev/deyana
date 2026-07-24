@@ -74,18 +74,19 @@ class BrowserStore:
         connection.row_factory = sqlite3.Row
         return connection
 
-    def upsert_context(self, context: BrowserPageContext, expires_at: str) -> BrowserSession:
+    def upsert_context(
+        self, context: BrowserPageContext, expires_at: str
+    ) -> BrowserSession:
         self.initialize()
         self._contexts[context.page_session_id] = context
         timestamp = utc_timestamp()
-        with self.connect() as connection:
-            with connection:
-                row = connection.execute(
-                    "SELECT created_at FROM browser_sessions WHERE id = ?",
-                    (context.page_session_id,),
-                ).fetchone()
-                connection.execute(
-                    """
+        with self.connect() as connection, connection:
+            row = connection.execute(
+                "SELECT created_at FROM browser_sessions WHERE id = ?",
+                (context.page_session_id,),
+            ).fetchone()
+            connection.execute(
+                """
                     INSERT INTO browser_sessions (
                       id, origin, url, title, adapter_id, mode,
                       character_count, truncated, created_at, updated_at, expires_at
@@ -101,20 +102,20 @@ class BrowserStore:
                       updated_at = excluded.updated_at,
                       expires_at = excluded.expires_at
                     """,
-                    (
-                        context.page_session_id,
-                        context.origin,
-                        context.url,
-                        context.title,
-                        context.adapter_id,
-                        context.mode,
-                        context.character_count,
-                        1 if context.truncated else 0,
-                        row["created_at"] if row else timestamp,
-                        timestamp,
-                        expires_at,
-                    ),
-                )
+                (
+                    context.page_session_id,
+                    context.origin,
+                    context.url,
+                    context.title,
+                    context.adapter_id,
+                    context.mode,
+                    context.character_count,
+                    1 if context.truncated else 0,
+                    row["created_at"] if row else timestamp,
+                    timestamp,
+                    expires_at,
+                ),
+            )
         return self.get_session(context.page_session_id)
 
     def get_context(self, page_session_id: str) -> BrowserPageContext | None:
@@ -137,49 +138,50 @@ class BrowserStore:
             rows = connection.execute(
                 "SELECT * FROM browser_sessions ORDER BY updated_at DESC"
             ).fetchall()
-        return BrowserSessionListResponse(items=[row_to_session(row) for row in rows], total=len(rows))
+        return BrowserSessionListResponse(
+            items=[row_to_session(row) for row in rows], total=len(rows)
+        )
 
     def delete_session(self, page_session_id: str) -> bool:
         self._contexts.pop(page_session_id, None)
         self.initialize()
-        with self.connect() as connection:
-            with connection:
-                cursor = connection.execute(
-                    "DELETE FROM browser_sessions WHERE id = ?",
-                    (page_session_id,),
-                )
+        with self.connect() as connection, connection:
+            cursor = connection.execute(
+                "DELETE FROM browser_sessions WHERE id = ?",
+                (page_session_id,),
+            )
         return cursor.rowcount > 0
 
     def clear_sessions(self) -> int:
         self._contexts.clear()
         self.initialize()
-        with self.connect() as connection:
-            with connection:
-                cursor = connection.execute("DELETE FROM browser_sessions")
+        with self.connect() as connection, connection:
+            cursor = connection.execute("DELETE FROM browser_sessions")
         return cursor.rowcount
 
-    def replace_permissions(self, permissions: list[BrowserPermission]) -> BrowserPermissionListResponse:
+    def replace_permissions(
+        self, permissions: list[BrowserPermission]
+    ) -> BrowserPermissionListResponse:
         self.initialize()
-        with self.connect() as connection:
-            with connection:
-                connection.execute("DELETE FROM browser_permissions")
-                connection.executemany(
-                    """
+        with self.connect() as connection, connection:
+            connection.execute("DELETE FROM browser_permissions")
+            connection.executemany(
+                """
                     INSERT INTO browser_permissions (
                       origin, kind, granted, granted_at, detail
                     ) VALUES (?, ?, ?, ?, ?)
                     """,
-                    [
-                        (
-                            item.origin,
-                            item.kind,
-                            1 if item.granted else 0,
-                            item.granted_at,
-                            item.detail,
-                        )
-                        for item in permissions
-                    ],
-                )
+                [
+                    (
+                        item.origin,
+                        item.kind,
+                        1 if item.granted else 0,
+                        item.granted_at,
+                        item.detail,
+                    )
+                    for item in permissions
+                ],
+            )
         return self.list_permissions()
 
     def list_permissions(self) -> BrowserPermissionListResponse:
@@ -220,33 +222,34 @@ class BrowserStore:
             origin=origin,
             page_session_id=page_session_id,
             detail=detail,
-            payload_sha256=hashlib.sha256(payload.encode("utf-8")).hexdigest() if payload else None,
+            payload_sha256=hashlib.sha256(payload.encode("utf-8")).hexdigest()
+            if payload
+            else None,
             payload_character_count=len(payload or ""),
             created_at=utc_timestamp(),
         )
-        with self.connect() as connection:
-            with connection:
-                connection.execute(
-                    """
+        with self.connect() as connection, connection:
+            connection.execute(
+                """
                     INSERT INTO browser_audit_events (
                       id, event_type, decision, operation, origin,
                       page_session_id, detail, payload_sha256,
                       payload_character_count, created_at
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (
-                        event.id,
-                        event.event_type,
-                        event.decision,
-                        event.operation,
-                        event.origin,
-                        event.page_session_id,
-                        event.detail,
-                        event.payload_sha256,
-                        event.payload_character_count,
-                        event.created_at,
-                    ),
-                )
+                (
+                    event.id,
+                    event.event_type,
+                    event.decision,
+                    event.operation,
+                    event.origin,
+                    event.page_session_id,
+                    event.detail,
+                    event.payload_sha256,
+                    event.payload_character_count,
+                    event.created_at,
+                ),
+            )
         return event
 
     def list_audit(self, limit: int = 50) -> BrowserAuditListResponse:

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from fastapi.testclient import TestClient
-
 from deyana_core.app import create_app
 from deyana_core.runtime import RuntimeState
 from deyana_core.settings import CoreSettings
+from fastapi.testclient import TestClient
 
 
 def make_client(tmp_path) -> TestClient:
@@ -133,7 +132,9 @@ def test_public_web_fetch_and_approved_oauth_fetch_are_allowed(tmp_path) -> None
     assert {event["decision"] for event in audit.json()["events"]} == {"allow"}
 
 
-def test_sensitive_payload_to_public_web_and_unapproved_oauth_are_blocked(tmp_path) -> None:
+def test_sensitive_payload_to_public_web_and_unapproved_oauth_are_blocked(
+    tmp_path,
+) -> None:
     with make_client(tmp_path) as client:
         sensitive_public = client.post(
             "/privacy/check",
@@ -184,8 +185,7 @@ def test_status_flags_and_audit_clear(tmp_path) -> None:
     assert core_status.json()["featureFlags"]["privacyFirewall"] is True
     assert core_status.json()["featureFlags"]["privacyAudit"] is True
     assert any(
-        dependency["name"] == "privacy_firewall"
-        and dependency["status"] == "available"
+        dependency["name"] == "privacy_firewall" and dependency["status"] == "available"
         for dependency in core_status.json()["dependencies"]
     )
     assert delete_response.json()["deleted"] == 1

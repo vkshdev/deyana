@@ -40,7 +40,9 @@ async def disconnect_browser_session(
     request: Request,
     page_session_id: str,
 ) -> BrowserDisconnectResponse:
-    return await request.app.state.runtime.browser_service.disconnect_session(page_session_id)
+    return await request.app.state.runtime.browser_service.disconnect_session(
+        page_session_id
+    )
 
 
 @router.get("/permissions", response_model=BrowserPermissionListResponse)

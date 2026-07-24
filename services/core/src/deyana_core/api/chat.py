@@ -24,7 +24,9 @@ async def chat_history(
     request: Request,
     limit: int = Query(default=50, ge=1, le=200),
 ) -> ChatHistoryResponse:
-    return ChatHistoryResponse(messages=request.app.state.runtime.chat_store.history(limit=limit))
+    return ChatHistoryResponse(
+        messages=request.app.state.runtime.chat_store.history(limit=limit)
+    )
 
 
 @router.post("/message", response_model=ChatMessageResponse)

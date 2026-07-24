@@ -3,11 +3,10 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from fastapi.testclient import TestClient
-
 from deyana_core.app import create_app
 from deyana_core.runtime import RuntimeState
 from deyana_core.settings import CoreSettings
+from fastapi.testclient import TestClient
 
 
 def make_client(tmp_path):
@@ -107,7 +106,9 @@ def test_memory_pipeline_extracts_actions_decisions_entities_and_tags(tmp_path) 
             },
         )
         decisions = client.get("/memory/insights", params={"type": "decision"})
-        invalid_insight_type = client.get("/memory/insights", params={"type": "reminder"})
+        invalid_insight_type = client.get(
+            "/memory/insights", params={"type": "reminder"}
+        )
 
     assert response.status_code == 200
     body = response.json()
@@ -183,7 +184,9 @@ def test_manual_markdown_edit_can_be_reindexed_and_searched(tmp_path) -> None:
     assert search.json()["total"] == 1
     assert fetched.json()["title"] == "Edited decision"
     assert "Updated hand-edited memory body." in fetched.json()["contentMarkdown"]
-    assert "Old stale action should be removed." not in fetched.json()["contentMarkdown"]
+    assert (
+        "Old stale action should be removed." not in fetched.json()["contentMarkdown"]
+    )
     assert "Keep this user-authored section." in fetched.json()["contentMarkdown"]
 
 

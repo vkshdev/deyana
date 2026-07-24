@@ -8,8 +8,8 @@ from ..models import (
     MemoryDeleteResponse,
     MemoryEntityListResponse,
     MemoryExportResponse,
-    MemoryInsightType,
     MemoryInsightListResponse,
+    MemoryInsightType,
     MemoryItem,
     MemoryListResponse,
     MemoryReindexResponse,
@@ -73,7 +73,7 @@ async def list_memory_entities(
 async def list_memory_insights(
     request: Request,
     query: str | None = Query(default=None),
-    insight_type: MemoryInsightType | None = Query(default=None, alias="type"),
+    insight_type: MemoryInsightType | None = Query(default=None, alias="type"),  # noqa: B008
     status: str | None = Query(default=None),
     source_type: str | None = Query(default=None, alias="sourceType"),
     source_id: str | None = Query(default=None, alias="sourceId"),
@@ -118,7 +118,10 @@ async def generate_daily_summary(
     await runtime.event_bus.publish(
         runtime.event(
             "memory.summary.generated",
-            {"item": item.model_dump(mode="json", by_alias=True), "summaryType": "daily"},
+            {
+                "item": item.model_dump(mode="json", by_alias=True),
+                "summaryType": "daily",
+            },
         )
     )
     return item
@@ -138,7 +141,10 @@ async def generate_project_summary(
     await runtime.event_bus.publish(
         runtime.event(
             "memory.summary.generated",
-            {"item": item.model_dump(mode="json", by_alias=True), "summaryType": "project"},
+            {
+                "item": item.model_dump(mode="json", by_alias=True),
+                "summaryType": "project",
+            },
         )
     )
     return item

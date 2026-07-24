@@ -1,4 +1,8 @@
-from .service import BrowserBridgeAuthenticationError, BrowserBridgeUnavailable, BrowserService
+from .service import (
+    BrowserBridgeAuthenticationError,
+    BrowserBridgeUnavailable,
+    BrowserService,
+)
 
 __all__ = [
     "BrowserBridgeAuthenticationError",
