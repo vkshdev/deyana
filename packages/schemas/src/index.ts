@@ -193,7 +193,7 @@ export type CoreWebSocketEvent = AppReadyEvent | BackendHeartbeatEvent | Backend
 export const PRIVACY_MODES = ["local_only"] as const;
 export type PrivacyMode = (typeof PRIVACY_MODES)[number];
 
-export const MODEL_PROFILES = ["low_spec", "balanced", "power"] as const;
+export const MODEL_PROFILES = ["low_spec", "balanced", "power", "ultra"] as const;
 export type ModelProfile = (typeof MODEL_PROFILES)[number];
 
 export const SYNC_MODES = ["manual", "low_frequency"] as const;
