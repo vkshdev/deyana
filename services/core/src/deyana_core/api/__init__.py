@@ -12,6 +12,7 @@ from .release import router as release_router
 from .settings import router as settings_router
 from .status import router as status_router
 from .tools import router as tools_router
+from .triage import router as triage_router
 from .vault import router as vault_router
 from .voice import router as voice_router
 from .websocket import router as websocket_router
@@ -31,6 +32,7 @@ __all__ = [
     "settings_router",
     "status_router",
     "tools_router",
+    "triage_router",
     "vault_router",
     "voice_router",
     "websocket_router",
