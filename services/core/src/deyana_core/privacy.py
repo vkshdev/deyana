@@ -372,7 +372,7 @@ def classify_destination(
         return "cloud_stt"
     if is_host_match(host, TTS_HOSTS):
         return "cloud_tts"
-    if "openai.azure.com" in host:
+    if is_host_match(host, {"openai.azure.com"}):
         return "cloud_ai"
     if is_host_match(host, OAUTH_CONNECTOR_HOSTS):
         return "oauth_connector"
