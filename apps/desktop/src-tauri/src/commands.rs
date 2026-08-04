@@ -1,7 +1,7 @@
 use std::{path::PathBuf, process::Command};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::{process, settings, window};
+use crate::{db, models, process, settings, window};
 
 #[tauri::command]
 pub fn get_desktop_settings(app: AppHandle) -> settings::DesktopSettings {
@@ -142,3 +142,116 @@ pub fn open_vault_folder(path: String) -> Result<(), String> {
     command.spawn().map_err(|error| error.to_string())?;
     Ok(())
 }
+
+#[tauri::command]
+pub fn get_memory_items(
+    pool: State<'_, db::DbPool>,
+    limit: Option<usize>,
+) -> Result<Vec<db::MemoryItem>, String> {
+    let conn = pool.get().map_err(|e| e.to_string())?;
+    db::get_memory_items(&conn, limit).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn save_memory_item(
+    pool: State<'_, db::DbPool>,
+    content: String,
+    source: String,
+    tags: Option<Vec<String>>,
+) -> Result<db::MemoryItem, String> {
+    let conn = pool.get().map_err(|e| e.to_string())?;
+    db::save_memory_item(&conn, &content, &source, tags).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_triage_inbox(
+    pool: State<'_, db::DbPool>,
+) -> Result<Vec<db::TriageMessageResponse>, String> {
+    let conn = pool.get().map_err(|e| e.to_string())?;
+    db::get_triage_inbox(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn resolve_triage_item(
+    pool: State<'_, db::DbPool>,
+    id: String,
+    resolution: String,
+) -> Result<(), String> {
+    let conn = pool.get().map_err(|e| e.to_string())?;
+    db::resolve_triage_item(&conn, &id, &resolution).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn save_chat_message(
+    pool: State<'_, db::DbPool>,
+    session_id: String,
+    role: String,
+    content: String,
+) -> Result<db::ChatMessageItem, String> {
+    let conn = pool.get().map_err(|e| e.to_string())?;
+    let sess = if session_id.is_empty() {
+        None
+    } else {
+        Some(session_id.as_str())
+    };
+    db::save_chat_message(&conn, sess, &role, &content, None).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_chat_history(
+    pool: State<'_, db::DbPool>,
+    session_id: Option<String>,
+    limit: Option<usize>,
+) -> Result<Vec<db::ChatMessageItem>, String> {
+    let conn = pool.get().map_err(|e| e.to_string())?;
+    let sess = session_id.as_deref().filter(|s| !s.is_empty());
+    db::get_chat_history(&conn, sess, limit).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn generate_response(
+    app: AppHandle,
+    state: State<'_, models::LlmState>,
+    prompt: String,
+    model: Option<String>,
+    system: Option<String>,
+    temperature: Option<f32>,
+    stream: Option<bool>,
+) -> Result<String, String> {
+    let req = models::LlmGenerateRequest {
+        prompt,
+        model,
+        system,
+        temperature,
+        stream,
+    };
+
+    let should_stream = stream.unwrap_or(true);
+    let app_handle = app.clone();
+
+    state
+        .router
+        .generate_response(&req, move |chunk| {
+            if should_stream {
+                let _ = app_handle.emit("llm:stream_chunk", &chunk);
+            }
+        })
+        .await
+}
+
+#[tauri::command]
+pub async fn list_models(
+    state: State<'_, models::LlmState>,
+) -> Result<Vec<models::LocalModelInfo>, String> {
+    state.router.list_models().await
+}
+
+#[tauri::command]
+pub async fn get_model_status(
+    state: State<'_, models::LlmState>,
+) -> Result<models::LocalModelStatusResponse, String> {
+    state.router.get_model_status().await
+}
+
+
+
