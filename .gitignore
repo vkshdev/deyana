@@ -135,4 +135,20 @@ temp/
 *.tmp
 *.bak
 *.orig
+
+# Tauri runtime app data
+apps/desktop/src-tauri/app-data/
+apps/desktop/src-tauri/*.db
+
+# SQLite WAL/SHM runtime files
+*.db-wal
+*.db-shm
+
+# Rust profiling / flamegraph artifacts
+perf.data
+perf.data.old
+flamegraph.svg
+*.profraw
+*.profdata
+
 docs/
