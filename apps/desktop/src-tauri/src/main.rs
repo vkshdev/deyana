@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod agent;
 mod browser;
 mod commands;
 mod connectors;
@@ -32,7 +33,7 @@ fn main() {
             let db_path = app_dir.join("deyana_core.sqlite");
             let db_pool = db::init_db(&db_path)
                 .map_err(|e| Box::<dyn std::error::Error>::from(e.to_string()))?;
-            let daemon_manager = daemon::DaemonManager::spawn(db_pool.clone());
+            let daemon_manager = daemon::DaemonManager::spawn(handle.clone(), db_pool.clone());
             let privacy_state = privacy::PrivacyState::new(db_pool.clone());
             let connector_state = connectors::ConnectorState::new(db_pool.clone());
             let tool_state = tools::ToolState::new(db_pool.clone());
@@ -135,7 +136,9 @@ fn main() {
             browser::commands::save_browser_contact_tone,
             browser::commands::infer_browser_mood,
             browser::commands::preview_browser_personality,
-            browser::commands::route_browser_voice_command
+            browser::commands::route_browser_voice_command,
+            agent::commands::agent_chat,
+            agent::commands::get_agent_status
         ])
         .build(tauri::generate_context!())
         .expect("failed to build DEYANA desktop shell")
