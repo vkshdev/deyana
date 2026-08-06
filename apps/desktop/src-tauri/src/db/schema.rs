@@ -268,5 +268,21 @@ CREATE INDEX IF NOT EXISTS idx_connector_sync_runs_started_at ON connector_sync_
 CREATE INDEX IF NOT EXISTS idx_connector_items_connector_id ON connector_items(connector_id);
 CREATE INDEX IF NOT EXISTS idx_browser_audit_created_at ON browser_audit_events(created_at);
 CREATE INDEX IF NOT EXISTS idx_browser_action_plans_updated_at ON browser_action_plans(updated_at);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
+  memory_id UNINDEXED,
+  title,
+  summary,
+  content_markdown,
+  tags
+);
+
+CREATE TABLE IF NOT EXISTS memory_embeddings (
+  memory_id TEXT PRIMARY KEY,
+  embedding_json TEXT NOT NULL,
+  model TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (memory_id) REFERENCES memory_items(id) ON DELETE CASCADE
+);
 "#;
 
