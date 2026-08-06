@@ -536,6 +536,14 @@ export interface ChatHistoryDeleteResponse {
   deleted: number;
 }
 
+export interface PrivacyRules {
+  localOnly: boolean;
+  whitelistedDomains: string[];
+  blacklistedDomains: string[];
+  piiRedactionEnabled: boolean;
+  piiRules: string[];
+}
+
 export interface PrivacyCheckRequest {
   url: string;
   method?: string;
@@ -557,6 +565,7 @@ export interface PrivacyAuditEvent {
   dataCategory: PrivacyDataCategory;
   purpose: PrivacyRequestPurpose;
   method: string;
+  riskLevel?: string;
   userApproved: boolean;
   connectorId?: string | null;
   safeAlternative: string;
@@ -1100,6 +1109,24 @@ export interface DesktopSettings {
   lastPosition?: FloatingWindowPosition;
 }
 
+export interface ProactiveContextCard {
+  id: string;
+  cardType: string;
+  title: string;
+  summary: string;
+  actionLabel?: string | null;
+  actionCommand?: string | null;
+  priority: "normal" | "urgent" | "high" | string;
+  timestamp: string;
+  context: Record<string, unknown>;
+}
+
+export interface LlmStreamChunk {
+  response: string;
+  done: boolean;
+  model?: string | null;
+}
+
 export interface AssistantStateEvent {
   type: "assistant.state.changed";
   payload: {
@@ -1183,8 +1210,8 @@ export const DEFAULT_ONBOARDING_STATE: OnboardingState = {
 
 
 export const DEFAULT_BACKEND_PROCESS_STATUS: BackendProcessStatus = {
-  lifecycle: "unavailable",
-  endpoint: "http://127.0.0.1:8765",
+  lifecycle: "running",
+  endpoint: "tauri://localhost",
   updatedAtMs: 0,
   restartCount: 0
 };

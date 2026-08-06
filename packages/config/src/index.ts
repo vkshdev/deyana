@@ -19,10 +19,10 @@ export const desktopWindow = {
 
 
 export const coreService = {
-  host: "127.0.0.1",
-  port: 8765,
-  endpoint: "http://127.0.0.1:8765",
-  websocketUrl: "ws://127.0.0.1:8765/ws",
+  host: "localhost",
+  port: 0,
+  endpoint: "tauri://localhost",
+  websocketUrl: "tauri://localhost/ws",
   heartbeatGraceMs: 12_000
 } as const;
 
