@@ -252,6 +252,12 @@ pub fn save_memory_item(
         }
     }
 
+    let tags_str = saved_tags.join(" ");
+    let _ = conn.execute(
+        "INSERT OR REPLACE INTO memory_fts (memory_id, title, summary, content_markdown, tags) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![&id, &title, &summary, content, &tags_str],
+    );
+
     Ok(MemoryItem {
         id,
         r#type: memory_type,
@@ -444,5 +450,81 @@ pub fn get_chat_history(
     }
 
     Ok(items)
+}
+
+pub fn search_memory_fts(
+    conn: &Connection,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<(String, f32)>, rusqlite::Error> {
+    let sanitized_query = query
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == ' ' { c } else { ' ' })
+        .collect::<String>();
+
+    let words: Vec<&str> = sanitized_query
+        .split_whitespace()
+        .filter(|w| w.len() > 1)
+        .collect();
+
+    if words.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let fts_match_expr = words.join(" OR ");
+    let mut stmt = conn.prepare(
+        "SELECT memory_id, rank FROM memory_fts WHERE memory_fts MATCH ?1 ORDER BY rank LIMIT ?2",
+    )?;
+
+    let rows = stmt.query_map(params![fts_match_expr, limit as i64], |row| {
+        let id: String = row.get(0)?;
+        let rank: f64 = row.get(1)?;
+        // FTS5 rank is negative (lower/more negative = better match)
+        let score = (1.0 / (rank.abs() + 1.0)) as f32 * 10.0;
+        Ok((id, score))
+    })?;
+
+    let mut results = Vec::new();
+    for r in rows {
+        if let Ok(item) = r {
+            results.push(item);
+        }
+    }
+    Ok(results)
+}
+
+pub fn save_memory_embedding(
+    conn: &Connection,
+    memory_id: &str,
+    embedding: &[f32],
+    model: &str,
+) -> Result<(), rusqlite::Error> {
+    let json = serde_json::to_string(embedding).unwrap_or_else(|_| "[]".to_string());
+    let now = chrono::Utc::now().to_rfc3339();
+    conn.execute(
+        "INSERT OR REPLACE INTO memory_embeddings (memory_id, embedding_json, model, created_at) VALUES (?1, ?2, ?3, ?4)",
+        params![memory_id, json, model, now],
+    )?;
+    Ok(())
+}
+
+pub fn get_all_memory_embeddings(
+    conn: &Connection,
+) -> Result<Vec<(String, Vec<f32>)>, rusqlite::Error> {
+    let mut stmt = conn.prepare("SELECT memory_id, embedding_json FROM memory_embeddings")?;
+    let rows = stmt.query_map([], |row| {
+        let id: String = row.get(0)?;
+        let json: String = row.get(1)?;
+        Ok((id, json))
+    })?;
+
+    let mut list = Vec::new();
+    for r in rows {
+        let (id, json) = r?;
+        if let Ok(vec) = serde_json::from_str::<Vec<f32>>(&json) {
+            list.push((id, vec));
+        }
+    }
+    Ok(list)
 }
 
