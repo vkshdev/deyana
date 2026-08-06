@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from "react";
 import {
   DEFAULT_BACKEND_PROCESS_STATUS,
   DEFAULT_CORE_APP_SETTINGS,
@@ -65,11 +66,10 @@ import {
   type VoiceSettings,
   type VoiceSettingsPatch,
   type VoiceStatusResponse,
-  type VoiceTranscriptResponse
+  type VoiceTranscriptResponse,
+  type ProactiveContextCard
 } from "@deyana/schemas";
-import { useSyncExternalStore } from "react";
-import { backendClient, type BackendEventConnection } from "../services/backendClient";
-import { tauriClient } from "../services/tauriClient";
+import { tauriClient, type BackendEventConnection } from "../services/tauriClient";
 
 export interface AssistantSnapshot {
   assistantState: AssistantState;
@@ -159,6 +159,8 @@ export interface AssistantSnapshot {
   releaseDeleteIncludeVault: boolean;
   releaseBusy: boolean;
   quickActions: QuickAction[];
+  streamingResponse?: string;
+  proactiveCards: ProactiveContextCard[];
   error?: string;
 }
 
@@ -285,7 +287,9 @@ const initialSnapshot: AssistantSnapshot = {
       label: "Code",
       state: "CODING"
     }
-  ]
+  ],
+  streamingResponse: undefined,
+  proactiveCards: []
 };
 
 type Listener = () => void;
@@ -333,6 +337,7 @@ class AssistantStore {
         error: undefined
       });
       await this.subscribeToCoreStatus();
+      await this.initProactiveListener();
       await this.refreshBackendStatus();
       this.connectBackendEvents();
       this.hydrated = true;
@@ -484,7 +489,7 @@ class AssistantStore {
     });
 
     try {
-      const result = await backendClient.updateOnboardingState({
+      const result = await tauriClient.updateOnboardingState({
         currentStep: onboardingStep,
         privacyMode: localOnboarding.selectedPrivacyMode,
         modelProfile: localOnboarding.selectedModelProfile
@@ -553,8 +558,8 @@ class AssistantStore {
     this.setSnapshot({ onboardingBusy: true, error: undefined });
 
     try {
-      await backendClient.selectVault({ path: vaultPath });
-      const result = await backendClient.completeOnboarding({
+      await tauriClient.selectVault({ path: vaultPath });
+      const result = await tauriClient.completeOnboarding({
         privacyMode: this.snapshot.onboarding.selectedPrivacyMode,
         modelProfile: this.snapshot.onboarding.selectedModelProfile,
         vaultPath
@@ -665,23 +670,23 @@ class AssistantStore {
   private executeTool = async (tool: ToolId, input: string, userApproved: boolean) => {
     switch (tool) {
       case "web_search":
-        return backendClient.webSearch({ query: input, userApproved });
+        return tauriClient.webSearch({ query: input, userApproved });
       case "fetch_page":
-        return backendClient.fetchPage({ url: input, userApproved });
+        return tauriClient.fetchPage({ url: input, userApproved });
       case "read_file":
-        return backendClient.readFileTool({ path: input, allowedRoot: approvedRootFromPath(input), userApproved });
+        return tauriClient.readFileTool({ path: input, allowedRoot: approvedRootFromPath(input), userApproved });
       case "git_status":
-        return backendClient.gitStatusTool({ repoPath: input, userApproved });
+        return tauriClient.gitStatusTool({ repoPath: input, userApproved });
       case "git_diff":
-        return backendClient.gitDiffTool({ repoPath: input, userApproved });
+        return tauriClient.gitDiffTool({ repoPath: input, userApproved });
       case "commit_message":
-        return backendClient.commitMessageTool({ repoPath: input, userApproved });
+        return tauriClient.commitMessageTool({ repoPath: input, userApproved });
       case "code_task":
-        return backendClient.codeTaskTool({ goal: input, userApproved });
+        return tauriClient.codeTaskTool({ goal: input, userApproved });
       case "day_planner":
-        return backendClient.dayPlannerTool({ focus: input ? [input] : [] });
+        return tauriClient.dayPlannerTool({ focus: input ? [input] : [] });
       default:
-        return backendClient.webSearch({ query: input, userApproved });
+        return tauriClient.webSearch({ query: input, userApproved });
     }
   };
 
@@ -694,10 +699,10 @@ class AssistantStore {
     try {
       const queryValue = query.trim();
       const [response, entities, actions, decisions] = await Promise.all([
-        backendClient.listMemory(queryValue),
-        backendClient.listMemoryEntities({ query: queryValue }),
-        backendClient.listMemoryInsights({ query: queryValue, type: "action_item", status: "open" }),
-        backendClient.listMemoryInsights({ query: queryValue, type: "decision" })
+        tauriClient.listMemory(queryValue),
+        tauriClient.listMemoryEntities({ query: queryValue }),
+        tauriClient.listMemoryInsights({ query: queryValue, type: "action_item", status: "open" }),
+        tauriClient.listMemoryInsights({ query: queryValue, type: "decision" })
       ]);
       this.setSnapshot({
         memoryItems: response.items,
@@ -744,7 +749,7 @@ class AssistantStore {
     };
 
     try {
-      await backendClient.createMemory(request);
+      await tauriClient.createMemory(request);
       this.setSnapshot({
         memoryDraft: { title: "", summary: "", contentMarkdown: "" },
         memoryBusy: false
@@ -761,7 +766,7 @@ class AssistantStore {
   deleteMemory = async (id: string) => {
     this.setSnapshot({ memoryBusy: true, error: undefined });
     try {
-      await backendClient.deleteMemory(id);
+      await tauriClient.deleteMemory(id);
       this.setSnapshot({
         memoryItems: this.snapshot.memoryItems.filter((item) => item.id !== id),
         memoryBusy: false
@@ -778,7 +783,7 @@ class AssistantStore {
   reindexMemory = async () => {
     this.setSnapshot({ memoryBusy: true, error: undefined });
     try {
-      await backendClient.reindexMemory();
+      await tauriClient.reindexMemory();
       this.setSnapshot({ memoryBusy: false });
       await this.loadMemory();
     } catch (error) {
@@ -792,7 +797,7 @@ class AssistantStore {
   generateDailySummary = async () => {
     this.setSnapshot({ memoryBusy: true, error: undefined });
     try {
-      const item = await backendClient.generateDailySummary();
+      const item = await tauriClient.generateDailySummary();
       this.setSnapshot({
         memoryItems: mergeMemoryItem(this.snapshot.memoryItems, item),
         memoryBusy: false
@@ -815,7 +820,7 @@ class AssistantStore {
 
     this.setSnapshot({ memoryBusy: true, error: undefined });
     try {
-      const item = await backendClient.generateProjectSummary({ project });
+      const item = await tauriClient.generateProjectSummary({ project });
       this.setSnapshot({
         memoryItems: mergeMemoryItem(this.snapshot.memoryItems, item),
         memoryQuery: project,
@@ -834,7 +839,7 @@ class AssistantStore {
   exportMemory = async () => {
     this.setSnapshot({ memoryBusy: true, error: undefined });
     try {
-      const exported = await backendClient.exportMemory();
+      const exported = await tauriClient.exportMemory();
       this.setSnapshot({
         memoryBusy: false,
         memoryExportedAt: exported.exportedAt
@@ -849,7 +854,7 @@ class AssistantStore {
 
   loadModelStatus = async () => {
     try {
-      const modelStatusDetail = await backendClient.getModelStatus();
+      const modelStatusDetail = await tauriClient.getModelStatus();
       this.setSnapshot({
         modelStatusDetail,
         modelStatus: modelStatusDetail.status,
@@ -866,7 +871,7 @@ class AssistantStore {
   selectModel = async (request: ModelSelectionRequest) => {
     this.setSnapshot({ modelStatus: "checking", error: undefined });
     try {
-      const response = await backendClient.selectModel(request);
+      const response = await tauriClient.selectModel(request);
       this.setSnapshot({
         coreSettings: response.settings,
         modelStatusDetail: response.status,
@@ -883,7 +888,7 @@ class AssistantStore {
   testModel = async () => {
     this.setSnapshot({ modelTestBusy: true, modelTestResponse: undefined, error: undefined });
     try {
-      const modelTestResponse = await backendClient.testModel({
+      const modelTestResponse = await tauriClient.testModel({
         prompt: "Reply with exactly: DEYANA_READY"
       });
       this.setSnapshot({
@@ -902,7 +907,7 @@ class AssistantStore {
 
   loadChatHistory = async () => {
     try {
-      const response = await backendClient.getChatHistory();
+      const response = await tauriClient.getChatHistory();
       this.setSnapshot({ chatMessages: response.messages, error: undefined });
     } catch (error) {
       this.setSnapshot({
@@ -932,8 +937,8 @@ class AssistantStore {
   loadVoice = async () => {
     try {
       const [voiceSettings, voiceStatus] = await Promise.all([
-        backendClient.getVoiceSettings(),
-        backendClient.getVoiceStatus()
+        tauriClient.getVoiceSettings(),
+        tauriClient.getVoiceStatus()
       ]);
       this.setSnapshot({ voiceSettings, voiceStatus, error: undefined });
     } catch (error) {
@@ -945,8 +950,8 @@ class AssistantStore {
 
   patchVoiceSettings = async (patch: VoiceSettingsPatch) => {
     try {
-      const voiceSettings = await backendClient.patchVoiceSettings(patch);
-      const voiceStatus = await backendClient.getVoiceStatus();
+      const voiceSettings = await tauriClient.patchVoiceSettings(patch);
+      const voiceStatus = await tauriClient.getVoiceStatus();
       this.setSnapshot({ voiceSettings, voiceStatus, error: undefined });
     } catch (error) {
       this.setSnapshot({
@@ -960,7 +965,7 @@ class AssistantStore {
       return;
     }
 
-    await backendClient.interruptVoice().catch(() => undefined);
+    await tauriClient.interruptVoice().catch(() => undefined);
     this.setSnapshot({
       voiceBusy: true,
       voiceTranscript: undefined,
@@ -969,7 +974,7 @@ class AssistantStore {
     });
 
     try {
-      const voiceTranscript = await backendClient.transcribeVoice({
+      const voiceTranscript = await tauriClient.transcribeVoice({
         listenSeconds: this.snapshot.voiceSettings?.listenSeconds
       });
       const transcript = voiceTranscript.transcript.trim();
@@ -988,7 +993,7 @@ class AssistantStore {
       }
 
       if (isBrowserVoiceCommand(transcript)) {
-        const browserResponse = await backendClient.routeBrowserVoiceCommand({
+        const browserResponse = await tauriClient.routeBrowserVoiceCommand({
           transcript,
           mode: this.snapshot.browserContextMode,
           pageSessionId: this.snapshot.browserContext?.pageSessionId ?? null,
@@ -1013,7 +1018,7 @@ class AssistantStore {
       const response = await this.sendChatContent(transcript, false);
       if (this.snapshot.voiceSettings?.ttsEnabled && response.assistantMessage.content.trim()) {
         this.setSnapshot({ assistantState: "SPEAKING" });
-        await backendClient.speakVoice({ text: response.assistantMessage.content });
+        await tauriClient.speakVoice({ text: response.assistantMessage.content });
       }
 
       this.setSnapshot({
@@ -1039,7 +1044,7 @@ class AssistantStore {
 
     this.setSnapshot({ voiceBusy: true, assistantState: "SPEAKING", error: undefined });
     try {
-      await backendClient.speakVoice({ text: message.content });
+      await tauriClient.speakVoice({ text: message.content });
       this.setSnapshot({ voiceBusy: false, assistantState: this.restingAssistantState() });
     } catch (error) {
       this.setSnapshot({
@@ -1063,13 +1068,13 @@ class AssistantStore {
         releasePerformance,
         releaseCrashRecovery
       ] = await Promise.all([
-        backendClient.getReleaseReadiness(),
-        backendClient.getReleaseUpdatePlan(),
-        backendClient.listReleaseLogs(),
-        backendClient.getPrivacyExport(),
-        backendClient.getConnectorHealth(),
-        backendClient.getPerformanceProfile(),
-        backendClient.getCrashRecovery()
+        tauriClient.getReleaseReadiness(),
+        tauriClient.getReleaseUpdatePlan(),
+        tauriClient.listReleaseLogs(),
+        tauriClient.getPrivacyExport(),
+        tauriClient.getConnectorHealth(),
+        tauriClient.getPerformanceProfile(),
+        tauriClient.getCrashRecovery()
       ]);
       this.setSnapshot({
         releaseReadiness,
@@ -1093,7 +1098,7 @@ class AssistantStore {
   readReleaseLog = async (path: string) => {
     this.setSnapshot({ releaseBusy: true, error: undefined });
     try {
-      const releaseSelectedLog = await backendClient.readReleaseLog(path);
+      const releaseSelectedLog = await tauriClient.readReleaseLog(path);
       this.setSnapshot({ releaseSelectedLog, releaseBusy: false });
     } catch (error) {
       this.setSnapshot({
@@ -1114,7 +1119,7 @@ class AssistantStore {
   deleteLocalData = async () => {
     this.setSnapshot({ releaseBusy: true, error: undefined });
     try {
-      await backendClient.deleteLocalData({
+      await tauriClient.deleteLocalData({
         confirmationPhrase: this.snapshot.releaseDeletePhrase,
         includeVault: this.snapshot.releaseDeleteIncludeVault
       });
@@ -1143,6 +1148,45 @@ class AssistantStore {
     }
   };
 
+  agentChat = async (prompt: string, sessionId = "default", model?: string): Promise<string> => {
+    const trimmed = prompt.trim();
+    if (!trimmed) {
+      throw new Error("Chat prompt cannot be empty.");
+    }
+
+    this.setSnapshot({
+      chatBusy: true,
+      streamingResponse: "",
+      assistantState: "THINKING",
+      error: undefined
+    });
+
+    let unlistenStream: (() => void) | undefined;
+    if (tauriClient.isTauriRuntime()) {
+      unlistenStream = await tauriClient.onLlmStreamChunk((chunk: string) => {
+        const current = this.snapshot.streamingResponse ?? "";
+        this.setSnapshot({
+          streamingResponse: current + chunk,
+          assistantState: "THINKING"
+        });
+      });
+    }
+
+    try {
+      const result = await tauriClient.agentChat(trimmed, sessionId, model);
+      return result;
+    } finally {
+      if (unlistenStream) {
+        unlistenStream();
+      }
+      this.setSnapshot({
+        chatBusy: false,
+        streamingResponse: undefined,
+        assistantState: this.restingAssistantState()
+      });
+    }
+  };
+
   private sendChatContent = async (content: string, restoreDraftOnError: boolean): Promise<ChatMessageResponse> => {
     const trimmed = content.trim();
     if (!trimmed) {
@@ -1152,25 +1196,61 @@ class AssistantStore {
     this.setSnapshot({
       chatBusy: true,
       chatDraft: "",
+      streamingResponse: "",
       assistantState: "THINKING",
       error: undefined
     });
 
-    try {
-      const response = await backendClient.sendChatMessage({
-        content: trimmed,
-        useMemory: true,
-        allowWeb: true
+    let unlistenStream: (() => void) | undefined;
+    if (tauriClient.isTauriRuntime()) {
+      unlistenStream = await tauriClient.onLlmStreamChunk((chunk: string) => {
+        const current = this.snapshot.streamingResponse ?? "";
+        this.setSnapshot({
+          streamingResponse: current + chunk,
+          assistantState: "THINKING"
+        });
       });
+    }
+
+    try {
+      const userMessage = await tauriClient.saveChatMessage("default", "user", trimmed);
+      const assistantText = await tauriClient.agentChat(trimmed, "default");
+      const assistantMessage = await tauriClient.saveChatMessage("default", "assistant", assistantText);
+
+      if (unlistenStream) {
+        unlistenStream();
+      }
+
+      const response: ChatMessageResponse = {
+        userMessage,
+        assistantMessage,
+        model: "local",
+        latencyMs: 0,
+        sources: [],
+        webSources: [],
+        retrieval: {
+          query: trimmed,
+          route: "conversation",
+          retrieved: 0,
+          webRetrieved: 0,
+          compressedCharacters: 0,
+          contextTokensEstimate: 0
+        }
+      };
       this.setSnapshot({
         chatBusy: false,
+        streamingResponse: undefined,
         assistantState: this.restingAssistantState(),
         chatMessages: mergeChatResponse(this.snapshot.chatMessages, response)
       });
       return response;
     } catch (error) {
+      if (unlistenStream) {
+        unlistenStream();
+      }
       this.setSnapshot({
         chatBusy: false,
+        streamingResponse: undefined,
         chatDraft: restoreDraftOnError ? trimmed : this.snapshot.chatDraft,
         assistantState: this.restingAssistantState(),
         error: error instanceof Error ? error.message : "Unable to send local chat message"
@@ -1183,7 +1263,7 @@ class AssistantStore {
   clearChatHistory = async () => {
     this.setSnapshot({ chatBusy: true, error: undefined });
     try {
-      await backendClient.clearChatHistory();
+      await tauriClient.clearChatHistory();
       this.setSnapshot({ chatMessages: [], chatBusy: false });
     } catch (error) {
       this.setSnapshot({
@@ -1196,8 +1276,8 @@ class AssistantStore {
   loadPrivacyAudit = async () => {
     try {
       const [privacyStatus, audit] = await Promise.all([
-        backendClient.getPrivacyStatus(),
-        backendClient.listPrivacyAudit()
+        tauriClient.getPrivacyStatus(),
+        tauriClient.listPrivacyAudit()
       ]);
       this.setSnapshot({
         privacyStatus,
@@ -1214,7 +1294,7 @@ class AssistantStore {
   testPrivacyFirewall = async () => {
     this.setSnapshot({ privacyBusy: true, error: undefined });
     try {
-      await backendClient.checkPrivacyRequest({
+      await tauriClient.checkPrivacyRequest({
         url: "https://api.openai.com/v1/chat/completions",
         method: "POST",
         purpose: "cloud_ai",
@@ -1234,7 +1314,7 @@ class AssistantStore {
   clearPrivacyAudit = async () => {
     this.setSnapshot({ privacyBusy: true, error: undefined });
     try {
-      await backendClient.clearPrivacyAudit();
+      await tauriClient.clearPrivacyAudit();
       this.setSnapshot({
         privacyAuditEvents: [],
         privacyBusy: false
@@ -1251,8 +1331,8 @@ class AssistantStore {
   loadConnectors = async () => {
     try {
       const [connectors, syncRuns] = await Promise.all([
-        backendClient.listConnectors(),
-        backendClient.listConnectorSyncRuns()
+        tauriClient.listConnectors(),
+        tauriClient.listConnectorSyncRuns()
       ]);
       this.setSnapshot({
         connectors: connectors.items,
@@ -1270,7 +1350,7 @@ class AssistantStore {
   connectConnector = async (connectorId: string) => {
     this.setConnectorBusy(connectorId, true);
     try {
-      const started = await backendClient.startConnectorOAuth(connectorId, {
+      const started = await tauriClient.startConnectorOAuth(connectorId, {
         redirectUri: "deyana://oauth/callback"
       });
       if (!started.mock) {
@@ -1288,7 +1368,7 @@ class AssistantStore {
         });
         return;
       }
-      const connector = await backendClient.completeConnectorOAuth(connectorId, {
+      const connector = await tauriClient.completeConnectorOAuth(connectorId, {
         state: started.state,
         code: `mock-ui-${window.crypto.randomUUID()}`,
         userApproved: true
@@ -1328,7 +1408,7 @@ class AssistantStore {
 
     this.setConnectorBusy(connectorId, true);
     try {
-      const connector = await backendClient.completeConnectorOAuth(connectorId, {
+      const connector = await tauriClient.completeConnectorOAuth(connectorId, {
         state: pending.state,
         code,
         userApproved: true
@@ -1356,7 +1436,7 @@ class AssistantStore {
   disconnectConnector = async (connectorId: string) => {
     this.setConnectorBusy(connectorId, true);
     try {
-      const response = await backendClient.disconnectConnector(connectorId);
+      const response = await tauriClient.disconnectConnector(connectorId);
       const connectors = mergeConnector(this.snapshot.connectors, response.connector);
       this.setSnapshot({
         connectors,
@@ -1377,7 +1457,7 @@ class AssistantStore {
     this.setConnectorBusy(connectorId, true);
     this.setSnapshot({ syncStatus: "syncing", assistantState: "SYNCING", error: undefined });
     try {
-      const response = await backendClient.syncConnector(connectorId, { reason: "manual" });
+      const response = await tauriClient.syncConnector(connectorId, { reason: "manual" });
       const connectors = mergeConnector(this.snapshot.connectors, response.connector);
       const syncRuns = mergeSyncRun(this.snapshot.connectorSyncRuns, response.run);
       this.setSnapshot({
@@ -1407,7 +1487,7 @@ class AssistantStore {
   ) => {
     this.setConnectorBusy(connectorId, true);
     try {
-      const connector = await backendClient.updateConnectorSettings(connectorId, patch);
+      const connector = await tauriClient.updateConnectorSettings(connectorId, patch);
       const connectors = mergeConnector(this.snapshot.connectors, connector);
       this.setSnapshot({
         connectors,
@@ -1471,17 +1551,17 @@ class AssistantStore {
         voiceSettings,
         voiceStatus
       ] = await Promise.all([
-        backendClient.getStatus(),
-        backendClient.getSettings(),
-        backendClient.getOnboardingState(),
-        backendClient.getModelStatus(),
-        backendClient.getChatHistory(),
-        backendClient.getPrivacyStatus(),
-        backendClient.listPrivacyAudit(),
-        backendClient.listConnectors(),
-        backendClient.listConnectorSyncRuns(),
-        backendClient.getVoiceSettings(),
-        backendClient.getVoiceStatus()
+        tauriClient.getStatus(),
+        tauriClient.getSettings(),
+        tauriClient.getOnboardingState(),
+        tauriClient.getModelStatus(),
+        tauriClient.getChatHistory(),
+        tauriClient.getPrivacyStatus(),
+        tauriClient.listPrivacyAudit(),
+        tauriClient.listConnectors(),
+        tauriClient.listConnectorSyncRuns(),
+        tauriClient.getVoiceSettings(),
+        tauriClient.getVoiceStatus()
       ]);
 
       let browserStatus = this.snapshot.browserStatus;
@@ -1497,13 +1577,13 @@ class AssistantStore {
       let browserSummary = this.snapshot.browserSummary;
       try {
         const [status, sessions, permissions, audit, actionPlans, busyPolicy, personality] = await Promise.all([
-          backendClient.getBrowserStatus(),
-          backendClient.listBrowserSessions(),
-          backendClient.listBrowserPermissions(),
-          backendClient.listBrowserAudit(),
-          backendClient.listBrowserActionPlans(),
-          backendClient.getWhatsAppBusyModePolicy(),
-          backendClient.getBrowserPersonality()
+          tauriClient.getBrowserStatus(),
+          tauriClient.listBrowserSessions(),
+          tauriClient.listBrowserPermissions(),
+          tauriClient.listBrowserAudit(),
+          tauriClient.listBrowserActionPlans(),
+          tauriClient.getWhatsAppBusyModePolicy(),
+          tauriClient.getBrowserPersonality()
         ]);
         const activeSessionIds = new Set(sessions.items.map((session) => session.id));
         browserStatus = status;
@@ -1607,13 +1687,50 @@ class AssistantStore {
     }
   };
 
+  handleProactiveContextCard = (card: ProactiveContextCard) => {
+    const existing = this.snapshot.proactiveCards;
+    if (existing.some((c) => c.id === card.id)) {
+      return;
+    }
+    const updatedCards = [card, ...existing].slice(0, 20);
+    this.setSnapshot({
+      proactiveCards: updatedCards,
+      assistantState: card.priority === "urgent" ? "WAITING_FOR_CONFIRMATION" : this.snapshot.assistantState
+    });
+  };
+
+  dismissProactiveCard = (cardId: string) => {
+    this.setSnapshot({
+      proactiveCards: this.snapshot.proactiveCards.filter((c) => c.id !== cardId)
+    });
+  };
+
+  private proactiveUnlisten?: () => void;
+
+  initProactiveListener = async () => {
+    if (this.proactiveUnlisten) {
+      return;
+    }
+    if (tauriClient.isTauriRuntime()) {
+      this.proactiveUnlisten = await tauriClient.onProactiveContextCard((card) => {
+        this.handleProactiveContextCard(card);
+      });
+    }
+  };
+
   private connectBackendEvents = () => {
     this.disconnectBackendEvents();
 
     try {
       let connection: BackendEventConnection;
-      connection = backendClient.connectEvents(
-        (event) => this.handleBackendEvent(event),
+      connection = tauriClient.connectEvents(
+        (event) => {
+          if (event.type === "proactive.card") {
+            this.handleProactiveContextCard(event.payload as ProactiveContextCard);
+          } else {
+            this.handleBackendEvent(event);
+          }
+        },
         (reason) => {
           if (this.backendConnection !== connection) {
             return;
@@ -2032,7 +2149,7 @@ class AssistantStore {
 
   interruptVoice = async () => {
     try {
-      await backendClient.interruptVoice();
+      await tauriClient.interruptVoice();
       this.setSnapshot({ voiceBusy: false, assistantState: this.restingAssistantState(), error: undefined });
       await this.loadVoice();
     } catch (error) {
@@ -2043,13 +2160,13 @@ class AssistantStore {
   loadBrowser = async () => {
     try {
       const [status, sessions, permissions, audit, actionPlans, busyPolicy, personality] = await Promise.all([
-        backendClient.getBrowserStatus(),
-        backendClient.listBrowserSessions(),
-        backendClient.listBrowserPermissions(),
-        backendClient.listBrowserAudit(),
-        backendClient.listBrowserActionPlans(),
-        backendClient.getWhatsAppBusyModePolicy(),
-        backendClient.getBrowserPersonality()
+        tauriClient.getBrowserStatus(),
+        tauriClient.listBrowserSessions(),
+        tauriClient.listBrowserPermissions(),
+        tauriClient.listBrowserAudit(),
+        tauriClient.listBrowserActionPlans(),
+        tauriClient.getWhatsAppBusyModePolicy(),
+        tauriClient.getBrowserPersonality()
       ]);
       const activeSessionIds = new Set(sessions.items.map((session) => session.id));
       const browserContext =
@@ -2122,7 +2239,7 @@ class AssistantStore {
   readBrowserPage = async () => {
     this.setSnapshot({ browserBusy: true, assistantState: "READING_PAGE", error: undefined });
     try {
-      const response = await backendClient.readBrowserContext({
+      const response = await tauriClient.readBrowserContext({
         mode: this.snapshot.browserContextMode,
         userApproved: true
       });
@@ -2146,7 +2263,7 @@ class AssistantStore {
   summarizeBrowserPage = async () => {
     this.setSnapshot({ browserBusy: true, assistantState: "READING_PAGE", error: undefined });
     try {
-      const response = await backendClient.summarizeBrowserContext({
+      const response = await tauriClient.summarizeBrowserContext({
         mode: this.snapshot.browserContextMode,
         instruction: "Summarize the important information on this page.",
         userApproved: true
@@ -2176,7 +2293,7 @@ class AssistantStore {
     }
     this.setSnapshot({ browserBusy: true, assistantState: "SEARCHING_WEB", error: undefined });
     try {
-      const response = await backendClient.browserSearch({
+      const response = await tauriClient.browserSearch({
         query,
         limit: 5,
         userApproved: true
@@ -2205,7 +2322,7 @@ class AssistantStore {
       this.snapshot.browserDraftTarget ?? this.snapshot.browserContext?.writableFields[0];
     this.setSnapshot({ browserBusy: true, assistantState: "THINKING", error: undefined });
     try {
-      const response = await backendClient.draftBrowserReply({
+      const response = await tauriClient.draftBrowserReply({
         instruction,
         tone,
         mode: this.snapshot.browserContextMode,
@@ -2253,7 +2370,7 @@ class AssistantStore {
     }
     this.setSnapshot({ browserBusy: true, assistantState: "WAITING_FOR_CONFIRMATION", error: undefined });
     try {
-      const response = await backendClient.createBrowserActionPlan({
+      const response = await tauriClient.createBrowserActionPlan({
         chain,
         pageSessionId: context.pageSessionId,
         fieldHandle: field.handle,
@@ -2291,7 +2408,7 @@ class AssistantStore {
     }
     this.setSnapshot({ browserBusy: true, assistantState: "WAITING_FOR_CONFIRMATION", error: undefined });
     try {
-      const confirmed = await backendClient.confirmBrowserActionPlan({
+      const confirmed = await tauriClient.confirmBrowserActionPlan({
         planId: plan.id,
         confirmationToken: token
       });
@@ -2303,7 +2420,7 @@ class AssistantStore {
         });
         return;
       }
-      const executed = await backendClient.executeBrowserActionPlan(confirmed.plan.id);
+      const executed = await tauriClient.executeBrowserActionPlan(confirmed.plan.id);
       this.setSnapshot({
         browserBusy: false,
         browserActionPlan: executed.plan ?? confirmed.plan,
@@ -2329,7 +2446,7 @@ class AssistantStore {
     }
     this.setSnapshot({ browserBusy: true, error: undefined });
     try {
-      const response = await backendClient.cancelBrowserActionPlan(plan.id);
+      const response = await tauriClient.cancelBrowserActionPlan(plan.id);
       this.setSnapshot({
         browserBusy: false,
         browserActionPlan: response.plan ?? undefined,
@@ -2348,7 +2465,7 @@ class AssistantStore {
   emergencyStopBrowserActions = async () => {
     this.setSnapshot({ browserBusy: true, error: undefined });
     try {
-      const response = await backendClient.browserEmergencyStop();
+      const response = await tauriClient.browserEmergencyStop();
       this.setSnapshot({
         browserBusy: false,
         browserActionPlan: undefined,
@@ -2371,7 +2488,7 @@ class AssistantStore {
   patchWhatsAppBusyModePolicy = async (patch: WhatsAppBusyModePolicyPatch) => {
     this.setSnapshot({ browserBusy: true, error: undefined });
     try {
-      const response = await backendClient.patchWhatsAppBusyModePolicy(patch);
+      const response = await tauriClient.patchWhatsAppBusyModePolicy(patch);
       this.setSnapshot({
         browserBusy: false,
         whatsappBusyModePolicy: response.policy,
@@ -2406,7 +2523,7 @@ class AssistantStore {
     }
     this.setSnapshot({ browserBusy: true, error: undefined });
     try {
-      const evaluation = await backendClient.evaluateWhatsAppBusyMode({
+      const evaluation = await tauriClient.evaluateWhatsAppBusyMode({
         pageSessionId: context.pageSessionId,
         userApproved: true
       });
@@ -2432,7 +2549,7 @@ class AssistantStore {
     }
     this.setSnapshot({ browserBusy: true, assistantState: "WAITING_FOR_CONFIRMATION", error: undefined });
     try {
-      const response = await backendClient.sendWhatsAppBusyReply({
+      const response = await tauriClient.sendWhatsAppBusyReply({
         pageSessionId: context.pageSessionId,
         fieldHandle: field?.handle ?? null,
         userApproved: true
@@ -2457,7 +2574,7 @@ class AssistantStore {
   patchBrowserPersonalityProfile = async (patch: BrowserPersonalityProfilePatch) => {
     this.setSnapshot({ browserBusy: true, error: undefined });
     try {
-      const profile = await backendClient.patchBrowserPersonalityProfile(patch);
+      const profile = await tauriClient.patchBrowserPersonalityProfile(patch);
       this.setSnapshot({ browserBusy: false, browserPersonalityProfile: profile, error: undefined });
       await this.previewBrowserPersonality();
     } catch (error) {
@@ -2476,7 +2593,7 @@ class AssistantStore {
     }
     this.setSnapshot({ browserBusy: true, error: undefined });
     try {
-      const mood = await backendClient.inferBrowserMood({ text, ttlSeconds: 900 });
+      const mood = await tauriClient.inferBrowserMood({ text, ttlSeconds: 900 });
       this.setSnapshot({ browserBusy: false, browserMoodHint: mood, error: undefined });
     } catch (error) {
       this.setSnapshot({
@@ -2490,7 +2607,7 @@ class AssistantStore {
     this.setSnapshot({ browserBusy: true, error: undefined });
     try {
       const context = this.snapshot.browserContext;
-      const preview = await backendClient.previewBrowserPersonality({
+      const preview = await tauriClient.previewBrowserPersonality({
         adapterId: context?.adapterId ?? null,
         contactLabel: context?.title?.replace(/^WhatsApp(?:\s+Group)?\s*-\s*/i, "") ?? null,
         sampleText: this.snapshot.browserDraftInstruction || undefined
@@ -2520,7 +2637,7 @@ class AssistantStore {
     }
     this.setSnapshot({ browserBusy: true, error: undefined });
     try {
-      const response = await backendClient.clearBrowserField({
+      const response = await tauriClient.clearBrowserField({
         pageSessionId: context.pageSessionId,
         fieldHandle: field.handle,
         restoreOriginal,
@@ -2547,7 +2664,7 @@ class AssistantStore {
     }
     this.setSnapshot({ browserBusy: true, error: undefined });
     try {
-      const response = await backendClient.openBrowserTab({
+      const response = await tauriClient.openBrowserTab({
         url: normalizedUrl,
         active: true,
         userApproved: true
@@ -2568,7 +2685,7 @@ class AssistantStore {
   disconnectBrowserSession = async (pageSessionId: string) => {
     this.setSnapshot({ browserBusy: true, error: undefined });
     try {
-      await backendClient.disconnectBrowserSession(pageSessionId);
+      await tauriClient.disconnectBrowserSession(pageSessionId);
       this.setSnapshot({
         browserBusy: false,
         browserSessions: this.snapshot.browserSessions.filter((item) => item.id !== pageSessionId),
@@ -2589,7 +2706,7 @@ class AssistantStore {
   requestActiveTabPermission = async () => {
     this.setSnapshot({ browserBusy: true, error: undefined });
     try {
-      const response = await backendClient.requestBrowserPermission({
+      const response = await tauriClient.requestBrowserPermission({
         kind: "temporary_active_tab"
       });
       this.setSnapshot({ browserBusy: false, error: response.instruction });
@@ -2604,7 +2721,7 @@ class AssistantStore {
   revokeBrowserPermission = async (origin: string) => {
     this.setSnapshot({ browserBusy: true, error: undefined });
     try {
-      const response = await backendClient.revokeBrowserPermission(origin);
+      const response = await tauriClient.revokeBrowserPermission(origin);
       this.setSnapshot({
         browserBusy: false,
         error: response.status === "completed" ? undefined : response.instruction
@@ -2639,6 +2756,10 @@ class AssistantStore {
     if (this.backendConnection) {
       this.backendConnection.disconnect();
       this.backendConnection = undefined;
+    }
+    if (this.proactiveUnlisten) {
+      this.proactiveUnlisten();
+      this.proactiveUnlisten = undefined;
     }
   };
 
