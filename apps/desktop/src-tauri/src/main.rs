@@ -38,6 +38,7 @@ fn main() {
             let connector_state = connectors::ConnectorState::new(db_pool.clone());
             let tool_state = tools::ToolState::new(db_pool.clone());
             let voice_state = voice::VoiceState::new(app_dir.clone(), db_pool.clone());
+            voice_state.service.set_app_handle(handle.clone());
             let browser_state = browser::BrowserState::new(app_dir.clone(), db_pool.clone());
 
             app.manage(db_pool);
@@ -100,12 +101,18 @@ fn main() {
             tools::commands::commit_message_tool,
             tools::commands::code_task_tool,
             tools::commands::day_planner_tool,
+            voice::commands::start_wake_listener,
+            voice::commands::stop_wake_listener,
+            voice::commands::toggle_voice_mode,
+            voice::commands::get_voice_status,
             voice::commands::get_voice_settings,
             voice::commands::patch_voice_settings,
-            voice::commands::get_voice_status,
-            voice::commands::transcribe_voice,
+            voice::commands::speak_text,
             voice::commands::speak_voice,
+            voice::commands::transcribe_audio,
+            voice::commands::transcribe_voice,
             voice::commands::interrupt_voice,
+
             browser::commands::get_browser_status,
             browser::commands::list_browser_sessions,
             browser::commands::disconnect_browser_session,
