@@ -1,6 +1,10 @@
 pub mod commands;
+pub mod detector;
+pub mod endpointer;
 pub mod service;
+pub mod tts;
 pub mod types;
+
 
 use std::path::PathBuf;
 use crate::db::DbPool;
