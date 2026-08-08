@@ -2,10 +2,30 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct VoiceWakePayload {
+    pub keyword: String,
+    pub score: f32,
+    pub timestamp: u64,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_sensitivity() -> f32 {
+    0.6
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VoiceSettings {
     pub enabled: bool,
     pub muted: bool,
     pub tts_enabled: bool,
+    #[serde(default = "default_true")]
+    pub wake_word_enabled: bool,
+    #[serde(default = "default_sensitivity")]
+    pub wake_word_sensitivity: f32,
     pub transcript_retention: String,
     pub stt_engine: String,
     pub tts_engine: String,
@@ -23,6 +43,8 @@ impl Default for VoiceSettings {
             enabled: true,
             muted: false,
             tts_enabled: true,
+            wake_word_enabled: true,
+            wake_word_sensitivity: 0.6,
             transcript_retention: "none".to_string(),
             stt_engine: "windows_speech".to_string(),
             tts_engine: "windows_speech".to_string(),
@@ -42,6 +64,8 @@ pub struct VoiceSettingsPatch {
     pub enabled: Option<bool>,
     pub muted: Option<bool>,
     pub tts_enabled: Option<bool>,
+    pub wake_word_enabled: Option<bool>,
+    pub wake_word_sensitivity: Option<f32>,
     pub transcript_retention: Option<String>,
     pub language: Option<String>,
     pub listen_seconds: Option<u32>,
@@ -96,6 +120,16 @@ pub struct VoiceTranscriptResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct VoiceTranscriptPayload {
+    pub transcript: String,
+    pub engine: String,
+    pub language: String,
+    pub duration_seconds: f64,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VoiceSpeakRequest {
     pub text: String,
 }
@@ -118,3 +152,10 @@ pub struct VoiceInterruptResponse {
     pub detail: String,
     pub created_at: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceSpeakingPayload {
+    pub text: String,
+}
+
