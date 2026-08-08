@@ -1,11 +1,14 @@
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Child, Command};
-use std::sync::{Mutex, RwLock};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
 use chrono::Utc;
 use serde_json::Value;
+use tauri::{Emitter, Manager};
 
 use crate::db::DbPool;
+use super::endpointer::SilenceEndpointer;
 use super::types::*;
 
 pub struct LocalVoiceService {
@@ -14,7 +17,14 @@ pub struct LocalVoiceService {
     pub settings: RwLock<VoiceSettings>,
     pub db_pool: DbPool,
     pub active_tts_process: Mutex<Option<Child>>,
+    pub wake_detector: Mutex<Option<super::detector::WakeWordDetectorManager>>,
+    pub app_handle: RwLock<Option<tauri::AppHandle>>,
+    pub voice_mode_enabled: Arc<AtomicBool>,
+    pub is_speaking: Arc<AtomicBool>,
+    pub current_speaking_text: Arc<Mutex<Option<String>>>,
+    pub native_tts: Arc<super::tts::TtsEngine>,
 }
+
 
 impl LocalVoiceService {
     pub fn new(data_dir: PathBuf, db_pool: DbPool) -> Self {
@@ -29,12 +39,19 @@ impl LocalVoiceService {
             VoiceSettings::default()
         };
 
+        let voice_mode_enabled = Arc::new(AtomicBool::new(initial_settings.enabled));
         let service = Self {
             data_dir,
             settings_path,
             settings: RwLock::new(initial_settings),
             db_pool,
             active_tts_process: Mutex::new(None),
+            wake_detector: Mutex::new(None),
+            app_handle: RwLock::new(None),
+            voice_mode_enabled,
+            is_speaking: Arc::new(AtomicBool::new(false)),
+            current_speaking_text: Arc::new(Mutex::new(None)),
+            native_tts: Arc::new(super::tts::TtsEngine::new()),
         };
 
         // Resolve voice selection on init
@@ -44,6 +61,74 @@ impl LocalVoiceService {
         }
 
         service
+    }
+
+    pub fn set_app_handle(&self, handle: tauri::AppHandle) {
+        if let Ok(mut lock) = self.app_handle.write() {
+            *lock = Some(handle);
+        }
+    }
+
+    pub fn is_voice_mode_enabled(&self) -> bool {
+        self.voice_mode_enabled.load(Ordering::SeqCst)
+    }
+
+    pub fn toggle_voice_mode(&self, enabled: Option<bool>) -> Result<VoiceStatusResponse, String> {
+        let next_state = match enabled {
+            Some(val) => val,
+            None => !self.voice_mode_enabled.load(Ordering::SeqCst),
+        };
+        self.voice_mode_enabled.store(next_state, Ordering::SeqCst);
+        let patch = VoiceSettingsPatch {
+            enabled: Some(next_state),
+            muted: None,
+            tts_enabled: None,
+            wake_word_enabled: None,
+            wake_word_sensitivity: None,
+            transcript_retention: None,
+            language: None,
+            listen_seconds: None,
+            tts_voice: None,
+            tts_rate: None,
+            tts_volume: None,
+        };
+        let _ = self.patch_settings(patch);
+        Ok(self.status())
+    }
+
+
+    pub fn start_wake_listener(&self, app_handle: tauri::AppHandle) -> Result<(), String> {
+        let settings = self.read_settings();
+        if !settings.enabled {
+            return Err("Voice functionality is disabled.".to_string());
+        }
+        if settings.muted {
+            return Err("Voice input is muted.".to_string());
+        }
+        if !settings.wake_word_enabled {
+            return Err("Wake word detection is disabled in settings.".to_string());
+        }
+
+        self.set_app_handle(app_handle.clone());
+        let detector = super::detector::WakeWordDetectorManager::start(
+            app_handle,
+            settings.wake_word_sensitivity,
+        )?;
+
+        let mut guard = self.wake_detector.lock().map_err(|e| e.to_string())?;
+        if let Some(mut existing) = guard.take() {
+            existing.stop();
+        }
+        *guard = Some(detector);
+        Ok(())
+    }
+
+    pub fn stop_wake_listener(&self) -> Result<(), String> {
+        let mut guard = self.wake_detector.lock().map_err(|e| e.to_string())?;
+        if let Some(mut detector) = guard.take() {
+            detector.stop();
+        }
+        Ok(())
     }
 
     pub fn read_settings(&self) -> VoiceSettings {
@@ -65,6 +150,8 @@ impl LocalVoiceService {
             enabled: patch.enabled.unwrap_or(current.enabled),
             muted: patch.muted.unwrap_or(current.muted),
             tts_enabled: patch.tts_enabled.unwrap_or(current.tts_enabled),
+            wake_word_enabled: patch.wake_word_enabled.unwrap_or(current.wake_word_enabled),
+            wake_word_sensitivity: patch.wake_word_sensitivity.unwrap_or(current.wake_word_sensitivity),
             transcript_retention: patch.transcript_retention.unwrap_or(current.transcript_retention),
             stt_engine: current.stt_engine,
             tts_engine: current.tts_engine,
@@ -79,6 +166,23 @@ impl LocalVoiceService {
         self.write_settings(&next)?;
         if let Ok(mut lock) = self.settings.write() {
             *lock = next.clone();
+        }
+
+        if let Ok(guard) = self.wake_detector.lock() {
+            if let Some(ref detector) = *guard {
+                detector.set_sensitivity(next.wake_word_sensitivity);
+            }
+        }
+
+        if !next.enabled || next.muted || !next.wake_word_enabled {
+            let _ = self.stop_wake_listener();
+        } else if let Ok(handle_guard) = self.app_handle.read() {
+            if let Some(ref handle) = *handle_guard {
+                let is_running = self.wake_detector.lock().map(|g| g.is_some()).unwrap_or(false);
+                if !is_running {
+                    let _ = self.start_wake_listener(handle.clone());
+                }
+            }
         }
 
         Ok(next)
@@ -137,20 +241,141 @@ impl LocalVoiceService {
         }
     }
 
+    pub fn record_with_endpointer(&self, max_seconds: u32) -> Result<(Vec<f32>, f64), String> {
+        use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+
+        let host = cpal::default_host();
+        let device = host
+            .default_input_device()
+            .ok_or_else(|| "No default audio input device available.".to_string())?;
+
+        let config: cpal::StreamConfig = device
+            .default_input_config()
+            .map_err(|e| format!("Failed to get default input config: {}", e))?
+            .into();
+
+        let sample_rate = config.sample_rate.0;
+        let channels = config.channels as usize;
+
+        let endpointer = Arc::new(Mutex::new(SilenceEndpointer::new()));
+        let endpointer_clone = endpointer.clone();
+
+        let stream = device
+            .build_input_stream(
+                &config,
+                move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                    let mut mono = Vec::with_capacity(data.len() / channels);
+                    for chunk in data.chunks_exact(channels) {
+                        let sample = chunk.iter().sum::<f32>() / channels as f32;
+                        mono.push(sample);
+                    }
+
+                    let resampled = if sample_rate != 16000 {
+                        super::detector::resample_to_16k(&mono, sample_rate)
+                    } else {
+                        mono
+                    };
+
+                    if let Ok(mut ep) = endpointer_clone.lock() {
+                        ep.process_samples(&resampled);
+                    }
+                },
+                move |err| {
+                    eprintln!("[VoiceService] Audio recording error: {}", err);
+                },
+                None,
+            )
+            .map_err(|e| format!("Failed to build audio stream: {}", e))?;
+
+        stream
+            .play()
+            .map_err(|e| format!("Failed to start audio stream: {}", e))?;
+
+        let start = std::time::Instant::now();
+        let max_dur = std::time::Duration::from_secs(max_seconds as u64);
+
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            let is_done = endpointer
+                .lock()
+                .map(|ep| ep.is_silence_detected())
+                .unwrap_or(false);
+
+            if is_done || start.elapsed() >= max_dur {
+                break;
+            }
+        }
+
+        drop(stream);
+
+        let mut ep = endpointer.lock().map_err(|e| e.to_string())?;
+        let audio = ep.take_audio_buffer();
+        let duration = audio.len() as f64 / 16000.0;
+
+        Ok((audio, duration))
+    }
+
     pub fn transcribe(&self, request: Option<VoiceTranscriptRequest>) -> Result<VoiceTranscriptResponse, String> {
         let settings = self.read_settings();
         self.require_stt_ready(&settings)?;
 
         let req = request.unwrap_or(VoiceTranscriptRequest { listen_seconds: None });
-        let duration = req.listen_seconds.unwrap_or(settings.listen_seconds);
+        let duration_limit = req.listen_seconds.unwrap_or(settings.listen_seconds);
 
-        let transcript = run_windows_stt(&settings.language, duration)?;
+        let (_audio_buffer, duration_sec) = match self.record_with_endpointer(duration_limit) {
+            Ok((buf, dur)) => (buf, if dur > 0.1 { dur } else { duration_limit as f64 }),
+            Err(e) => {
+                eprintln!("[VoiceService] Endpointer recording fallback ({}), using standard STT.", e);
+                (Vec::new(), duration_limit as f64)
+            }
+        };
+
+        let transcript = run_windows_stt(&settings.language, duration_sec.ceil() as u32)?;
+
+        let payload = VoiceTranscriptPayload {
+            transcript: transcript.clone(),
+            engine: settings.stt_engine.clone(),
+            language: settings.language.clone(),
+            duration_seconds: duration_sec,
+            created_at: Utc::now().to_rfc3339(),
+        };
+
+        if let Ok(guard) = self.app_handle.read() {
+            if let Some(ref handle) = *guard {
+                let _ = handle.emit("voice:transcript", &payload);
+
+                if !transcript.trim().is_empty() {
+                    let handle_clone = handle.clone();
+                    let db_pool = self.db_pool.clone();
+                    let tts_enabled = settings.tts_enabled;
+
+                    tauri::async_runtime::spawn(async move {
+                        let llm_state = handle_clone.state::<crate::models::LlmState>();
+                        if let Ok(assistant_response) = crate::agent::commands::execute_agent_chat(
+                            &handle_clone,
+                            &db_pool,
+                            &llm_state,
+                            None,
+                            payload.transcript.clone(),
+                            None,
+                        ).await {
+                            if tts_enabled && !assistant_response.trim().is_empty() {
+                                let voice_state = handle_clone.state::<super::VoiceState>();
+                                let _ = voice_state.service.speak(VoiceSpeakRequest {
+                                    text: assistant_response,
+                                });
+                            }
+                        }
+                    });
+                }
+            }
+        }
 
         Ok(VoiceTranscriptResponse {
             transcript,
             engine: settings.stt_engine,
             language: settings.language,
-            duration_seconds: duration,
+            duration_seconds: duration_sec.ceil() as u32,
             raw_audio_stored: false,
             created_at: Utc::now().to_rfc3339(),
         })
@@ -166,6 +391,62 @@ impl LocalVoiceService {
         self.require_tts_ready(&settings)?;
         let _ = self.interrupt_speech();
 
+        self.is_speaking.store(true, Ordering::SeqCst);
+        if let Ok(mut guard) = self.current_speaking_text.lock() {
+            *guard = Some(text.to_string());
+        }
+
+        let app_handle_opt = self.app_handle.read().ok().and_then(|g| g.clone());
+
+        if let Some(ref handle) = app_handle_opt {
+            let _ = handle.emit("voice:speaking_start", VoiceSpeakingPayload { text: text.to_string() });
+        }
+
+        // Try native SAPI 5 synthesis via tts crate first
+        let native_speak_res = self.native_tts.speak(
+            text,
+            settings.tts_voice.as_deref(),
+            settings.tts_rate,
+            settings.tts_volume,
+        );
+
+        if native_speak_res.is_ok() {
+            loop {
+                let still_speaking = self.native_tts.is_speaking();
+                let is_active = self.is_speaking.load(Ordering::SeqCst);
+
+                if !is_active {
+                    self.native_tts.stop();
+                    let current_text = self.current_speaking_text.lock().ok().and_then(|mut g| g.take()).unwrap_or_else(|| text.to_string());
+                    if let Some(ref handle) = app_handle_opt {
+                        let _ = handle.emit("voice:interrupted", VoiceSpeakingPayload { text: current_text });
+                    }
+                    return Err("Speech was cancelled.".to_string());
+                }
+
+                if !still_speaking {
+                    break;
+                }
+
+                std::thread::sleep(std::time::Duration::from_millis(30));
+            }
+
+            self.is_speaking.store(false, Ordering::SeqCst);
+            let current_text = self.current_speaking_text.lock().ok().and_then(|mut g| g.take()).unwrap_or_else(|| text.to_string());
+            if let Some(ref handle) = app_handle_opt {
+                let _ = handle.emit("voice:speaking_done", VoiceSpeakingPayload { text: current_text });
+            }
+
+            return Ok(VoiceSpeakResponse {
+                spoken: true,
+                engine: "windows_sapi".to_string(),
+                characters: text.len(),
+                raw_audio_stored: false,
+                created_at: Utc::now().to_rfc3339(),
+            });
+        }
+
+        // Fallback to PowerShell .NET System.Speech process
         let child = run_windows_tts(
             text,
             settings.tts_voice.as_deref(),
@@ -179,7 +460,6 @@ impl LocalVoiceService {
             }
         }
 
-        // Wait for TTS completion or interruption without holding lock during sleep/wait
         let wait_result = loop {
             let status_opt = {
                 let mut lock = self.active_tts_process.lock();
@@ -206,7 +486,17 @@ impl LocalVoiceService {
                     break Ok(status);
                 }
                 Ok(None) => {
-                    std::thread::sleep(std::time::Duration::from_millis(50));
+                    if !self.is_speaking.load(Ordering::SeqCst) {
+                        let mut lock = self.active_tts_process.lock();
+                        if let Ok(ref mut guard) = lock {
+                            if let Some(mut c) = guard.take() {
+                                let _ = c.kill();
+                                let _ = c.wait();
+                            }
+                        }
+                        break Err("Speech was cancelled.".to_string());
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(30));
                 }
                 Err(err) => {
                     if let Ok(mut guard) = self.active_tts_process.lock() {
@@ -217,9 +507,15 @@ impl LocalVoiceService {
             }
         };
 
+        self.is_speaking.store(false, Ordering::SeqCst);
+        let current_text = self.current_speaking_text.lock().ok().and_then(|mut g| g.take()).unwrap_or_else(|| text.to_string());
+
         match wait_result {
             Ok(status) => {
                 if status.success() {
+                    if let Some(ref handle) = app_handle_opt {
+                        let _ = handle.emit("voice:speaking_done", VoiceSpeakingPayload { text: current_text });
+                    }
                     Ok(VoiceSpeakResponse {
                         spoken: true,
                         engine: settings.tts_engine,
@@ -231,11 +527,19 @@ impl LocalVoiceService {
                     Err("Local text-to-speech failed.".to_string())
                 }
             }
-            Err(e) => Err(e),
+            Err(e) => {
+                if let Some(ref handle) = app_handle_opt {
+                    let _ = handle.emit("voice:interrupted", VoiceSpeakingPayload { text: current_text });
+                }
+                Err(e)
+            }
         }
     }
 
     pub fn interrupt_speech(&self) -> VoiceInterruptResponse {
+        let was_speaking = self.is_speaking.swap(false, Ordering::SeqCst);
+        self.native_tts.stop();
+
         let child = {
             let lock = self.active_tts_process.lock();
             if let Ok(mut guard) = lock {
@@ -245,24 +549,39 @@ impl LocalVoiceService {
             }
         };
 
+        let mut child_killed = false;
         if let Some(mut child) = child {
             let _ = child.kill();
             let _ = child.wait();
-            return VoiceInterruptResponse {
+            child_killed = true;
+        }
+
+        let interrupted_text = self.current_speaking_text.lock().ok().and_then(|mut g| g.take());
+        let is_interrupted = was_speaking || child_killed || interrupted_text.is_some();
+
+        let app_handle_opt = self.app_handle.read().ok().and_then(|g| g.clone());
+
+        if is_interrupted {
+            let text_val = interrupted_text.unwrap_or_default();
+            if let Some(ref handle) = app_handle_opt {
+                let _ = handle.emit("voice:interrupted", VoiceSpeakingPayload { text: text_val });
+            }
+            VoiceInterruptResponse {
                 interrupted: true,
                 engine: "windows_speech".to_string(),
                 detail: "Local speech was interrupted.".to_string(),
                 created_at: Utc::now().to_rfc3339(),
-            };
-        }
-
-        VoiceInterruptResponse {
-            interrupted: false,
-            engine: "windows_speech".to_string(),
-            detail: "No active local speech was running.".to_string(),
-            created_at: Utc::now().to_rfc3339(),
+            }
+        } else {
+            VoiceInterruptResponse {
+                interrupted: false,
+                engine: "windows_speech".to_string(),
+                detail: "No active local speech was running.".to_string(),
+                created_at: Utc::now().to_rfc3339(),
+            }
         }
     }
+
 
     pub fn provider_status(&self) -> String {
         if !cfg!(target_os = "windows") {
@@ -536,6 +855,21 @@ mod tests {
     fn create_test_pool() -> DbPool {
         let manager = SqliteConnectionManager::memory();
         Pool::builder().max_size(1).build(manager).unwrap()
+    }
+
+    #[test]
+    fn test_voice_transcript_payload() {
+        let payload = VoiceTranscriptPayload {
+            transcript: "Hello Deyana".to_string(),
+            engine: "windows_speech".to_string(),
+            language: "en-US".to_string(),
+            duration_seconds: 1.5,
+            created_at: Utc::now().to_rfc3339(),
+        };
+
+        assert_eq!(payload.transcript, "Hello Deyana");
+        assert_eq!(payload.engine, "windows_speech");
+        assert_eq!(payload.duration_seconds, 1.5);
     }
 
     #[test]
