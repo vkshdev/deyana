@@ -4,7 +4,6 @@ pub mod config;
 pub mod server;
 pub mod tools;
 pub mod types;
-pub mod stress_tests;
 
 use std::path::PathBuf;
 use std::sync::Arc;
