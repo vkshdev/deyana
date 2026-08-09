@@ -1,378 +1,171 @@
-# DEYANA Architecture
+# DEYANA System Architecture Specification
 
-Deyana is a free, open-source, local-first private desktop AI assistant. It is designed for personal and internal data, so the architecture prioritizes privacy boundaries, explicit permissions, local storage, low-spec Windows hardware, and maintainable process separation. The product has no subscription, paid tier, advertising, checkout, license enforcement, or payment collection path.
+This document details the system design, subsystem contracts, memory boundaries, and execution models of **Deyana** — a privacy-enforced, local-first desktop AI assistant built in native Rust (Tauri 2) with a React 18 frontend.
 
-## Core Principles
+---
 
-- Private data is processed locally.
-- No cloud AI, hosted embedding, hosted reranker, cloud STT, or cloud TTS path is allowed for private context.
-- External connector APIs are allowed only for user-approved data retrieval.
-- Every external request passes through the privacy firewall.
-- Destructive actions and external writes require explicit user confirmation.
-- Business logic belongs in the Python core, not the desktop UI.
-- The UI should remain calm, lightweight, and useful on low-spec Windows laptops.
+## 1. Executive Architectural Overview
 
-## Runtime Overview
+Deyana is designed to serve as an on-device personal and workspace assistant operating over sensitive user context (local codebases, personal notes, chat history, and active window states).
 
-```text
-+---------+       +--------------------+       +---------------------+
-|  Owner  | <---> | React Desktop UI   | <---> | Tauri Rust Runtime  |
-+---------+       | floating assistant |       | window, tray, core  |
-                  +--------------------+       +----------+----------+
-                                                        |
-                                             local HTTP + WebSocket
-                                                        |
-                                             +----------v----------+
-                                             | Python FastAPI Core |
-                                             | product decisions   |
-                                             +----------+----------+
-                                                        |
-              +-------------------+---------------------+-------------------+
-              |                   |                     |                   |
-      +-------v--------+  +-------v--------+   +--------v-------+  +--------v-------+
-      | Local Memory   |  | Local Ollama   |   | Privacy        |  | Permissioned  |
-      | SQLite + vault |  | chat + embeds  |   | Firewall       |  | Tools + Voice |
-      +----------------+  +----------------+   +--------+-------+  +----------------+
-                                                        |
-                                               approved requests only
-                                                        |
-                                             +----------v----------+
-                                             | External APIs / Web |
-                                             +---------------------+
+### Non-Negotiable System Invariants
 
-All decisions, failures, privacy checks, and tool outcomes are written to local audit logs.
-```
+1. **Zero External AI Egress:** Private context (files, chat history, vector embeddings, vault notes, voice transcripts, and active window titles) must never be transmitted to cloud AI services or external LLM APIs.
+2. **Single-Binary Process Lifecycle:** All business logic, state management, retrieval indexing, background daemons, and protocol handlers reside in a single compiled Rust binary (`apps/desktop/src-tauri`). There are no Python runtimes, Node.js background services, or loopback HTTP servers for internal communication.
+3. **Hardware-Aware Execution:** System subsystems auto-profile host hardware, maintaining a sub-100MB idle RAM footprint and ensuring low CPU overhead on dual-core low-spec Windows devices.
+4. **Deterministic Policy Enforcement:** Network calls to external APIs pass through a pre-execution privacy policy evaluator with cryptographic SHA-256 audit logging.
 
-## Workflow Block Diagram
+---
 
-The user works from the floating desktop UI, Tauri owns native lifecycle, and the Python core owns product decisions. Private data remains inside the local boundary unless the firewall approves a narrowly scoped external request.
+## 2. Process Topology & Concurrency Model
+
+Deyana uses an event-driven asynchronous execution model built on top of Tokio and the Tauri 2 process architecture.
 
 ```text
-USER COMMAND
-     |
-     v
-+--------------------+
-| Floating Desktop UI|
-+---------+----------+
-          | typed request / local event
-          v
-+--------------------+
-| Tauri Rust Runtime |
-| window + lifecycle |
-+---------+----------+
-          | authenticated localhost transport
-          v
-+--------------------+
-| Python FastAPI Core|
-| intent + policy    |
-+---------+----------+
-          |
-          +------------------------+--------------------------+
-          |                        |                          |
-          v                        v                          v
-+-------------------+    +-------------------+      +-------------------+
-| Local Memory      |    | Local Ollama      |      | Privacy Firewall  |
-| retrieve + store  |    | reason + generate |      | classify request  |
-+---------+---------+    +---------+---------+      +---------+---------+
-          |                        |                          |
-          +-------------+----------+                    +-----+------+
-                        |                               |            |
-                        v                            BLOCK         ALLOW
-              +-------------------+                    |            |
-              | Local response    |                    v            v
-              | with references   |              +----------+  +----------------+
-              +---------+---------+              | Audit log|  | Approved API / |
-                        |                        +----------+  | public web      |
-                        |                                      +-------+--------+
-                        |                                              |
-                        +--------------------+-------------------------+
-                                             |
-                                             v
-                                   +-------------------+
-                                   | UI result / status|
-                                   +-------------------+
++-------------------------------------------------------------------------+
+|                              PROCESS TOPOLOGY                           |
++-------------------------------------------------------------------------+
+|                                                                         |
+|  +-------------------------------------------------------------------+  |
+|  |                     React 18 Desktop HUD (WebView)                |  |
+|  |             Presentation Layer / Store State (Zustand)            |  |
+|  +-----------------------------------+-------------------------------+  |
+|                                      |                                  |
+|                         Tauri IPC    |  (invoke / listen)               |
+|                                      v                                  |
+|  +-------------------------------------------------------------------+  |
+|  |                      Tauri 2 Rust Core Main Process               |  |
+|  |                                                                   |  |
+|  |  +-------------------------------------------------------------+  |  |
+|  |  |                 Tokio Multi-Threaded Runtime                |  |  |
+|  |  |                                                             |  |  |
+|  |  |  +-------------------+  +-------------------+  +---------+  |  |  |
+|  |  |  | Agent Brain Loop  |  | Proactive Sentinel|  | MCP     |  |  |  |
+|  |  |  | (Memory & Prompt) |  | (Win32 Poller)    |  | Server  |  |  |  |
+|  |  |  +---------+---------+  +---------+---------+  +----+----+  |  |  |
+|  |  |            |                      |               |       |  |  |
+|  |  +------------|----------------------|---------------|-------+  |  |
+|  |               |                      |               |          |  |
+|  |               v                      v               v          |  |
+|  |      +------------------+   +------------------+  +----------+  |  |
+|  |      | SQLite + FTS5    |   | Privacy Firewall |  | Native   |  |  |
+|  |      | Vector Database  |   | Audit Logger     |  | Tools    |  |  |
+|  |      +------------------+   +------------------+  +----------+  |  |
+|  +-----------------------------------+-------------------------------+  |
+|                                      |                                  |
+|                                      | Dedicated std::thread            |
+|                                      v                                  |
+|  +-------------------------------------------------------------------+  |
+|  |                  Voice Audio Capture Pipeline (cpal)              |  |
+|  |            Continuous WASAPI Ring Buffer + rustpotter VAD         |  |
+|  +-------------------------------------------------------------------+  |
+|                                                                         |
++-------------------------------------------------------------------------+
 ```
 
-## Layers
+### Threading & Subsystem Isolation
 
-### Desktop UI
+- **Main UI Thread:** Owns the OS window lifecycle, system tray integration, and native Win32 window positioning.
+- **Tokio Asynchronous Runtime:** Handles concurrent task execution including agent chat loops, MCP server requests, SQLite transactions, and connector synchronization runs.
+- **Dedicated Audio Thread:** Isolates continuous microphone capture (`cpal` WASAPI backend) on a dedicated native OS thread to prevent audio buffer underruns during heavy LLM inference.
 
-The desktop app is built with Tauri, React, TypeScript, TailwindCSS, and Framer Motion. It renders the product surface:
+---
 
-- onboarding
-- floating assistant
-- local chat
-- model setup
-- memory browser
-- connector status
-- privacy audit
-- voice controls
-- release-quality panels
+## 3. Subsystem Specifications
 
-The UI is not the source of business truth. It calls the core service, subscribes to WebSocket events, and renders state from shared schemas.
+### 3.1 Agent Brain & Retrieval Pipeline (`agent/`, `db/`)
 
-### Rust Runtime
+The agent brain orchestrates conversation state and memory retrieval.
 
-The Tauri runtime owns native desktop responsibilities:
+- **Hybrid Dual-Mode RAG:**
+  - **Lexical Search:** SQLite FTS5 index performing BM25 keyword scoring over structured memory items and Markdown vault notes.
+  - **Dense Vector Search:** Generates 384-dimensional embeddings via local Ollama models (`all-minilm`) stored in SQLite, executed using cosine similarity scoring.
+  - **Rank Fusion:** Combines lexical and vector candidate sets to construct the optimal context payload.
+- **Context Window Management:** Performs sliding-window context compression, budgeting tokens based on active LLM profile limits (e.g. 2,048 tokens on low-spec hardware up to 16,384 tokens on Ultra profiles).
+- **Streaming Pipeline:** Streams generation tokens asynchronously back to the React HUD using `tauri::Emitter` on the `llm:stream_chunk` channel.
 
-- transparent floating window
-- tray lifecycle
-- monitor-aware placement
-- native settings bridge
-- secure file dialogs
-- Python core child process startup and restart
-- app data directory management
+### 3.2 Proactive Sentinel Daemon (`daemon/`)
 
-The Rust layer should stay small. It should not duplicate memory, connector, privacy, model, or tool logic.
+The sentinel daemon operates as an autonomous background observer monitoring user desktop state.
 
-### Python Core
+- **Win32 Window Focus Poller:** Queries `GetForegroundWindow` and `GetWindowTextW` every 60 seconds to track active applications and workspace context.
+- **Context Synthesis:** Cross-references active window titles with upcoming calendar events and unread triage items.
+- **Card Dispatch:** Emits non-intrusive `proactive:context_card` events to the UI HUD containing actionable suggestions with priority scoping (`normal`, `urgent`).
 
-The Python core is the product brain. It uses FastAPI, Pydantic, WebSocket events, SQLite, and local filesystem storage.
+### 3.3 Audio & Voice Subsystem (`voice/`)
 
-It owns:
+Provides continuous hands-free voice interaction.
 
-- settings and onboarding state
-- vault setup
-- SQLite memory
-- Markdown vault writes
-- local memory analysis
-- local chat orchestration
-- Ollama model routing
-- privacy firewall
-- connector registration and sync
-- encrypted connector token storage
-- permissioned tools
-- local voice services
-- release readiness, logs, export, deletion, performance, and crash recovery
+- **Wake Word Engine:** Runs `rustpotter` neural template matching over a continuous 16kHz audio input ring buffer managed by `cpal` (WASAPI backend).
+- **Speech End-Pointer:** Implements energy-based Voice Activity Detection (VAD) with a configurable 1.5-second silence threshold.
+- **Native Speech Synthesis:** Utilizes the OS-native Windows Speech API (via the `tts` crate) for zero-latency local speech playback without external model dependencies.
 
-## Data Flow
+### 3.4 MCP Runtime Architecture (`mcp/`)
 
-### Chat With Memory
+Deyana implements a full Model Context Protocol (MCP) environment in dual client/server configuration.
 
-```text
-+-------+     +------------+     +-------------+
-| Owner | --> | Desktop UI | --> | Python Core |
-+-------+     +------------+     +------+------+ 
-                                      |
-                         +------------+-------------+
-                         |                          |
-                         v                          v
-                +----------------+         +----------------+
-                | SQLite Memory  |         | Recent Chat    |
-                | Markdown Vault |         | History        |
-                +-------+--------+         +-------+--------+
-                        |                          |
-                        +------------+-------------+
-                                     |
-                                     v
-                           +--------------------+
-                           | Context Builder    |
-                           | rank + compress    |
-                           +---------+----------+
-                                     |
-                                     v
-                           +--------------------+
-                           | Local Ollama Model |
-                           +---------+----------+
-                                     |
-                          answer + source references
-                                     |
-                        +------------+-------------+
-                        |                          |
-                        v                          v
-                +---------------+          +---------------+
-                | Store locally |          | Render in UI  |
-                +---------------+          +---------------+
-```
+- **MCP Client Manager:**
+  - Subprocess supervisor for external MCP tool servers (stdio and SSE transports).
+  - Compatible with standard `claude_desktop_config.json` configuration formats.
+  - Dynamically registers external MCP tool definitions into Deyana's unified tool registry.
+- **MCP Local Server:**
+  - Hosts a local Axum SSE endpoint exposing memory query tools (`search_deyana_memory`, `read_vault_note`, `create_vault_note`).
+  - Allows authorized external IDE plugins (Claude Desktop, Cursor, Antigravity) to query Deyana's memory without data leaving the machine.
 
-Private memory never leaves the machine during this flow.
+### 3.5 Privacy Firewall & Cryptographic Audit (`privacy/`)
 
-### Connector Sync
+All external network operations are intercepted by the deterministic privacy firewall.
 
-```text
-+-------+     +------------+     +-------------+     +------------------+
-| Owner | --> | Desktop UI | --> | Python Core | --> | Privacy Firewall |
-+-------+     +------------+     +-------------+     +---------+--------+
-                                                            |
-                                                 +----------+----------+
-                                                 |                     |
-                                               BLOCK                 ALLOW
-                                                 |                     |
-                                                 v                     v
-                                         +---------------+    +-------------------+
-                                         | Local audit   |    | Connector API     |
-                                         | + UI reason   |    | approved read     |
-                                         +---------------+    +---------+---------+
-                                                                      |
-                                                                      v
-                                                            +-------------------+
-                                                            | Normalize locally |
-                                                            | summarize + index |
-                                                            +---------+---------+
-                                                                      |
-                                                                      v
-                                                            +-------------------+
-                                                            | SQLite + Markdown |
-                                                            | local memory      |
-                                                            +---------+---------+
-                                                                      |
-                                                                      v
-                                                            +-------------------+
-                                                            | UI status event   |
-                                                            +-------------------+
-```
+- **Policy Classification:** Outbound requests are evaluated against destination domains, payload data categories, and user permission states.
+- **Deterministic Egress Gatekeeping:** Private user data is strictly blocked from external transmission.
+- **Cryptographic Audit Logger:** Every firewall decision (allowed or blocked) generates an append-only log record in SQLite featuring a SHA-256 hash of the request payload and evaluation metadata.
 
-Connector access is read-oriented by default. External writes require separate confirmation.
+---
 
-### Permissioned Tool Use
+## 4. Data Persistence & Vault Storage
 
-Tools are divided by risk:
+### 4.1 SQLite Database Schema (`db/`)
 
-- low-risk local inspection
-- public web access
-- local file access
-- source-code access
-- dangerous or destructive action
+The primary relational data store operates in SQLite WAL (Write-Ahead Logging) mode for concurrent read-write performance.
 
-The core must request explicit confirmation before risky actions. Tool results that could contain private data must not be forwarded to cloud AI.
+| Table Name | Primary Indices | Purpose |
+|---|---|---|
+| `memory_items` | `id`, `category`, `created_at` | Structured memory entries |
+| `memory_fts` | FTS5 Index (`title`, `content`) | Full-text search virtual table |
+| `memory_embeddings` | `memory_id` | Vector embedding storage for cosine similarity |
+| `chat_messages` | `session_id`, `created_at` | Session-scoped chat message logs |
+| `audit_logs` | `id`, `timestamp`, `hash` | Append-only SHA-256 privacy audit logs |
+| `connector_sync_runs` | `connector_id`, `status` | Sync history and record statistics |
 
-## Storage
+### 4.2 Local Markdown Vault Mirroring
 
-Deyana uses local storage only:
+Memory entries and connector summaries are bi-directionally synchronized to a local Markdown vault directory chosen by the user. Files are stored as plain UTF-8 Markdown (`.md`) with YAML frontmatter metadata, remaining fully accessible and editable outside of Deyana.
 
-- SQLite for structured memory, chat history, connector metadata, and audit records
-- Markdown vault for user-editable memory
-- OS-backed encrypted token storage where available
-- local logs for diagnostics and privacy events
-- local settings for model profile, vault path, sync mode, and voice preferences
+---
 
-Runtime user data, databases, logs, vault contents, model files, recordings, and installer artifacts are ignored by Git.
+## 5. IPC Interface Specification
 
-## Local AI Strategy
+### Core Tauri Commands
 
-The default model strategy is hardware-aware. Deyana should recommend local models from the owner's actual desktop or laptop capacity instead of assuming one model fits every machine.
+| Command Signature | Subsystem | Return Type | Description |
+|---|---|---|---|
+| `agent_chat(prompt, session_id)` | agent | `Result<ChatMessageResponse, String>` | Initiates agent execution loop and streams response tokens |
+| `get_agent_status()` | agent | `Result<AgentStatusResponse, String>` | Returns active model, persona state, and memory status |
+| `evaluate_privacy_policy(target, category)` | privacy | `Result<PrivacyEvaluation, String>` | Evaluates outbound request parameters against active policy |
+| `get_privacy_audit_logs(limit)` | privacy | `Result<Vec<AuditLogEntry>, String>` | Fetches append-only SHA-256 privacy audit records |
+| `start_wake_listener()` | voice | `Result<(), String>` | Activates continuous background audio capture and wake detection |
+| `transcribe_audio(buffer)` | voice | `Result<String, String>` | Converts recorded PCM audio buffer to text via local STT |
+| `speak_text(text)` | voice | `Result<(), String>` | Synthesizes local audio output via native Windows TTS |
+| `mcp_connect_server(name, config)` | mcp | `Result<McpServerStatus, String>` | Launches and handshakes with an external MCP tool server |
+| `mcp_call_tool(server_id, tool_name, args)` | mcp | `Result<McpToolResponse, String>` | Executes a tool on a connected MCP server |
+| `sync_connector(connector_id)` | connectors | `Result<SyncRunSummary, String>` | Triggers an incremental fetch cycle for an authorized connector |
 
-The model setup flow should use locally available signals:
+### Tauri Event Subscriptions
 
-- installed RAM
-- CPU class and logical core count
-- integrated GPU or discrete GPU presence
-- available VRAM when the OS exposes it
-- available disk space for model downloads
-- battery or low-power preference
-- currently installed Ollama models
-
-This hardware profile is used only for local recommendation and should not be uploaded. The user can override the recommendation, but Deyana should always prefer the safest model that can run reliably on the current machine.
-
-```text
-+------------------+       +--------------------+
-| Local Hardware   |       | Ollama Inventory   |
-| RAM, CPU, GPU,   |       | installed models   |
-| disk, power mode |       | and availability   |
-+--------+---------+       +----------+---------+
-         |                            |
-         +-------------+--------------+
-                       |
-                       v
-             +--------------------+
-             | Hardware Profiler  |
-             | local signals only |
-             +---------+----------+
-                       |
-                       v
-             +--------------------+
-             | Recommend Profile  |
-             | low / balanced /   |
-             | power              |
-             +---------+----------+
-                       |
-                       v
-             +--------------------+
-             | Test Model Locally |
-             | latency + memory   |
-             +---------+----------+
-                       |
-                       v
-             +--------------------+
-             | Owner Confirms     |
-             | persist selection  |
-             +--------------------+
-```
-
-Recommended profile rules:
-
-| Owner machine profile | Typical specs | Default recommendation | Runtime posture |
-| --- | --- | --- | --- |
-| Low-spec | About 8 GB RAM, i3/Ryzen 3 class CPU, 2-4 logical cores, integrated graphics | `qwen3:1.7b` for chat and summaries, `all-minilm:latest` for embeddings | One model job at a time, aggressive context compression, voice disabled by default |
-| Balanced | About 16 GB RAM, modern 4-8 core CPU, optional integrated or entry GPU | 3B to 4B quantized local chat model when installed, small local embedding model | Normal context window, cautious background sync, optional voice |
-| Power | 32 GB+ RAM, strong CPU, discrete GPU or high VRAM | 7B to 14B quantized local model only when latency is acceptable | Longer context, richer retrieval, optional local reranking later |
-
-The first supported profile targets low-spec Windows laptops with about 8 GB RAM, integrated graphics, and modest CPU performance.
-
-Default low-spec posture:
-
-- chat and summarization: `qwen3:1.7b`
-- embeddings: `all-minilm:latest`
-- concurrent model jobs: one
-- voice: disabled by default
-- sync: manual or conservative
-- context: compressed before generation
-
-Larger 7B or 8B models should not become the default. They can be supported as user-selected balanced or power profiles later.
-
-## Local Voice
-
-Deyana uses only installed Windows speech APIs for voice input and output. Voice remains disabled and muted by default on low-spec systems. When the user enables TTS, the core selects Microsoft Zira when available or another installed female voice. Non-female voices are filtered out and rejected; if no female voice is installed, TTS remains unavailable instead of falling back to the Windows system default. The desktop voice selector exposes only installed female alternatives and persists the owner's choice.
-
-Voice names, gender metadata, language, and the active selection stay on the device. No raw audio is stored, and no cloud STT or TTS provider is allowed.
-
-## Privacy Firewall
-
-Every external request must pass through the firewall before it leaves the device.
-
-The firewall classifies:
-
-- destination category
-- request purpose
-- data category
-- connector authorization
-- user consent state
-- privacy mode
-
-It blocks:
-
-- private data sent to cloud AI APIs
-- private data sent to hosted embedding or reranking APIs
-- local voice sent to cloud STT
-- local text sent to cloud TTS
-- private summaries or compressed context sent externally
-- unapproved local files, source code, vault content, or connector data sent externally
-
-Blocked and allowed decisions are written to a local audit trail.
-
-## Failure Modes
-
-- Ollama missing: model status reports offline or missing, and the UI guides local setup.
-- Selected model missing: the core returns a recoverable response instead of falling back to cloud AI.
-- Backend crash: Tauri shows recovery state and can restart the Python core.
-- Connector failure: sync run state is recorded locally and surfaced in the UI.
-- Privacy block: the request is denied, logged, and paired with a safe local alternative when possible.
-- Deletion request: local data deletion requires the exact confirmation phrase.
-
-## Public Interfaces
-
-The core exposes local HTTP and WebSocket interfaces for the desktop shell:
-
-- health and status
-- settings and onboarding
-- vault selection
-- memory CRUD, search, summaries, export, and deletion
-- model status, selection, and test prompts
-- chat messages and history
-- privacy checks and audit events
-- connector setup, settings, sync, and health
-- permissioned tools
-- voice settings, installed voice discovery and selection, transcription, and speech
-- release readiness, logs, privacy export, deletion, performance, and crash recovery
-
-The shared TypeScript schemas in `packages/schemas` should stay aligned with Python response models.
+| Event Channel | Payload Type | Dispatch Frequency | Subsystem Origin |
+|---|---|---|---|
+| `llm:stream_chunk` | `String` (Token Chunk) | Real-time during inference | `agent::commands` |
+| `proactive:context_card` | `ProactiveContextCard` | On 60s context shift | `daemon::mod` |
+| `voice:wake` | `WakeEventData` | On "Deyana" wake word match | `voice::detector` |
+| `voice:transcript` | `TranscriptionResult` | On speech VAD end-point | `voice::service` |
+| `core:status` | `CoreStatusData` | On subsystem state change | `main::process` |
