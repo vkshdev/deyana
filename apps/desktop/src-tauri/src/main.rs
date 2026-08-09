@@ -6,6 +6,7 @@ mod commands;
 mod connectors;
 mod daemon;
 mod db;
+mod mcp;
 mod models;
 mod privacy;
 mod process;
@@ -36,7 +37,12 @@ fn main() {
             let daemon_manager = daemon::DaemonManager::spawn(handle.clone(), db_pool.clone());
             let privacy_state = privacy::PrivacyState::new(db_pool.clone());
             let connector_state = connectors::ConnectorState::new(db_pool.clone());
-            let tool_state = tools::ToolState::new(db_pool.clone());
+            let mut tool_state = tools::ToolState::new(db_pool.clone());
+            let mcp_state = mcp::McpState::new(app_dir.clone(), db_pool.clone());
+            tool_state
+                .service
+                .set_mcp_registry(mcp_state.tool_registry.clone());
+
             let voice_state = voice::VoiceState::new(app_dir.clone(), db_pool.clone());
             voice_state.service.set_app_handle(handle.clone());
             let browser_state = browser::BrowserState::new(app_dir.clone(), db_pool.clone());
@@ -46,6 +52,7 @@ fn main() {
             app.manage(privacy_state);
             app.manage(connector_state);
             app.manage(tool_state);
+            app.manage(mcp_state);
             app.manage(voice_state);
             app.manage(browser_state);
 
@@ -112,6 +119,18 @@ fn main() {
             voice::commands::transcribe_audio,
             voice::commands::transcribe_voice,
             voice::commands::interrupt_voice,
+
+            mcp::commands::mcp_get_status,
+            mcp::commands::mcp_start_server,
+            mcp::commands::mcp_stop_server,
+            mcp::commands::mcp_list_servers,
+            mcp::commands::mcp_save_server,
+            mcp::commands::mcp_delete_server,
+            mcp::commands::mcp_connect_server,
+            mcp::commands::mcp_disconnect_server,
+            mcp::commands::mcp_list_tools,
+            mcp::commands::mcp_call_tool,
+            mcp::commands::mcp_import_config,
 
             browser::commands::get_browser_status,
             browser::commands::list_browser_sessions,
