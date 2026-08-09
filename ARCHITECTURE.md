@@ -15,6 +15,46 @@ Deyana is designed to serve as an on-device personal and workspace assistant ope
 3. **Hardware-Aware Execution:** System subsystems auto-profile host hardware, maintaining a sub-100MB idle RAM footprint and ensuring low CPU overhead on dual-core low-spec Windows devices.
 4. **Deterministic Policy Enforcement:** Network calls to external APIs pass through a pre-execution privacy policy evaluator with cryptographic SHA-256 audit logging.
 
+### High-Level System Architecture
+
+```mermaid
+flowchart TD
+    subgraph UI["React 18 Desktop HUD (WebView)"]
+        HUD["Holographic Glass Overlay"]
+        VoiceViz["Voice Waveform & Status Ring"]
+        ProactiveUI["Proactive Context Cards"]
+        McpUI["MCP Management Panel"]
+    end
+
+    subgraph Rust["Tauri 2 Rust Native Core Process"]
+        Agent["agent/<br/>Dual-Mode Memory RAG<br/>Streaming Token Pipeline"]
+        Daemon["daemon/<br/>Proactive Sentinel Daemon<br/>Win32 Active Window Poller"]
+        Voice["voice/<br/>Always-On Voice Pipeline<br/>rustpotter Wake + VAD + TTS"]
+        MCP["mcp/<br/>MCP Client & Axum SSE Server<br/>Tool Registry Bridge"]
+        Models["models/<br/>LLM Inference Router<br/>Ollama & llama.cpp"]
+        Privacy["privacy/<br/>Deterministic Firewall<br/>SHA-256 Audit Trail"]
+        DB["db/<br/>SQLite Engine<br/>FTS5 Keyword + Vector Store"]
+    end
+
+    subgraph External["External Environment"]
+        Ollama["Local Ollama Service<br/>(port 11434)"]
+        McpServers["External MCP Tool Servers<br/>(stdio / SSE transports)"]
+        Connectors["OAuth External APIs<br/>(Gmail, GitHub, Slack, etc.)"]
+    end
+
+    UI <-->|"Tauri IPC Commands & Events"| Agent
+    UI <-->|"proactive:context_card"| Daemon
+    UI <-->|"voice:wake / voice:transcript"| Voice
+    UI <-->|"mcp:*"| MCP
+
+    Agent --> DB
+    Agent --> Models
+    Agent --> Privacy
+    MCP <--> McpServers
+    Models --> Ollama
+    Agent -.->|"Firewall approved calls"| Connectors
+```
+
 ---
 
 ## 2. Process Topology & Concurrency Model
