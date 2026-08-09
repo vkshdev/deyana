@@ -1,129 +1,44 @@
 # Contributing to Deyana
 
-We're so glad you're interested in contributing to Deyana! This project is all about building something meaningful for real users, with a strong focus on privacy and data security. We really value contributions that prioritize privacy, safety, and long-term maintainability over just getting things done quickly.
+Thank you for contributing to Deyana — an open-source, privacy-first desktop AI assistant.
 
+Deyana is a monorepo containing a native Rust runtime (`apps/desktop/src-tauri`) and a React 18 frontend (`apps/desktop/src`). All business logic, AI routing, memory management, and privacy enforcement reside strictly in the Rust backend. Full architectural specifications and IPC contracts are documented in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## Prerequisites & Development Commands
 
-## Setup
+| Requirement / Action | Command / Tool | Working Directory | Notes |
+|---|---|---|---|
+| **Node.js & pnpm** | Node 20+, pnpm 9+ | Root | Monorepo package manager |
+| **Rust Toolchain** | Stable `rustup` | Root | Desktop backend compiler |
+| **Local LLM Engine** | Ollama on port `11434` | System | Pull dev models: `qwen2.5:1.5b`, `all-minilm` |
+| **Install Dependencies** | `pnpm install` | Root | Run once after cloning |
+| **Start Dev App** | `pnpm --filter @deyana/desktop dev` | Root | Launches Vite dev server and debug Rust binary |
+| **Rust Compile Check** | `cargo check` | `apps/desktop/src-tauri` | Fast compilation check |
+| **Rust Test Suite** | `cargo test` | `apps/desktop/src-tauri` | Unit and integration tests |
+| **Frontend Type Check** | `npm --prefix apps/desktop run build` | Root | Validates TypeScript and production bundle |
+| **Release Build** | `cargo build --release` | `apps/desktop/src-tauri` | Production binary compilation |
 
-Prerequisites:
+## Architectural Rules
 
-- Windows 10 or 11
-- Git
-- Node.js 22+
-- pnpm 11+
-- Rust with the MSVC toolchain
-- Python 3.12 or 3.13
-- Ollama
+1. **Rust Core Ownership:** All state, business logic, file I/O, and networking belong in Rust (`apps/desktop/src-tauri/src/`). The React UI is strictly a presentation shell.
+2. **Pure Tauri IPC:** Inter-process communication must use Tauri `invoke` for commands and `listen` for event streaming. No internal HTTP servers or loopback web ports.
+3. **Local Privacy Boundary:** Private context (files, chat logs, code, vault notes, active window titles) must never leave the machine.
+4. **Firewall Gatekeeping:** Outbound network calls (connector sync, public web search) must pass through `privacy::commands::evaluate_privacy_policy` before execution.
+5. **Explicit User Consent:** Destructive actions, disk writes, or external posts require user confirmation via explicit action plans.
 
-Install dependencies:
+## Quality Assurance
 
-```powershell
-pnpm install
-pnpm core:install
+Before submitting a Pull Request, verify that all backend and frontend checks pass cleanly:
+
+```bash
+cd apps/desktop/src-tauri && cargo check && cargo test
+cd ../.. && npm --prefix apps/desktop run build
 ```
 
-Run the desktop app:
+## Security Reporting
 
-```powershell
-pnpm desktop:dev
-```
+To report security or privacy vulnerabilities (e.g. data leaking past the privacy firewall or unverified disk access), notify the project maintainers privately via GitHub Security Advisories rather than opening a public issue.
 
-Run the backend only:
+## License
 
-```powershell
-pnpm core:dev
-```
-
-## Engineering Standards
-
-To keep our codebase healthy and easy to work with, here are some guidelines we try to follow:
-
-- It's a good idea to keep business logic separate from your UI components.
-- Most of our core behavior lives in `services/core`.
-- You'll find shared contracts in `packages/schemas`.
-- We generally prefer small, explicit changes that are easy to review over large, broad rewrites.
-- Try to avoid adding new dependencies if the standard library or existing tools can do the job.
-- When you're coding, please keep low-spec Windows laptops in mind for performance.
-- And finally, let's all try to avoid leaving placeholder code, fake integrations, or TODO stubs in committed code.
-
-## Privacy Rules
-
-Privacy is at the core of Deyana, and it's super important to us. When contributing, please keep these critical privacy principles in mind:
-
-We can't accept changes that would send private data to:
-
-- cloud AI APIs
-- hosted embedding APIs
-- hosted rerankers
-- cloud STT
-- cloud TTS
-- any unapproved external services
-
-Remember, every external request needs to pass through our privacy firewall. Any destructive actions or external writes should always require explicit user confirmation.
-
-Deyana is committed to being permanently free and open source. With that in mind, we kindly ask that contributions do not introduce subscriptions, paid tiers, advertisements, checkout processes, in-app purchases, license enforcement, donation gating, or any form of payment collection.
-
-Just to be clear, "private data" includes things like connector payloads, local files, source code, notes, vault content, chat history, voice transcripts, memory, summaries, embeddings, and compressed context.
-
-## Security Contributions
-
-We truly appreciate any security contributions!. When it comes to security fixes, our active public development line is `main`, so please target `main` first.
-
-We kindly ask that you please refrain from publishing exploit details or sensitive evidence in a public issue. Instead, if GitHub private vulnerability reporting is enabled, please use that. Otherwise, you can open a minimal public issue stating that a private security report is available and request a safe contact channel.
-
-For us to best understand and address a private report, a useful one generally includes:
-
-- the affected version or commit
-- the operating system
-- minimal reproduction steps
-- expected impact and severity
-- whether private data can leave the device
-- whether tokens, files, memory, voice, tools, or connector data are involved
-- a suggested mitigation when known
-
-We consider these areas to be particularly high-risk, so please approach them with extra care:
-
-- connector OAuth and encrypted token storage
-- privacy firewall allow/block decisions
-- permissioned tool execution
-- local file and source-code access
-- memory export and deletion
-- voice transcription and speech
-- logs and privacy audit output
-- update, packaging, and installer flows
-
-It's crucial that you never commit `.env` files, OAuth tokens, API keys, local databases, vault data, runtime logs, installers, model files, voice recordings, or transcripts. If you accidentally commit a secret, please rotate it immediately and remove it from Git history before publishing.
-
-## Test Commands
-
-Before you submit your contribution, here are some commands to help you test your changes and ensure everything is working as expected:
-
-To run the full release gate:
-
-```powershell
-pnpm release:check
-```
-
-Or, if you prefer to run individual checks:
-
-```powershell
-pnpm check
-pnpm core:test
-pnpm --filter @deyana/desktop build
-cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
-```
-
-For privacy-sensitive changes, please consider adding targeted tests for allow/block behavior, audit logs, token redaction, permission prompts, and deletion safety. These are super important!
-
-## Pull Requests
-
-When you're ready to open a pull request, here's what makes a great one and helps us review it quickly:
-
--   A clear problem statement: Tell us what issue you're addressing.
--   Focused implementation: Keep your changes concise and to the point.
--   Good test coverage (or a clear reason why tests weren't added).
--   Screenshots for any visible UI changes are super helpful!
--   Privacy impact notes, especially when you're working with connectors, tools, memory, voice, or model routing.
-
-Please remember not to include any secrets, real tokens, private logs, personal connector data, local vault contents, generated model files, installers, or runtime databases directly in your pull request. It's a security best practice!
+Under the [MIT License](LICENSE). By contributing, you agree that your contributions will be licensed under the same terms.
