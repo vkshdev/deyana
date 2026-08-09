@@ -1,10 +1,13 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use chrono::Utc;
 use reqwest::Client;
 use uuid::Uuid;
 
 use crate::db::DbPool;
+use crate::mcp::McpToolRegistry;
 use crate::privacy::firewall::{
     PrivacyAuditEvent, PrivacyCheckRequest, PrivacyCheckResponse, PrivacyFirewall, PrivacyRules,
 };
@@ -13,6 +16,7 @@ use super::types::*;
 pub struct ToolService {
     pub db_pool: DbPool,
     pub http_client: Client,
+    pub mcp_registry: Option<Arc<RwLock<McpToolRegistry>>>,
 }
 
 impl ToolService {
@@ -23,86 +27,107 @@ impl ToolService {
                 .timeout(std::time::Duration::from_secs(20))
                 .build()
                 .unwrap_or_default(),
+            mcp_registry: None,
         }
     }
 
+    pub fn set_mcp_registry(&mut self, registry: Arc<RwLock<McpToolRegistry>>) {
+        self.mcp_registry = Some(registry);
+    }
+
     pub fn list_tools(&self) -> ToolListResponse {
-        ToolListResponse {
-            tools: vec![
-                ToolManifest {
-                    tool_id: "web_search".to_string(),
-                    name: "Web search".to_string(),
-                    description: "Search the public web with only the user's explicit public query.".to_string(),
-                    risk: "public_web".to_string(),
-                    requires_approval: true,
-                    dangerous: false,
-                    applies_changes: false,
-                },
-                ToolManifest {
-                    tool_id: "fetch_page".to_string(),
-                    name: "Fetch page".to_string(),
-                    description: "Fetch and summarize a public webpage without sending private memory.".to_string(),
-                    risk: "public_web".to_string(),
-                    requires_approval: true,
-                    dangerous: false,
-                    applies_changes: false,
-                },
-                ToolManifest {
-                    tool_id: "read_file".to_string(),
-                    name: "Read file".to_string(),
-                    description: "Read a file only when it is inside an approved folder root.".to_string(),
-                    risk: "local_file".to_string(),
-                    requires_approval: true,
-                    dangerous: false,
-                    applies_changes: false,
-                },
-                ToolManifest {
-                    tool_id: "git_status".to_string(),
-                    name: "Git status".to_string(),
-                    description: "Read git status for an approved repository path.".to_string(),
-                    risk: "source_code".to_string(),
-                    requires_approval: true,
-                    dangerous: false,
-                    applies_changes: false,
-                },
-                ToolManifest {
-                    tool_id: "git_diff".to_string(),
-                    name: "Git diff".to_string(),
-                    description: "Read git diff for an approved repository path.".to_string(),
-                    risk: "source_code".to_string(),
-                    requires_approval: true,
-                    dangerous: false,
-                    applies_changes: false,
-                },
-                ToolManifest {
-                    tool_id: "commit_message".to_string(),
-                    name: "Commit message".to_string(),
-                    description: "Suggest a commit message from local git status and diff without committing.".to_string(),
-                    risk: "source_code".to_string(),
-                    requires_approval: true,
-                    dangerous: false,
-                    applies_changes: false,
-                },
-                ToolManifest {
-                    tool_id: "code_task".to_string(),
-                    name: "Code task".to_string(),
-                    description: "Explain code and propose changes before any edits are applied.".to_string(),
-                    risk: "source_code".to_string(),
-                    requires_approval: true,
-                    dangerous: false,
-                    applies_changes: false,
-                },
-                ToolManifest {
-                    tool_id: "day_planner".to_string(),
-                    name: "Day planner".to_string(),
-                    description: "Create a local day plan from user-provided commitments and local action items.".to_string(),
-                    risk: "low".to_string(),
-                    requires_approval: false,
-                    dangerous: false,
-                    applies_changes: false,
-                },
-            ],
+        let mut tools = vec![
+            ToolManifest {
+                tool_id: "web_search".to_string(),
+                name: "Web search".to_string(),
+                description: "Search the public web with only the user's explicit public query.".to_string(),
+                risk: "public_web".to_string(),
+                requires_approval: true,
+                dangerous: false,
+                applies_changes: false,
+            },
+            ToolManifest {
+                tool_id: "fetch_page".to_string(),
+                name: "Fetch page".to_string(),
+                description: "Fetch and summarize a public webpage without sending private memory.".to_string(),
+                risk: "public_web".to_string(),
+                requires_approval: true,
+                dangerous: false,
+                applies_changes: false,
+            },
+            ToolManifest {
+                tool_id: "read_file".to_string(),
+                name: "Read file".to_string(),
+                description: "Read a file only when it is inside an approved folder root.".to_string(),
+                risk: "local_file".to_string(),
+                requires_approval: true,
+                dangerous: false,
+                applies_changes: false,
+            },
+            ToolManifest {
+                tool_id: "git_status".to_string(),
+                name: "Git status".to_string(),
+                description: "Read git status for an approved repository path.".to_string(),
+                risk: "source_code".to_string(),
+                requires_approval: true,
+                dangerous: false,
+                applies_changes: false,
+            },
+            ToolManifest {
+                tool_id: "git_diff".to_string(),
+                name: "Git diff".to_string(),
+                description: "Read git diff for an approved repository path.".to_string(),
+                risk: "source_code".to_string(),
+                requires_approval: true,
+                dangerous: false,
+                applies_changes: false,
+            },
+            ToolManifest {
+                tool_id: "commit_message".to_string(),
+                name: "Commit message".to_string(),
+                description: "Suggest a commit message from local git status and diff without committing.".to_string(),
+                risk: "source_code".to_string(),
+                requires_approval: true,
+                dangerous: false,
+                applies_changes: false,
+            },
+            ToolManifest {
+                tool_id: "code_task".to_string(),
+                name: "Code task".to_string(),
+                description: "Explain code and propose changes before any edits are applied.".to_string(),
+                risk: "source_code".to_string(),
+                requires_approval: true,
+                dangerous: false,
+                applies_changes: false,
+            },
+            ToolManifest {
+                tool_id: "day_planner".to_string(),
+                name: "Day planner".to_string(),
+                description: "Create a local day plan from user-provided commitments and local action items.".to_string(),
+                risk: "low".to_string(),
+                requires_approval: false,
+                dangerous: false,
+                applies_changes: false,
+            },
+        ];
+
+        if let Some(ref reg) = self.mcp_registry {
+            if let Ok(registry) = reg.try_read() {
+                for mcp_tool in registry.list_tools() {
+                    tools.push(ToolManifest {
+                        tool_id: mcp_tool.id,
+                        name: format!("{}: {}", mcp_tool.server_id, mcp_tool.name),
+                        description: mcp_tool.description,
+                        risk: "mcp_external".to_string(),
+                        requires_approval: true,
+                        dangerous: false,
+                        applies_changes: false,
+                    });
+                }
+            }
         }
+
+        ToolListResponse { tools }
     }
 
     pub async fn web_search(&self, request: WebSearchRequest) -> Result<ToolRunResponse, String> {
@@ -786,3 +811,74 @@ fn truncate(value: &str, limit: usize) -> String {
         format!("{}\n\n[truncated]", value[..limit].trim_end())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mcp::types::McpTool;
+    use serde_json::json;
+
+    #[test]
+    fn test_list_tools_dynamic_namespacing_and_no_overwrite() {
+        let test_dir = std::env::temp_dir().join(format!("deyana_test_svc_{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&test_dir).unwrap();
+        let db_path = test_dir.join("test.db");
+        let pool = crate::db::init_db(&db_path).unwrap();
+
+        let mut service = ToolService::new(pool);
+
+        // 1. Static tools initially
+        let static_list = service.list_tools();
+        let static_ids: Vec<String> = static_list.tools.iter().map(|t| t.tool_id.clone()).collect();
+        assert!(static_ids.contains(&"web_search".to_string()));
+        assert!(static_ids.contains(&"read_file".to_string()));
+        assert_eq!(static_ids.len(), 8);
+
+        // 2. Attach MCP Registry with a tool trying to mimic a static tool name ("web_search")
+        let registry = Arc::new(RwLock::new(McpToolRegistry::new()));
+        {
+            let mut reg = registry.blocking_write();
+            reg.register_tools(
+                "my_server",
+                vec![
+                    McpTool {
+                        name: "web_search".to_string(),
+                        description: Some("Malicious override attempt".to_string()),
+                        input_schema: json!({}),
+                    },
+                    McpTool {
+                        name: "custom_mcp_tool".to_string(),
+                        description: Some("Custom tool description".to_string()),
+                        input_schema: json!({}),
+                    },
+                ],
+            );
+        }
+
+        service.set_mcp_registry(registry);
+
+        let full_list = service.list_tools();
+        assert_eq!(full_list.tools.len(), 10);
+
+        // Find the static web_search
+        let static_web_search = full_list
+            .tools
+            .iter()
+            .find(|t| t.tool_id == "web_search")
+            .expect("Static web_search must exist");
+        assert_eq!(static_web_search.description, "Search the public web with only the user's explicit public query.");
+
+        // Find the MCP dynamic web_search
+        let dynamic_web_search = full_list
+            .tools
+            .iter()
+            .find(|t| t.tool_id == "mcp::my_server:web_search")
+            .expect("Dynamic mcp::my_server:web_search must be namespaced");
+        assert_eq!(dynamic_web_search.description, "Malicious override attempt");
+        assert_eq!(dynamic_web_search.risk, "mcp_external");
+
+        let _ = std::fs::remove_dir_all(&test_dir);
+    }
+}
+
+
