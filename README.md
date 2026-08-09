@@ -5,97 +5,57 @@
 <p align="center">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-111827?style=flat-square"></a>
   <img alt="Local first" src="https://img.shields.io/badge/local--first-private-2563eb?style=flat-square">
-  <img alt="Desktop" src="https://img.shields.io/badge/desktop-Tauri%20%2B%20React-0f766e?style=flat-square">
+  <img alt="Desktop" src="https://img.shields.io/badge/desktop-Tauri%202%20%2B%20React%2018-0f766e?style=flat-square">
+  <img alt="Backend" src="https://img.shields.io/badge/backend-native%20Rust-b7410e?style=flat-square">
   <img alt="AI runtime" src="https://img.shields.io/badge/AI-Ollama%20local-7c3aed?style=flat-square">
+  <img alt="MCP" src="https://img.shields.io/badge/MCP-client%20%2B%20server-059669?style=flat-square">
 </p>
 
-Deyana (pronounced **De-Yana**) is a privacy-first desktop assistant that runs on your computer, keeps memory on your machine, uses local AI models by default, and routes every external request through an explicit privacy boundary.
+Deyana is an open-source, privacy-first desktop AI assistant designed to run entirely on local hardware. Built with a native Rust backend and a lightweight React frontend, Deyana keeps all chat history, memory, vector embeddings, and notes strictly on your machine.
 
-It is built for people who want an assistant over their real personal or work context without sending private files, chat history, source code, connector data, voice, memory, embeddings, or summaries to cloud AI APIs.
+Instead of routing private code, documents, or context to cloud APIs, Deyana leverages local Ollama models and an on-device SQLite database paired with a Markdown vault. A built-in privacy firewall enforces request boundaries, while a proactive context sentinel surfaces insights as you work. Deyana supports hands-free voice wake word detection ("Deyana") and includes full Model Context Protocol (MCP) support as both a client and a server.
 
-## Why Deyana Exists
+Technical architecture details are documented in [ARCHITECTURE.md](ARCHITECTURE.md).
 
-Most assistants are either cloud chat windows, browser dashboards, or powerful agents that need broad access to your tools. Deyana takes a narrower and safer bet:
+## Core Capabilities
 
-- your memory stays local in SQLite and a user-editable Markdown vault
-- private context is processed by local models through Ollama
-- connector data is read only after user approval
-- external requests pass through a privacy firewall
-- destructive actions and external writes require explicit confirmation
-- the main product surface is a floating desktop UI, not another browser tab
+- **Native Rust Core Engine** — Zero Python runtime dependencies or sidecar server processes. Built as a single lightweight Tauri 2 binary for fast cold-starts and low memory usage.
+- **On-Device Hybrid Memory** — Combines SQLite FTS5 keyword indexing with local vector embeddings (via Ollama) to retrieve accurate context from past chats and personal notes.
+- **Proactive Context Sentinel** — Periodically analyzes active window titles and desktop context to surface relevant suggestions and reminders without manual prompting.
+- **Hands-Free Voice Pipeline** — Always-on wake word detection ("Deyana") powered by `rustpotter` and `cpal` WASAPI, paired with local speech-to-text and native speech synthesis.
+- **Dual-Role MCP Runtime** — Functions as an MCP Client to connect external tool servers, and as an MCP Server (axum SSE) exposing local memory and vault search to external AI environments.
+- **Hardened Privacy Firewall** — Intercepts all external network requests. Classifies traffic by destination and data type, blocking private context from leaving the device while maintaining audit logs with SHA-256 signatures.
+- **Read-Only Connectors & Safe Tools** — Integrates with services like GitHub, Gmail, Calendar, Slack, Drive, Notion, Jira, and Linear under strict read-only constraints, requiring explicit user approval for external actions.
 
-The goal is not to build the loudest agent. The goal is to build the assistant you can trust with internal data.
+## How Deyana Compares
 
-## Free And Open Source
+Deyana is designed specifically for users who need a persistent, local desktop assistant operating over sensitive personal or workspace data.
 
-Deyana is free software for the open-source community. It has no subscription, paid tier, license fee, advertising, checkout, in-app payment processing, or payment-service integration.
-
-## Features
-
-- Floating transparent desktop assistant for fast access while you work.
-- Local onboarding, model profile selection, and vault setup.
-- SQLite-backed structured memory mirrored into Markdown notes.
-- Local chat with memory retrieval, compressed context, and source references.
-- Ollama model detection, model selection, and low-spec defaults.
-- Privacy firewall for external requests and local audit logs.
-- Read-only connector architecture for approved services.
-- Permission-gated tools for web, files, git, coding, and planning.
-- Local-only push-to-talk and TTS with a female-only Deyana voice and selectable installed female Windows voices.
-- Release-quality panels for logs, privacy export, deletion, connector health, performance, and crash recovery.
+| Feature Category | Cloud AI Chatbots & Web Portals | Heavy Python Agent Frameworks | Desktop Widgets & OS Plugins | Deyana Desktop Assistant |
+| --- | --- | --- | --- | --- |
+| **Execution Runtime** | Remote Cloud Servers | Python Virtual Environments / CLI | Background Webview / OS Process | Native Rust (Tauri 2 + Async Tokio) |
+| **Data Boundary** | Cloud Storage & Remote Logs | Depends on script configuration | Cloud Telemetry & Sync | 100% Local (On-Device SQLite + Vault) |
+| **AI Model Processing** | Proprietary Hosted APIs | Configurable Cloud or Local APIs | Proprietary Hosted APIs | Local Models via Ollama Engine |
+| **Privacy Enforcement** | Terms of Service Policy | Manual Code Checks | Cloud Privacy Settings | Deterministic Rust Firewall + Audit Logs |
+| **Desktop Presence** | Browser Tab / Web Window | Terminal / CLI Interface | System Tray / Taskbar Overlay | Floating Transparent HUD + Win32 Sentinel |
+| **Extensibility** | Closed Plugin Ecosytems | Custom Python Scripts | Fixed API Integrations | Standard MCP Client & MCP Server |
 
 ## Privacy Model
 
-Deyana has one non-negotiable rule:
+Deyana operates under a strict privacy guarantee:
 
-> Sensitive user data must not be sent to cloud AI APIs.
+> **Private user context must never be transmitted to cloud AI services.**
 
-Sensitive data includes local files, source code, personal notes, vault content, voice transcripts, chat history, memory, summaries, embeddings, compressed context, Gmail content, Calendar events, Drive files, Slack messages, Notion pages, GitHub private repository content, and Jira or Linear issues.
+Private context includes local source code, personal notes, vault files, voice recordings, transcripts, chat history, memory items, summaries, vector embeddings, workspace connector data, and active window states.
 
-Allowed external traffic is limited to user-approved connector API calls, public web requests, OAuth token refresh, and optional update checks. AI processing over private data stays local.
+External network calls are limited strictly to user-authorized API connector fetches, public web requests, OAuth token refreshes, and optional update checks. All outbound traffic is audited locally.
 
-## Install On Windows
+## Installation & Setup
 
-**Windows installer coming soon.**
+For developer setup, building from source, running tests, and contribution guidelines, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-The first signed DEYANA installer will be published through GitHub Releases. Source setup and development instructions are available in [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Architecture
-
-Read the full design in [ARCHITECTURE.md](ARCHITECTURE.md).
-
-## Comparison
-
-This comparison is positioning, not a claim that Deyana replaces every other open-source assistant. These projects are strong in different categories. Deyana focuses on local desktop privacy for personal and internal data.
-
-| Project | Primary shape | Internal data and offline posture | Where Deyana is different |
-| --- | --- | --- | --- |
-| [Open Interpreter](https://github.com/openinterpreter/openinterpreter) | Coding agent and terminal workflow | Strong for code execution and model/provider flexibility, with local session state | Deyana is a desktop personal assistant with memory, connectors, privacy firewall, and local-first UX beyond coding |
-| [Khoj](https://github.com/khoj-ai/khoj) | Self-hostable second brain and research assistant | Works with docs, web, agents, automations, and local or online LLMs | Deyana makes private data local-only by product rule and optimizes for Windows desktop presence |
-| [AnythingLLM](https://github.com/Mintplex-Labs/anything-llm) | Local-first RAG and agent workspace | Strong document/workspace ownership story | Deyana adds an OS-level floating assistant, permissioned tools, local audit logs, and strict external request routing |
-| [Open WebUI](https://github.com/open-webui/open-webui) | Web interface for interacting with models | Excellent model UI, including Ollama and hosted providers | Deyana is not just a model UI; it owns memory, connectors, tool permissions, and desktop lifecycle |
-| [Dify](https://github.com/langgenius/dify) | Agentic workflow development platform | Production workflow platform, commonly deployed as a server product | Deyana is a single-user local desktop assistant for personal/internal context, not a hosted workflow platform |
-| [Hermes Agent](https://github.com/NousResearch/hermes-agent) | Self-improving multi-channel agent | Strong learning loop, skills, gateways, and flexible cloud/VPS/serverless operation | Deyana deliberately prioritizes local laptop privacy, low-spec defaults, and user-visible permission boundaries |
-| [OpenClaw](https://github.com/openclaw/openclaw) | Personal AI assistant with broad channel support | Local-first gateway with many messaging channels and powerful tools | Deyana has a smaller surface area by design: desktop-first, private-memory-first, and firewall-first |
-| [OpenHands](https://github.com/OpenHands/OpenHands) | Developer control center for coding agents and automations | Can run locally or with remote/cloud backends; sandboxing matters for filesystem safety | Deyana targets private everyday desktop memory and connector data, with no cloud AI path for private context |
-
-Autonomous agents are powerful because they can touch real tools and internal data. That is also the risk. Deyana treats privacy, permissions, and local auditability as core product features instead of add-ons.
-
-## Repository Layout
-
-```text
-de-yana/
-  apps/desktop/          Tauri, React, TypeScript desktop app
-  packages/config/       Shared product defaults
-  packages/schemas/      Shared TypeScript contracts
-  services/core/         Python FastAPI core service
-  vault-template/        Default local Markdown vault structure
-  assets/brand/          Public README logo and banner assets
-```
-
-## Contributing
-
-Setup, development commands, testing, pull-request guidance, and private security reporting are documented in [CONTRIBUTING.md](CONTRIBUTING.md).
+For detailed system architecture, IPC event contracts, and data storage design, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+Free and open-source software under the [MIT License](LICENSE).
