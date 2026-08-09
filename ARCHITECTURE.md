@@ -61,46 +61,43 @@ flowchart TD
 
 Deyana uses an event-driven asynchronous execution model built on top of Tokio and the Tauri 2 process architecture.
 
-```text
-+-------------------------------------------------------------------------+
-|                              PROCESS TOPOLOGY                           |
-+-------------------------------------------------------------------------+
-|                                                                         |
-|  +-------------------------------------------------------------------+  |
-|  |                     React 18 Desktop HUD (WebView)                |  |
-|  |             Presentation Layer / Store State (Zustand)            |  |
-|  +-----------------------------------+-------------------------------+  |
-|                                      |                                  |
-|                         Tauri IPC    |  (invoke / listen)               |
-|                                      v                                  |
-|  +-------------------------------------------------------------------+  |
-|  |                      Tauri 2 Rust Core Main Process               |  |
-|  |                                                                   |  |
-|  |  +-------------------------------------------------------------+  |  |
-|  |  |                 Tokio Multi-Threaded Runtime                |  |  |
-|  |  |                                                             |  |  |
-|  |  |  +-------------------+  +-------------------+  +---------+  |  |  |
-|  |  |  | Agent Brain Loop  |  | Proactive Sentinel|  | MCP     |  |  |  |
-|  |  |  | (Memory & Prompt) |  | (Win32 Poller)    |  | Server  |  |  |  |
-|  |  |  +---------+---------+  +---------+---------+  +----+----+  |  |  |
-|  |  |            |                      |               |       |  |  |
-|  |  +------------|----------------------|---------------|-------+  |  |
-|  |               |                      |               |          |  |
-|  |               v                      v               v          |  |
-|  |      +------------------+   +------------------+  +----------+  |  |
-|  |      | SQLite + FTS5    |   | Privacy Firewall |  | Native   |  |  |
-|  |      | Vector Database  |   | Audit Logger     |  | Tools    |  |  |
-|  |      +------------------+   +------------------+  +----------+  |  |
-|  +-----------------------------------+-------------------------------+  |
-|                                      |                                  |
-|                                      | Dedicated std::thread            |
-|                                      v                                  |
-|  +-------------------------------------------------------------------+  |
-|  |                  Voice Audio Capture Pipeline (cpal)              |  |
-|  |            Continuous WASAPI Ring Buffer + rustpotter VAD         |  |
-|  +-------------------------------------------------------------------+  |
-|                                                                         |
-+-------------------------------------------------------------------------+
+```mermaid
+flowchart TD
+    subgraph OS_Process["OS Process Space: deyana-desktop.exe"]
+        
+        subgraph MainThread["Main OS Thread (GUI Lifecycle)"]
+            WinMain["Tauri Event Loop<br/>Window Position / System Tray / Win32 Bounds"]
+        end
+
+        subgraph AudioThread["Dedicated Audio Thread (std::thread)"]
+            WASAPI["cpal WASAPI Engine<br/>Continuous 16kHz Audio Ring Buffer"]
+            VAD["rustpotter VAD<br/>Neural Template Matcher & Silence Endpointer"]
+            WASAPI --> VAD
+        end
+
+        subgraph TokioRuntime["Tokio Asynchronous Multithreaded Runtime"]
+            direction TB
+            
+            subgraph Tasks["Concurrent Tokio Tasks"]
+                AgentTask["agent::task<br/>Chat Loop & Context Compression"]
+                DaemonTask["daemon::task<br/>60s Win32 Active Window Poller"]
+                McpTask["mcp::task<br/>Axum SSE Server & Subprocess Manager"]
+                PrivacyTask["privacy::task<br/>Policy Gatekeeper & Audit Engine"]
+            end
+
+            subgraph StorageEngines["Persistence & Subsystem Repositories"]
+                DBPool["db::ConnectionPool<br/>SQLite WAL Mode + FTS5 Index"]
+                VectorStore["db::VectorStore<br/>384-dim Cosine Similarity Embeddings"]
+            end
+
+            AgentTask --> DBPool
+            AgentTask --> VectorStore
+            PrivacyTask --> DBPool
+        end
+    end
+
+    WinMain <-->|"Tauri IPC (invoke / listen)"| TokioRuntime
+    VAD -->|"mpsc::channel (voice:wake / voice:transcript)"| AgentTask
 ```
 
 ### Threading & Subsystem Isolation
