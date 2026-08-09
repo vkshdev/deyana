@@ -21,10 +21,13 @@ thiserror = "2"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 reqwest = { version = "0.12", features = ["json", "stream"] }
+axum = { version = "0.7", features = ["macros", "tokio"] }
+reqwest-eventsource = "0.6"
+tokio-util = { version = "0.7", features = ["codec"] }
 sha2 = "0.10"
 aes-gcm = "0.10"
 
-futures-util = "0.3"
+futures-util = { version = "0.3", features = ["sink"] }
 cpal = "0.15"
 ringbuf = "0.4"
 rustpotter = "3.0"
