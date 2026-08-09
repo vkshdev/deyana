@@ -19,6 +19,7 @@ import { QuickActions } from "./QuickActions";
 import { ReleaseQualityPanel } from "./ReleaseQualityPanel";
 import { ToolPanel } from "./ToolPanel";
 import { VoicePanel } from "./VoicePanel";
+import { ProactiveAlertCards } from "./ProactiveAlertCards";
 import { startWindowDrag } from "../../utils/windowDrag";
 
 interface FloatingPanelProps {
@@ -27,14 +28,25 @@ interface FloatingPanelProps {
 
 export function FloatingPanel({ snapshot }: FloatingPanelProps) {
   return (
-    <section className="floating-panel" aria-label={`${productIdentity.name} assistant panel`}>
+    <section
+      className="floating-panel"
+      aria-label={`${productIdentity.name} assistant panel`}
+      style={{
+        background:
+          "linear-gradient(150deg, rgba(131, 169, 212, 0.12), transparent 36%), linear-gradient(330deg, rgba(216, 185, 120, 0.08), transparent 38%), rgba(4, 8, 14, 0.82)",
+        border: "1px solid rgba(131, 169, 212, 0.25)",
+        boxShadow: "0 24px 74px rgba(0, 0, 0, 0.6), 0 0 32px rgba(131, 169, 212, 0.18)",
+        backdropFilter: "blur(24px) saturate(118%)",
+        WebkitBackdropFilter: "blur(24px) saturate(118%)"
+      }}
+    >
       <header className="panel-header" data-tauri-drag-region onPointerDown={startWindowDrag}>
         <FloatingDockHandle />
         <div className="brand-mark" data-tauri-drag-region>
           <FloatingStatusRing state={snapshot.assistantState} />
           <div data-tauri-drag-region>
-            <strong>{productIdentity.brand}</strong>
-            <span>{snapshot.assistantState.replaceAll("_", " ")}</span>
+            <strong style={{ color: "#d8b978" }}>{productIdentity.brand}</strong>
+            <span style={{ color: "#83a9d4" }}>{snapshot.assistantState.replaceAll("_", " ")}</span>
           </div>
         </div>
         <div className="header-actions">
@@ -46,7 +58,7 @@ export function FloatingPanel({ snapshot }: FloatingPanelProps) {
             onClick={() => assistantStore.setAlwaysOnTop(!snapshot.settings.alwaysOnTop)}
           >
             {snapshot.settings.alwaysOnTop ? (
-              <Eye size={17} aria-hidden="true" />
+              <Eye size={17} aria-hidden="true" style={{ color: "#d8b978" }} />
             ) : (
               <EyeOff size={17} aria-hidden="true" />
             )}
@@ -67,6 +79,9 @@ export function FloatingPanel({ snapshot }: FloatingPanelProps) {
       </header>
 
       <div className="panel-body">
+        {/* Proactive Context Alert Cards */}
+        <ProactiveAlertCards snapshot={snapshot} />
+
         <div className="status-row">
           <FloatingPrivacyBadge />
           <BackendStatusBadge
@@ -101,6 +116,11 @@ export function FloatingPanel({ snapshot }: FloatingPanelProps) {
           title="Voice"
           disabled={snapshot.voiceBusy}
           onClick={() => void assistantStore.runPushToTalk()}
+          style={{
+            background: "linear-gradient(135deg, rgba(216, 185, 120, 0.2), rgba(131, 169, 212, 0.15))",
+            border: "1px solid rgba(216, 185, 120, 0.4)",
+            color: "#d8b978"
+          }}
         >
           <Mic size={17} aria-hidden="true" />
           <span>{snapshot.voiceBusy ? snapshot.assistantState.replaceAll("_", " ") : "Push to talk"}</span>
@@ -121,7 +141,7 @@ export function FloatingPanel({ snapshot }: FloatingPanelProps) {
           aria-label="Notifications"
           onClick={() => assistantStore.setAssistantState("SYNCING")}
         >
-          <Bell size={17} aria-hidden="true" />
+          <Bell size={17} aria-hidden="true" style={{ color: snapshot.proactiveCards?.length ? "#d8b978" : undefined }} />
         </button>
       </footer>
 
