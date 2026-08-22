@@ -1147,6 +1147,20 @@ export const tauriClient = {
     return invoke("get_agent_status");
   },
 
+  async clearSemanticCache(): Promise<number> {
+    if (!isTauriRuntime()) {
+      return 0;
+    }
+    return invoke<number>("clear_semantic_cache");
+  },
+
+  async getSemanticCacheStats(): Promise<{ itemCount: number; capacity: number }> {
+    if (!isTauriRuntime()) {
+      return { itemCount: 0, capacity: 128 };
+    }
+    return invoke<{ itemCount: number; capacity: number }>("get_semantic_cache_stats");
+  },
+
   async listMemory(query?: string) {
     const items = await this.getMemoryItems();
     const q = (query ?? "").toLowerCase().trim();
