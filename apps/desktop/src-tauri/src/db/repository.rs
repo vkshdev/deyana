@@ -5,7 +5,7 @@ use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{params, Connection};
 use uuid::Uuid;
 
-use super::models::{ChatMessageItem, MemoryEntity, MemoryInsight, MemoryItem, TriageMessageResponse};
+use super::models::{ChatMessageItem, MemoryEntity, MemoryInsight, MemoryItem, SemanticCacheRow, TriageMessageResponse};
 use super::schema::INIT_SQL;
 
 pub type DbPool = Pool<SqliteConnectionManager>;
@@ -527,4 +527,106 @@ pub fn get_all_memory_embeddings(
     }
     Ok(list)
 }
+
+pub fn get_memory_embeddings_by_ids(
+    conn: &Connection,
+    ids: &[String],
+) -> Result<Vec<(String, Vec<f32>)>, rusqlite::Error> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let sql = format!(
+        "SELECT memory_id, embedding_json FROM memory_embeddings WHERE memory_id IN ({placeholders})"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let params_vec: Vec<&dyn rusqlite::ToSql> = ids.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
+    let rows = stmt.query_map(params_vec.as_slice(), |row| {
+        let id: String = row.get(0)?;
+        let json: String = row.get(1)?;
+        Ok((id, json))
+    })?;
+
+    let mut list = Vec::new();
+    for r in rows {
+        let (id, json) = r?;
+        if let Ok(vec) = serde_json::from_str::<Vec<f32>>(&json) {
+            list.push((id, vec));
+        }
+    }
+    Ok(list)
+}
+
+pub fn save_cache_entry(
+    conn: &Connection,
+    id: &str,
+    query_embedding: &[f32],
+    memory_context_hash: &str,
+    response: &str,
+) -> Result<(), rusqlite::Error> {
+    let json = serde_json::to_string(query_embedding).unwrap_or_else(|_| "[]".to_string());
+    let now = chrono::Utc::now().to_rfc3339();
+    conn.execute(
+        "INSERT OR REPLACE INTO semantic_cache (id, query_embedding_json, memory_context_hash, response, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![id, json, memory_context_hash, response, now],
+    )?;
+    Ok(())
+}
+
+pub fn load_cache_entries(
+    conn: &Connection,
+    limit: usize,
+) -> Result<Vec<SemanticCacheRow>, rusqlite::Error> {
+    let mut stmt = conn.prepare(
+        "SELECT id, query_embedding_json, memory_context_hash, response, created_at
+         FROM semantic_cache
+         ORDER BY created_at DESC
+         LIMIT ?1"
+    )?;
+
+    let rows = stmt.query_map(params![limit as i64], |row| {
+        let id: String = row.get(0)?;
+        let json: String = row.get(1)?;
+        let memory_context_hash: String = row.get(2)?;
+        let response: String = row.get(3)?;
+        let created_at: String = row.get(4)?;
+        let query_embedding = serde_json::from_str::<Vec<f32>>(&json).unwrap_or_default();
+
+        Ok(SemanticCacheRow {
+            id,
+            query_embedding,
+            memory_context_hash,
+            response,
+            created_at,
+        })
+    })?;
+
+    let mut entries = Vec::new();
+    for r in rows {
+        entries.push(r?);
+    }
+    Ok(entries)
+}
+
+pub fn prune_cache_entries(
+    conn: &Connection,
+    max_age_seconds: i64,
+) -> Result<usize, rusqlite::Error> {
+    let cutoff = (chrono::Utc::now() - chrono::Duration::seconds(max_age_seconds)).to_rfc3339();
+    let count = conn.execute(
+        "DELETE FROM semantic_cache WHERE created_at < ?1",
+        params![cutoff],
+    )?;
+    Ok(count)
+}
+
+pub fn clear_all_cache_entries(
+    conn: &Connection,
+) -> Result<usize, rusqlite::Error> {
+    let count = conn.execute("DELETE FROM semantic_cache", [])?;
+    Ok(count)
+}
+
 

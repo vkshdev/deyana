@@ -284,5 +284,15 @@ CREATE TABLE IF NOT EXISTS memory_embeddings (
   created_at TEXT NOT NULL,
   FOREIGN KEY (memory_id) REFERENCES memory_items(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS semantic_cache (
+  id TEXT PRIMARY KEY,
+  query_embedding_json TEXT NOT NULL,
+  memory_context_hash TEXT NOT NULL,
+  response TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_semantic_cache_created_at ON semantic_cache(created_at);
 "#;
 
