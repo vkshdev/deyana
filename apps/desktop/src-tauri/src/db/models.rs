@@ -101,3 +101,14 @@ pub struct ChatMessageItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SemanticCacheRow {
+    pub id: String,
+    pub query_embedding: Vec<f32>,
+    pub memory_context_hash: String,
+    pub response: String,
+    pub created_at: String,
+}
+
