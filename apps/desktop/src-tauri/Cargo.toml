@@ -33,6 +33,9 @@ ringbuf = "0.4"
 rustpotter = "3.0"
 hound = "3.5"
 tts = "0.26"
+lru = "0.12"
+
+
 
 
 
