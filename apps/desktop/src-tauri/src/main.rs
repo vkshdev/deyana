@@ -47,7 +47,14 @@ fn main() {
             voice_state.service.set_app_handle(handle.clone());
             let browser_state = browser::BrowserState::new(app_dir.clone(), db_pool.clone());
 
+            let semantic_cache = if let Ok(conn) = db_pool.get() {
+                agent::cache::SemanticCache::load_from_db(&conn)
+            } else {
+                agent::cache::SemanticCache::default()
+            };
+
             app.manage(db_pool);
+            app.manage(semantic_cache);
             app.manage(daemon_manager);
             app.manage(privacy_state);
             app.manage(connector_state);
@@ -164,7 +171,9 @@ fn main() {
             browser::commands::preview_browser_personality,
             browser::commands::route_browser_voice_command,
             agent::commands::agent_chat,
-            agent::commands::get_agent_status
+            agent::commands::get_agent_status,
+            agent::commands::clear_semantic_cache,
+            agent::commands::get_semantic_cache_stats
         ])
         .build(tauri::generate_context!())
         .expect("failed to build DEYANA desktop shell")
