@@ -7,20 +7,39 @@ You never make up facts. You keep responses concise unless asked to elaborate.
 All your knowledge of the user comes only from your memory context below.
 You never mention data you haven't been explicitly given."#;
 
+pub const MAX_MEMORY_ITEMS: usize = 3;
+pub const MAX_ITEM_CONTENT_CHARS: usize = 200;
+pub const MAX_TOTAL_CONTEXT_CHARS: usize = 2400; // ~600 tokens
+
 pub fn build_system_prompt(memory_context: &[MemoryItem], tool_info: Option<&str>) -> String {
     let mut prompt = String::from(DEYANA_PERSONA);
     prompt.push_str("\n\n");
 
     if !memory_context.is_empty() {
         prompt.push_str("### RELEVANT MEMORY CONTEXT ###\n");
-        for (idx, item) in memory_context.iter().enumerate() {
-            prompt.push_str(&format!(
+        let mut total_chars = 0;
+
+        for (idx, item) in memory_context.iter().take(MAX_MEMORY_ITEMS).enumerate() {
+            let truncated_content = if item.content_markdown.chars().count() > MAX_ITEM_CONTENT_CHARS {
+                format!("{}...", item.content_markdown.chars().take(MAX_ITEM_CONTENT_CHARS).collect::<String>())
+            } else {
+                item.content_markdown.clone()
+            };
+
+            let block = format!(
                 "[{}] {}\nSummary: {}\nContent: {}\n\n",
                 idx + 1,
                 item.title,
                 item.summary,
-                item.content_markdown
-            ));
+                truncated_content
+            );
+
+            if total_chars + block.len() > MAX_TOTAL_CONTEXT_CHARS && idx > 0 {
+                break;
+            }
+
+            total_chars += block.len();
+            prompt.push_str(&block);
         }
     } else {
         prompt.push_str("### RELEVANT MEMORY CONTEXT ###\nNo relevant prior memory stored for this request.\n\n");
