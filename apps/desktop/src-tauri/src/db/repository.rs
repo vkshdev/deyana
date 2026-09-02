@@ -629,4 +629,140 @@ pub fn clear_all_cache_entries(
     Ok(count)
 }
 
+pub fn save_chat_message_encrypted(
+    conn: &Connection,
+    session_id: Option<&str>,
+    role: &str,
+    content: &str,
+    model: Option<&str>,
+    key: &[u8; 32],
+) -> Result<ChatMessageItem, rusqlite::Error> {
+    let encrypted_content = crate::privacy::crypto::encrypt_field(key, content)
+        .unwrap_or_else(|_| content.to_string());
+    
+    let mut msg = save_chat_message(conn, session_id, role, &encrypted_content, model)?;
+    msg.content = content.to_string();
+    Ok(msg)
+}
+
+pub fn get_chat_history_decrypted(
+    conn: &Connection,
+    session_id: Option<&str>,
+    limit: Option<usize>,
+    key: &[u8; 32],
+) -> Result<Vec<ChatMessageItem>, rusqlite::Error> {
+    let mut items = get_chat_history(conn, session_id, limit)?;
+    for item in &mut items {
+        item.content = crate::privacy::crypto::decrypt_field(key, &item.content)
+            .unwrap_or_else(|_| item.content.clone());
+    }
+    Ok(items)
+}
+
+pub fn save_memory_item_encrypted(
+    conn: &Connection,
+    content: &str,
+    source: &str,
+    tags: Option<Vec<String>>,
+    key: &[u8; 32],
+) -> Result<MemoryItem, rusqlite::Error> {
+    let encrypted_content = crate::privacy::crypto::encrypt_field(key, content)
+        .unwrap_or_else(|_| content.to_string());
+    
+    let mut item = save_memory_item(conn, &encrypted_content, source, tags)?;
+    item.content_markdown = content.to_string();
+    Ok(item)
+}
+
+pub fn get_memory_items_decrypted(
+    conn: &Connection,
+    limit: Option<usize>,
+    key: &[u8; 32],
+) -> Result<Vec<MemoryItem>, rusqlite::Error> {
+    let mut items = get_memory_items(conn, limit)?;
+    for item in &mut items {
+        item.content_markdown = crate::privacy::crypto::decrypt_field(key, &item.content_markdown)
+            .unwrap_or_else(|_| item.content_markdown.clone());
+        item.summary = crate::privacy::crypto::decrypt_field(key, &item.summary)
+            .unwrap_or_else(|_| item.summary.clone());
+    }
+    Ok(items)
+}
+
+pub fn save_cache_entry_encrypted(
+    conn: &Connection,
+    id: &str,
+    query_embedding: &[f32],
+    memory_context_hash: &str,
+    response: &str,
+    key: &[u8; 32],
+) -> Result<(), rusqlite::Error> {
+    let encrypted_response = crate::privacy::crypto::encrypt_field(key, response)
+        .unwrap_or_else(|_| response.to_string());
+    save_cache_entry(conn, id, query_embedding, memory_context_hash, &encrypted_response)
+}
+
+pub fn load_cache_entries_decrypted(
+    conn: &Connection,
+    limit: usize,
+    key: &[u8; 32],
+) -> Result<Vec<SemanticCacheRow>, rusqlite::Error> {
+    let mut entries = load_cache_entries(conn, limit)?;
+    for entry in &mut entries {
+        entry.response = crate::privacy::crypto::decrypt_field(key, &entry.response)
+            .unwrap_or_else(|_| entry.response.clone());
+    }
+    Ok(entries)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_chat_message_encryption_roundtrip() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(INIT_SQL).unwrap();
+
+        let key = [0x77u8; 32];
+        let secret = "My secret password is: SuperSecretPassword123!";
+
+        let saved = save_chat_message_encrypted(&conn, Some("s1"), "user", secret, None, &key).unwrap();
+        assert_eq!(saved.content, secret);
+
+        let raw_content: String = conn
+            .query_row("SELECT content FROM chat_messages WHERE id = ?1", params![&saved.id], |r| r.get(0))
+            .unwrap();
+        assert!(raw_content.starts_with("ENC::"));
+        assert!(!raw_content.contains("SuperSecretPassword"));
+
+        let history = get_chat_history_decrypted(&conn, Some("s1"), None, &key).unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].content, secret);
+    }
+
+    #[test]
+    fn test_memory_item_encryption_roundtrip() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(INIT_SQL).unwrap();
+
+        let key = [0x88u8; 32];
+        let note = "Confidential client meeting notes regarding Project Phoenix.";
+
+        let saved = save_memory_item_encrypted(&conn, note, "notes", Some(vec!["phoenix".to_string()]), &key).unwrap();
+        assert_eq!(saved.content_markdown, note);
+
+        let raw_content: String = conn
+            .query_row("SELECT content_markdown FROM memory_items WHERE id = ?1", params![&saved.id], |r| r.get(0))
+            .unwrap();
+        assert!(raw_content.starts_with("ENC::"));
+
+        let items = get_memory_items_decrypted(&conn, None, &key).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].content_markdown, note);
+    }
+}
+
+
+
 
