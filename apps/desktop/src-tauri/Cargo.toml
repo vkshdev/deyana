@@ -33,7 +33,7 @@ ringbuf = "0.4"
 rustpotter = "3.0"
 hound = "3.5"
 tts = "0.26"
-lru = "0.12"
+lru = "0.16"
 sysinfo = "0.30"
 windows = { version = "0.58", features = ["Win32_Security_Cryptography", "Win32_Foundation"] }
 
