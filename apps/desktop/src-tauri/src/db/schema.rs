@@ -294,5 +294,23 @@ CREATE TABLE IF NOT EXISTS semantic_cache (
 );
 
 CREATE INDEX IF NOT EXISTS idx_semantic_cache_created_at ON semantic_cache(created_at);
+
+CREATE TABLE IF NOT EXISTS training_dataset (
+  id TEXT PRIMARY KEY,
+  instruction TEXT NOT NULL,
+  input_context TEXT NOT NULL,
+  output TEXT NOT NULL,
+  model_used TEXT NOT NULL,
+  window_title TEXT,
+  feedback INTEGER NOT NULL DEFAULT 0,
+  user_edit TEXT,
+  session_id TEXT,
+  pii_masked INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_training_dataset_created_at ON training_dataset(created_at);
+CREATE INDEX IF NOT EXISTS idx_training_dataset_feedback ON training_dataset(feedback);
 "#;
+
 
