@@ -1,0 +1,15 @@
+pub mod agent;
+pub mod browser;
+pub mod commands;
+pub mod connectors;
+pub mod daemon;
+pub mod db;
+pub mod mcp;
+pub mod models;
+pub mod privacy;
+pub mod process;
+pub mod settings;
+pub mod tools;
+pub mod tray;
+pub mod voice;
+pub mod window;
