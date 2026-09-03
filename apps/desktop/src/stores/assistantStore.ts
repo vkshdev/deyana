@@ -4,6 +4,7 @@ import {
   DEFAULT_CORE_APP_SETTINGS,
   DEFAULT_DESKTOP_SETTINGS,
   DEFAULT_ONBOARDING_STATE,
+  type AgentStep,
   type AssistantState,
   type AppCoreEvent,
   type BackendProcessStatus,
@@ -67,7 +68,14 @@ import {
   type VoiceSettingsPatch,
   type VoiceStatusResponse,
   type VoiceTranscriptResponse,
-  type ProactiveContextCard
+  type ProactiveContextCard,
+  type ModelSetupTab,
+  type HfGgufFile,
+  type DownloadProgressPayload,
+  type DatasetStats,
+  type GgufRegistryEntry,
+  type ActiveProfileInfo,
+  type LlamaCppServerStatus
 } from "@deyana/schemas";
 import { tauriClient, type BackendEventConnection } from "../services/tauriClient";
 
@@ -160,7 +168,22 @@ export interface AssistantSnapshot {
   releaseBusy: boolean;
   quickActions: QuickAction[];
   streamingResponse?: string;
+  activeAgentSteps: AgentStep[];
   proactiveCards: ProactiveContextCard[];
+  modelSetupTab: ModelSetupTab;
+  activeProfile?: ActiveProfileInfo;
+  hfRepoQuery: string;
+  hfFiles: HfGgufFile[];
+  hfLoading: boolean;
+  hfError?: string;
+  activeDownloads: Record<string, DownloadProgressPayload>;
+  registeredModels: GgufRegistryEntry[];
+  registeredModelsLoading: boolean;
+  llamaCppStatus?: LlamaCppServerStatus;
+  datasetStats?: DatasetStats;
+  datasetExportResult?: { path: string; count: number };
+  datasetBusy: boolean;
+  datasetMessage?: string;
   error?: string;
 }
 
@@ -289,7 +312,22 @@ const initialSnapshot: AssistantSnapshot = {
     }
   ],
   streamingResponse: undefined,
-  proactiveCards: []
+  activeAgentSteps: [],
+  proactiveCards: [],
+  modelSetupTab: "local",
+  activeProfile: undefined,
+  hfRepoQuery: "Qwen/Qwen2.5-7B-Instruct-GGUF",
+  hfFiles: [],
+  hfLoading: false,
+  hfError: undefined,
+  activeDownloads: {},
+  registeredModels: [],
+  registeredModelsLoading: false,
+  llamaCppStatus: undefined,
+  datasetStats: undefined,
+  datasetExportResult: undefined,
+  datasetBusy: false,
+  datasetMessage: undefined
 };
 
 type Listener = () => void;
@@ -338,6 +376,7 @@ class AssistantStore {
       });
       await this.subscribeToCoreStatus();
       await this.initProactiveListener();
+      await this.initDownloadProgressListener();
       await this.refreshBackendStatus();
       this.connectBackendEvents();
       this.hydrated = true;
@@ -860,6 +899,10 @@ class AssistantStore {
         modelStatus: modelStatusDetail.status,
         error: undefined
       });
+      void this.loadActiveProfile();
+      void this.loadRegisteredModels();
+      void this.loadLlamaCppStatus();
+      void this.loadDatasetStats();
     } catch (error) {
       this.setSnapshot({
         modelStatus: "offline",
@@ -904,6 +947,168 @@ class AssistantStore {
       await this.loadModelStatus();
     }
   };
+
+  setModelSetupTab = (modelSetupTab: ModelSetupTab) => {
+    this.setSnapshot({ modelSetupTab });
+  };
+
+  loadActiveProfile = async () => {
+    try {
+      const activeProfile = await tauriClient.getActiveProfile();
+      this.setSnapshot({ activeProfile });
+    } catch {
+      // Retain existing profile
+    }
+  };
+
+  setHfRepoQuery = (hfRepoQuery: string) => {
+    this.setSnapshot({ hfRepoQuery });
+  };
+
+  searchHfGgufFiles = async (repoId?: string) => {
+    const targetRepo = (repoId ?? this.snapshot.hfRepoQuery).trim();
+    if (!targetRepo) return;
+    this.setSnapshot({ hfLoading: true, hfError: undefined, hfRepoQuery: targetRepo });
+    try {
+      const hfFiles = await tauriClient.listHfGgufFiles(targetRepo);
+      this.setSnapshot({ hfFiles, hfLoading: false });
+    } catch (error) {
+      this.setSnapshot({
+        hfLoading: false,
+        hfError: error instanceof Error ? error.message : "Failed to fetch GGUF files from HuggingFace"
+      });
+    }
+  };
+
+  selectHfPreset = async (repoId: string) => {
+    await this.searchHfGgufFiles(repoId);
+  };
+
+  downloadHfModel = async (repoId: string, filename: string) => {
+    await this.initDownloadProgressListener();
+    const repoKey = `${repoId}/${filename}`;
+    const initialProgress: DownloadProgressPayload = {
+      repo_id: repoId,
+      filename,
+      bytes_downloaded: 0,
+      total_bytes: 0,
+      percent: 0.1,
+      repoId,
+      bytesDownloaded: 0,
+      totalBytes: 0
+    };
+    this.setSnapshot({
+      activeDownloads: {
+        ...this.snapshot.activeDownloads,
+        [repoKey]: initialProgress,
+        [filename]: initialProgress
+      }
+    });
+    try {
+      await tauriClient.downloadHfGguf(repoId, filename);
+      await this.loadRegisteredModels();
+    } catch (error) {
+      this.setSnapshot({
+        error: error instanceof Error ? error.message : `Failed to download ${filename}`
+      });
+    }
+  };
+
+  loadRegisteredModels = async () => {
+    this.setSnapshot({ registeredModelsLoading: true });
+    try {
+      const registeredModels = await tauriClient.listRegisteredModels();
+      this.setSnapshot({ registeredModels, registeredModelsLoading: false });
+    } catch {
+      this.setSnapshot({ registeredModelsLoading: false });
+    }
+  };
+
+  deleteModel = async (id: string) => {
+    try {
+      await tauriClient.deleteRegisteredModel(id);
+      await this.loadRegisteredModels();
+    } catch (error) {
+      this.setSnapshot({
+        error: error instanceof Error ? error.message : "Failed to delete registered model"
+      });
+    }
+  };
+
+  loadLlamaCppStatus = async () => {
+    try {
+      const llamaCppStatus = await tauriClient.getLlamaCppStatus();
+      this.setSnapshot({ llamaCppStatus });
+    } catch {
+      // Retain existing status
+    }
+  };
+
+  startLlamaCpp = async (modelPath: string, port?: number) => {
+    try {
+      await tauriClient.startLlamaCppServer(modelPath, port);
+      await this.loadLlamaCppStatus();
+    } catch (error) {
+      this.setSnapshot({
+        error: error instanceof Error ? error.message : "Failed to start llama.cpp server"
+      });
+    }
+  };
+
+  stopLlamaCpp = async () => {
+    try {
+      await tauriClient.stopLlamaCppServer();
+      await this.loadLlamaCppStatus();
+    } catch (error) {
+      this.setSnapshot({
+        error: error instanceof Error ? error.message : "Failed to stop llama.cpp server"
+      });
+    }
+  };
+
+  loadDatasetStats = async () => {
+    try {
+      const datasetStats = await tauriClient.getDatasetStats();
+      this.setSnapshot({ datasetStats });
+    } catch {
+      // Retain existing stats
+    }
+  };
+
+  exportDataset = async (format: "sharegpt" | "dpo") => {
+    this.setSnapshot({ datasetBusy: true, datasetMessage: undefined });
+    try {
+      const result = await tauriClient.exportTrainingDataset(format);
+      this.setSnapshot({
+        datasetExportResult: result,
+        datasetMessage: `Successfully exported ${result.count} samples to ${result.path}`,
+        datasetBusy: false
+      });
+    } catch (error) {
+      this.setSnapshot({
+        datasetBusy: false,
+        datasetMessage: error instanceof Error ? error.message : "Failed to export dataset"
+      });
+    }
+  };
+
+  clearDataset = async () => {
+    this.setSnapshot({ datasetBusy: true, datasetMessage: undefined });
+    try {
+      const count = await tauriClient.clearTrainingDataset();
+      await this.loadDatasetStats();
+      this.setSnapshot({
+        datasetBusy: false,
+        datasetMessage: `Cleared ${count} interaction records from dataset.`
+      });
+    } catch (error) {
+      this.setSnapshot({
+        datasetBusy: false,
+        datasetMessage: error instanceof Error ? error.message : "Failed to clear dataset"
+      });
+    }
+  };
+
 
   loadChatHistory = async () => {
     try {
@@ -1157,16 +1362,32 @@ class AssistantStore {
     this.setSnapshot({
       chatBusy: true,
       streamingResponse: "",
+      activeAgentSteps: [],
       assistantState: "THINKING",
       error: undefined
     });
 
     let unlistenStream: (() => void) | undefined;
+    let unlistenSteps: (() => void) | undefined;
     if (tauriClient.isTauriRuntime()) {
       unlistenStream = await tauriClient.onLlmStreamChunk((chunk: string) => {
         const current = this.snapshot.streamingResponse ?? "";
         this.setSnapshot({
           streamingResponse: current + chunk,
+          assistantState: "THINKING"
+        });
+      });
+
+      unlistenSteps = await tauriClient.onAgentStep((step: AgentStep) => {
+        const currentSteps = [...this.snapshot.activeAgentSteps];
+        const existingIndex = currentSteps.findIndex((s) => s.step === step.step);
+        if (existingIndex >= 0) {
+          currentSteps[existingIndex] = step;
+        } else {
+          currentSteps.push(step);
+        }
+        this.setSnapshot({
+          activeAgentSteps: currentSteps,
           assistantState: "THINKING"
         });
       });
@@ -1179,9 +1400,13 @@ class AssistantStore {
       if (unlistenStream) {
         unlistenStream();
       }
+      if (unlistenSteps) {
+        unlistenSteps();
+      }
       this.setSnapshot({
         chatBusy: false,
         streamingResponse: undefined,
+        activeAgentSteps: [],
         assistantState: this.restingAssistantState()
       });
     }
@@ -1197,11 +1422,13 @@ class AssistantStore {
       chatBusy: true,
       chatDraft: "",
       streamingResponse: "",
+      activeAgentSteps: [],
       assistantState: "THINKING",
       error: undefined
     });
 
     let unlistenStream: (() => void) | undefined;
+    let unlistenSteps: (() => void) | undefined;
     if (tauriClient.isTauriRuntime()) {
       unlistenStream = await tauriClient.onLlmStreamChunk((chunk: string) => {
         const current = this.snapshot.streamingResponse ?? "";
@@ -1210,15 +1437,40 @@ class AssistantStore {
           assistantState: "THINKING"
         });
       });
+
+      unlistenSteps = await tauriClient.onAgentStep((step: AgentStep) => {
+        const currentSteps = [...this.snapshot.activeAgentSteps];
+        const existingIndex = currentSteps.findIndex((s) => s.step === step.step);
+        if (existingIndex >= 0) {
+          currentSteps[existingIndex] = step;
+        } else {
+          currentSteps.push(step);
+        }
+        this.setSnapshot({
+          activeAgentSteps: currentSteps,
+          assistantState: "THINKING"
+        });
+      });
     }
 
     try {
       const userMessage = await tauriClient.saveChatMessage("default", "user", trimmed);
+      this.setSnapshot({
+        chatMessages: [...this.snapshot.chatMessages.filter((m) => m.id !== userMessage.id), userMessage]
+      });
       const assistantText = await tauriClient.agentChat(trimmed, "default");
       const assistantMessage = await tauriClient.saveChatMessage("default", "assistant", assistantText);
 
       if (unlistenStream) {
         unlistenStream();
+      }
+      if (unlistenSteps) {
+        unlistenSteps();
+      }
+
+      const activeSteps = [...this.snapshot.activeAgentSteps];
+      if (activeSteps.length > 0) {
+        assistantMessage.steps = activeSteps;
       }
 
       const response: ChatMessageResponse = {
@@ -1240,6 +1492,7 @@ class AssistantStore {
       this.setSnapshot({
         chatBusy: false,
         streamingResponse: undefined,
+        activeAgentSteps: [],
         assistantState: this.restingAssistantState(),
         chatMessages: mergeChatResponse(this.snapshot.chatMessages, response)
       });
@@ -1248,9 +1501,13 @@ class AssistantStore {
       if (unlistenStream) {
         unlistenStream();
       }
+      if (unlistenSteps) {
+        unlistenSteps();
+      }
       this.setSnapshot({
         chatBusy: false,
         streamingResponse: undefined,
+        activeAgentSteps: [],
         chatDraft: restoreDraftOnError ? trimmed : this.snapshot.chatDraft,
         assistantState: this.restingAssistantState(),
         error: error instanceof Error ? error.message : "Unable to send local chat message"
@@ -1264,7 +1521,7 @@ class AssistantStore {
     this.setSnapshot({ chatBusy: true, error: undefined });
     try {
       await tauriClient.clearChatHistory();
-      this.setSnapshot({ chatMessages: [], chatBusy: false });
+      this.setSnapshot({ chatMessages: [], activeAgentSteps: [], chatBusy: false });
     } catch (error) {
       this.setSnapshot({
         chatBusy: false,
@@ -1706,6 +1963,7 @@ class AssistantStore {
   };
 
   private proactiveUnlisten?: () => void;
+  private downloadUnlisten?: () => void;
 
   initProactiveListener = async () => {
     if (this.proactiveUnlisten) {
@@ -1717,6 +1975,25 @@ class AssistantStore {
       });
     }
   };
+
+  initDownloadProgressListener = async () => {
+    if (this.downloadUnlisten) {
+      return;
+    }
+    if (tauriClient.isTauriRuntime()) {
+      this.downloadUnlisten = await tauriClient.onModelDownloadProgress((progress) => {
+        const repoKey = `${progress.repo_id}/${progress.filename}`;
+        this.setSnapshot({
+          activeDownloads: {
+            ...this.snapshot.activeDownloads,
+            [repoKey]: progress,
+            [progress.filename]: progress
+          }
+        });
+      });
+    }
+  };
+
 
   private connectBackendEvents = () => {
     this.disconnectBackendEvents();

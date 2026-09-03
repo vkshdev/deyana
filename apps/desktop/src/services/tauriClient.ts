@@ -3,6 +3,7 @@ import {
   DEFAULT_CORE_APP_SETTINGS,
   DEFAULT_DESKTOP_SETTINGS,
   DEFAULT_ONBOARDING_STATE,
+  type AgentStep,
   type BackendProcessStatus,
   type BackendStatusResponse,
   type ChatHistoryResponse,
@@ -30,6 +31,12 @@ import {
   type ModelSelectionResponse,
   type ModelTestRequest,
   type ModelTestResponse,
+  type HfGgufFile,
+  type DownloadProgressPayload,
+  type DatasetStats,
+  type GgufRegistryEntry,
+  type ActiveProfileInfo,
+  type LlamaCppServerStatus,
   type OnboardingState,
   type PerformanceProfileResponse,
   type PrivacyAuditListResponse,
@@ -457,6 +464,199 @@ export const tauriClient = {
     const result = await invoke<LocalModelStatusResponse | null>("get_model_status").catch(() => null);
     return result ?? defaultStatus;
   },
+
+  async listHfGgufFiles(repoId: string): Promise<HfGgufFile[]> {
+    if (!isTauriRuntime()) {
+      return [
+        {
+          filename: "model-Q4_K_M.gguf",
+          sizeBytes: 4368438272,
+          quantization: "Q4_K_M",
+          ramEstimateGb: 5.8,
+          downloadUrl: `https://huggingface.co/${repoId}/resolve/main/model-Q4_K_M.gguf`
+        },
+        {
+          filename: "model-Q8_0.gguf",
+          sizeBytes: 7696580608,
+          quantization: "Q8_0",
+          ramEstimateGb: 9.2,
+          downloadUrl: `https://huggingface.co/${repoId}/resolve/main/model-Q8_0.gguf`
+        }
+      ];
+    }
+    const files = await invoke<any[]>("list_hf_gguf_files", { repoId });
+    return (files || []).map((f) => ({
+      filename: f.filename,
+      sizeBytes: f.sizeBytes ?? f.size_bytes ?? 0,
+      quantization: f.quantization ?? "Q4_K_M",
+      ramEstimateGb: f.ramEstimateGb ?? f.estimatedRamGb ?? f.estimated_ram_gb ?? 0,
+      downloadUrl: f.downloadUrl ?? f.download_url ?? "",
+      recommendedProfile: f.recommendedProfile ?? f.recommended_profile,
+      estimatedRamGb: f.estimatedRamGb ?? f.estimated_ram_gb ?? f.ramEstimateGb
+    }));
+  },
+
+  async downloadHfGguf(repoId: string, filename: string): Promise<string> {
+    if (!isTauriRuntime()) {
+      return `~/.deyana/models/${filename}`;
+    }
+    const res = await invoke<any>("download_hf_gguf", { repoId, filename });
+    if (typeof res === "string") return res;
+    return res?.filePath ?? res?.path ?? res?.id ?? filename;
+  },
+
+  async listRegisteredModels(): Promise<GgufRegistryEntry[]> {
+    if (!isTauriRuntime()) {
+      return [];
+    }
+    const models = await invoke<any[]>("list_registered_models");
+    return (models || []).map((m) => ({
+      id: m.id,
+      name: m.displayName ?? m.name ?? m.id,
+      filename: m.filePath ? m.filePath.split(/[\\/]/).pop() || m.filePath : (m.filename ?? m.id),
+      path: m.filePath ?? m.path ?? "",
+      sizeBytes: m.sizeBytes ?? m.size_bytes ?? 0,
+      quantization: m.quantization ?? "Q4_K_M",
+      ramEstimateGb: m.ramEstimateGb ?? Number(((m.sizeBytes ?? m.size_bytes ?? 0) / (1024 * 1024 * 1024) * 1.15).toFixed(1)),
+      createdAt: m.registeredAt ?? m.registered_at ?? m.createdAt ?? new Date().toISOString(),
+      displayName: m.displayName ?? m.name ?? m.id,
+      filePath: m.filePath ?? m.path ?? "",
+      profileTier: m.profileTier ?? m.profile_tier,
+      nCtx: m.nCtx ?? m.n_ctx ?? 4096,
+      source: m.source ?? "huggingface"
+    }));
+  },
+
+  async deleteRegisteredModel(id: string): Promise<boolean> {
+    if (!isTauriRuntime()) {
+      return true;
+    }
+    await invoke("delete_registered_model", { modelId: id, deleteFile: false });
+    return true;
+  },
+
+  async getActiveProfile(): Promise<ActiveProfileInfo> {
+    if (!isTauriRuntime()) {
+      return {
+        name: "Balanced (16GB)",
+        tier: "balanced",
+        systemRamGb: 16,
+        recommendedContext: 4096,
+        recommendedQuant: "Q4_K_M"
+      };
+    }
+    const res = await invoke<any>("get_active_profile");
+    const ramGb = res.ramGb ?? res.ram_gb ?? 16;
+    const tier = String(res.profile ?? "balanced").toLowerCase();
+    const quant = ramGb >= 32 ? "Q8_0" : ramGb >= 16 ? "Q5_K_M" : "Q4_K_M";
+    return {
+      name: `${tier.toUpperCase()} (${ramGb}GB)`,
+      tier,
+      systemRamGb: ramGb,
+      recommendedContext: res.nCtxTokens ?? res.n_ctx_tokens ?? 4096,
+      recommendedQuant: quant,
+      profile: res.profile,
+      ramGb,
+      recommendedChatModel: res.recommendedChatModel ?? res.recommended_chat_model,
+      recommendedEmbeddingModel: res.recommendedEmbeddingModel ?? res.recommended_embedding_model,
+      nCtxTokens: res.nCtxTokens ?? res.n_ctx_tokens ?? 4096,
+      maxParallelJobs: res.maxParallelJobs ?? res.max_parallel_jobs,
+      alwaysOnVoice: res.alwaysOnVoice ?? res.always_on_voice
+    };
+  },
+
+  async getLlamaCppStatus(): Promise<LlamaCppServerStatus> {
+    if (!isTauriRuntime()) {
+      return { running: false };
+    }
+    const res = await invoke<any>("get_llamacpp_status");
+    const endpoint = res.endpoint ?? "";
+    const portMatch = endpoint.match(/:(\d+)$/);
+    const port = portMatch ? parseInt(portMatch[1], 10) : undefined;
+    return {
+      running: Boolean(res.running),
+      port,
+      model: res.modelPath ?? res.model_path ?? undefined,
+      pid: res.pid ?? undefined,
+      endpoint: res.endpoint,
+      modelPath: res.modelPath ?? res.model_path,
+      nCtx: res.nCtx ?? res.n_ctx,
+      lastError: res.lastError ?? res.last_error
+    };
+  },
+
+  async startLlamaCppServer(modelPath: string, port?: number): Promise<boolean> {
+    if (!isTauriRuntime()) {
+      return true;
+    }
+    const res = await invoke<any>("start_llamacpp_server", {
+      modelPath,
+      port: port ?? null,
+      nCtx: null
+    });
+    return res ? Boolean(res.running ?? true) : true;
+  },
+
+  async stopLlamaCppServer(): Promise<boolean> {
+    if (!isTauriRuntime()) {
+      return true;
+    }
+    await invoke("stop_llamacpp_server");
+    return true;
+  },
+
+  async getDatasetStats(): Promise<DatasetStats> {
+    if (!isTauriRuntime()) {
+      return {
+        totalCount: 0,
+        positiveCount: 0,
+        negativeCount: 0,
+        modelCounts: {}
+      };
+    }
+    const res = await invoke<any>("get_dataset_stats");
+    const totalCount = res.totalSamples ?? res.total_samples ?? res.totalCount ?? 0;
+    const positiveCount = res.thumbsUpCount ?? res.thumbs_up_count ?? res.positiveCount ?? 0;
+    const negativeCount = res.thumbsDownCount ?? res.thumbs_down_count ?? res.negativeCount ?? 0;
+    const modelCounts = res.modelsBreakdown ?? res.models_breakdown ?? res.modelCounts ?? {};
+    return {
+      totalCount,
+      positiveCount,
+      negativeCount,
+      modelCounts,
+      totalSamples: totalCount,
+      thumbsUpCount: positiveCount,
+      thumbsDownCount: negativeCount,
+      editedSamplesCount: res.editedSamplesCount ?? res.edited_samples_count ?? 0,
+      modelsBreakdown: modelCounts
+    };
+  },
+
+  async exportTrainingDataset(format: "sharegpt" | "dpo"): Promise<{ path: string; count: number }> {
+    if (!isTauriRuntime()) {
+      return {
+        path: `~/.deyana/deyana_${format}_dataset.jsonl`,
+        count: 0
+      };
+    }
+    const res = await invoke<string>("export_training_dataset", {
+      format,
+      outputPath: null
+    });
+    const match = typeof res === "string" ? res.match(/exported\s+(\d+)\s+samples\s+to\s+(.+)$/i) : null;
+    const count = match ? parseInt(match[1], 10) : 0;
+    const path = match ? match[2].trim() : String(res);
+    return { path, count };
+  },
+
+  async clearTrainingDataset(): Promise<number> {
+    if (!isTauriRuntime()) {
+      return 0;
+    }
+    const count = await invoke<number>("clear_training_dataset");
+    return Number(count || 0);
+  },
+
 
   async evaluatePrivacyPolicy(request: PrivacyCheckRequest): Promise<PrivacyCheckResponse> {
     if (!isTauriRuntime()) {
@@ -1418,6 +1618,50 @@ export const tauriClient = {
     );
     return unlisten;
   },
+
+  async onAgentStep(
+    callback: (step: AgentStep) => void
+  ): Promise<() => void> {
+    if (!isTauriRuntime()) {
+      return () => undefined;
+    }
+
+    const unlisten = await listen<AgentStep>(
+      "agent:step",
+      (event) => {
+        callback(event.payload);
+      }
+    );
+    return unlisten;
+  },
+
+  async onModelDownloadProgress(
+    callback: (progress: DownloadProgressPayload) => void
+  ): Promise<() => void> {
+    if (!isTauriRuntime()) {
+      return () => undefined;
+    }
+
+    const unlisten = await listen<any>(
+      "models:download_progress",
+      (event) => {
+        const p = event.payload;
+        if (!p) return;
+        callback({
+          repo_id: p.repo_id ?? p.repoId ?? "",
+          filename: p.filename ?? "",
+          bytes_downloaded: p.bytes_downloaded ?? p.bytesDownloaded ?? 0,
+          total_bytes: p.total_bytes ?? p.totalBytes ?? 0,
+          percent: p.percent ?? 0,
+          repoId: p.repoId ?? p.repo_id ?? "",
+          bytesDownloaded: p.bytesDownloaded ?? p.bytes_downloaded ?? 0,
+          totalBytes: p.totalBytes ?? p.total_bytes ?? 0
+        });
+      }
+    );
+    return unlisten;
+  },
+
 
   async onProactiveContextCard(
     callback: (card: ProactiveContextCard) => void
