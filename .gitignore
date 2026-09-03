@@ -93,7 +93,7 @@ audit-log/
 
 # Local AI models and heavy model artifacts
 .ollama/
-models/
+/models/
 model-cache/
 *.gguf
 *.ggml
