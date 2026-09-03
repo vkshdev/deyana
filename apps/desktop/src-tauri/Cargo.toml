@@ -5,6 +5,18 @@ description = "Deyana desktop shell"
 authors = ["DEYANA"]
 edition = "2021"
 
+[lib]
+name = "deyana_desktop_lib"
+path = "src/lib.rs"
+
+[[bin]]
+name = "deyana-desktop"
+path = "src/main.rs"
+
+[[test]]
+name = "react_loop_integration_tests"
+path = "tests/react_loop_integration_tests.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

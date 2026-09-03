@@ -146,21 +146,23 @@ pub fn open_vault_folder(path: String) -> Result<(), String> {
 #[tauri::command]
 pub fn get_memory_items(
     pool: State<'_, db::DbPool>,
+    vault_key: State<'_, crate::privacy::VaultKeyState>,
     limit: Option<usize>,
 ) -> Result<Vec<db::MemoryItem>, String> {
     let conn = pool.get().map_err(|e| e.to_string())?;
-    db::get_memory_items(&conn, limit).map_err(|e| e.to_string())
+    db::get_memory_items_decrypted(&conn, limit, vault_key.key()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn save_memory_item(
     pool: State<'_, db::DbPool>,
+    vault_key: State<'_, crate::privacy::VaultKeyState>,
     content: String,
     source: String,
     tags: Option<Vec<String>>,
 ) -> Result<db::MemoryItem, String> {
     let conn = pool.get().map_err(|e| e.to_string())?;
-    db::save_memory_item(&conn, &content, &source, tags).map_err(|e| e.to_string())
+    db::save_memory_item_encrypted(&conn, &content, &source, tags, vault_key.key()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -184,6 +186,7 @@ pub fn resolve_triage_item(
 #[tauri::command]
 pub fn save_chat_message(
     pool: State<'_, db::DbPool>,
+    vault_key: State<'_, crate::privacy::VaultKeyState>,
     session_id: String,
     role: String,
     content: String,
@@ -194,19 +197,21 @@ pub fn save_chat_message(
     } else {
         Some(session_id.as_str())
     };
-    db::save_chat_message(&conn, sess, &role, &content, None).map_err(|e| e.to_string())
+    db::save_chat_message_encrypted(&conn, sess, &role, &content, None, vault_key.key()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn get_chat_history(
     pool: State<'_, db::DbPool>,
+    vault_key: State<'_, crate::privacy::VaultKeyState>,
     session_id: Option<String>,
     limit: Option<usize>,
 ) -> Result<Vec<db::ChatMessageItem>, String> {
     let conn = pool.get().map_err(|e| e.to_string())?;
     let sess = session_id.as_deref().filter(|s| !s.is_empty());
-    db::get_chat_history(&conn, sess, limit).map_err(|e| e.to_string())
+    db::get_chat_history_decrypted(&conn, sess, limit, vault_key.key()).map_err(|e| e.to_string())
 }
+
 
 #[tauri::command]
 pub async fn generate_response(
@@ -224,7 +229,9 @@ pub async fn generate_response(
         system,
         temperature,
         stream,
+        grammar: None,
     };
+
 
     let should_stream = stream.unwrap_or(true);
     let app_handle = app.clone();
@@ -252,6 +259,217 @@ pub async fn get_model_status(
 ) -> Result<models::LocalModelStatusResponse, String> {
     state.router.get_model_status().await
 }
+
+#[tauri::command]
+pub fn get_active_profile(
+    state: State<'_, models::LlmState>,
+) -> models::ActiveProfileInfo {
+    state.router.get_active_profile_info()
+}
+
+#[tauri::command]
+pub fn set_active_profile(
+    state: State<'_, models::LlmState>,
+    profile: models::ModelProfile,
+) -> models::ActiveProfileInfo {
+    state.router.set_active_profile(profile);
+    state.router.get_active_profile_info()
+}
+
+#[tauri::command]
+pub async fn start_llamacpp_server(
+    state: State<'_, models::LlmState>,
+    model_path: String,
+    n_ctx: Option<u32>,
+    port: Option<u16>,
+) -> Result<models::LlamaCppServerStatus, String> {
+    state
+        .router
+        .llamacpp_engine()
+        .start_server(&model_path, n_ctx, port)
+        .await
+}
+
+#[tauri::command]
+pub async fn stop_llamacpp_server(
+    state: State<'_, models::LlmState>,
+) -> Result<(), String> {
+    state.router.llamacpp_engine().stop_server().await
+}
+
+#[tauri::command]
+pub fn get_llamacpp_status(
+    state: State<'_, models::LlmState>,
+) -> models::LlamaCppServerStatus {
+    state.router.llamacpp_engine().get_status()
+}
+
+#[tauri::command]
+pub async fn list_hf_gguf_files(
+    repo_id: String,
+) -> Result<Vec<models::HfGgufFile>, String> {
+    models::HfDownloader::list_repo_ggufs(&repo_id).await
+}
+
+#[tauri::command]
+pub async fn download_hf_gguf(
+    app: AppHandle,
+    registry_state: State<'_, models::GgufRegistryState>,
+    repo_id: String,
+    filename: String,
+) -> Result<models::GgufRegistryEntry, String> {
+    let models_dir = models::HardwareProfileDetector::get_default_models_dir();
+    let entry = models::HfDownloader::download_gguf(
+        &repo_id,
+        &filename,
+        &models_dir,
+        Some(&app),
+    )
+    .await?;
+
+    let mut reg = registry_state
+        .inner
+        .write()
+        .map_err(|e| format!("Registry lock poisoned: {e}"))?;
+    reg.register(entry)
+}
+
+#[tauri::command]
+pub fn list_registered_models(
+    registry_state: State<'_, models::GgufRegistryState>,
+) -> Result<Vec<models::GgufRegistryEntry>, String> {
+    let reg = registry_state
+        .inner
+        .read()
+        .map_err(|e| format!("Registry lock poisoned: {e}"))?;
+    Ok(reg.list())
+}
+
+#[tauri::command]
+pub fn register_local_gguf(
+    registry_state: State<'_, models::GgufRegistryState>,
+    file_path: String,
+    display_name: Option<String>,
+    n_ctx: Option<u32>,
+) -> Result<models::GgufRegistryEntry, String> {
+    let path = std::path::Path::new(&file_path);
+    if !path.exists() {
+        return Err(format!("File does not exist: {file_path}"));
+    }
+
+    let default_name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "custom-model.gguf".to_string());
+    let name = display_name.unwrap_or(default_name);
+    let size_bytes = path.metadata().map(|m| m.len()).unwrap_or(0);
+    let id = models::slugify(&name);
+
+    let detected = models::HardwareProfileDetector::scan_models_dir(
+        path.parent().unwrap_or_else(|| std::path::Path::new(".")),
+    );
+    let profile_tier = detected
+        .into_iter()
+        .find(|m| m.path == file_path)
+        .map(|m| m.detected_profile)
+        .unwrap_or(models::ModelProfile::Balanced);
+
+    let entry = models::GgufRegistryEntry {
+        id,
+        display_name: name,
+        file_path,
+        size_bytes,
+        profile_tier,
+        n_ctx: n_ctx.unwrap_or(4096),
+        chat_template: None,
+        source: "local_import".to_string(),
+        registered_at: chrono::Utc::now().to_rfc3339(),
+    };
+
+    let mut reg = registry_state
+        .inner
+        .write()
+        .map_err(|e| format!("Registry lock poisoned: {e}"))?;
+    reg.register(entry)
+}
+
+#[tauri::command]
+pub fn delete_registered_model(
+    registry_state: State<'_, models::GgufRegistryState>,
+    model_id: String,
+    delete_file: Option<bool>,
+) -> Result<(), String> {
+    let mut reg = registry_state
+        .inner
+        .write()
+        .map_err(|e| format!("Registry lock poisoned: {e}"))?;
+    reg.unregister(&model_id, delete_file.unwrap_or(false))
+}
+
+#[tauri::command]
+pub fn submit_response_feedback(
+    pool: State<'_, db::DbPool>,
+    id: String,
+    feedback: i32,
+    user_edit: Option<String>,
+) -> Result<(), String> {
+    let conn = pool.get().map_err(|e| e.to_string())?;
+    models::dataset::record_feedback(&conn, &id, feedback, user_edit.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_dataset_stats(
+    pool: State<'_, db::DbPool>,
+) -> Result<models::DatasetStats, String> {
+    let conn = pool.get().map_err(|e| e.to_string())?;
+    models::dataset::get_dataset_stats(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn export_training_dataset(
+    pool: State<'_, db::DbPool>,
+    format: String,
+    output_path: Option<String>,
+) -> Result<String, String> {
+    let conn = pool.get().map_err(|e| e.to_string())?;
+    let path = if let Some(p) = output_path {
+        std::path::PathBuf::from(p)
+    } else {
+        let base = std::env::var("USERPROFILE")
+            .or_else(|_| std::env::var("HOME"))
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let ext = if format.to_lowercase() == "dpo" {
+            "deyana_dpo_dataset.jsonl"
+        } else {
+            "deyana_sharegpt_dataset.jsonl"
+        };
+        base.join(".deyana").join(ext)
+    };
+
+    let count = match format.to_lowercase().as_str() {
+        "dpo" => models::dataset::export_dpo(&conn, &path)?,
+        _ => models::dataset::export_sharegpt(&conn, &path)?,
+    };
+
+    Ok(format!(
+        "Successfully exported {count} samples to {}",
+        path.to_string_lossy()
+    ))
+}
+
+#[tauri::command]
+pub fn clear_training_dataset(
+    pool: State<'_, db::DbPool>,
+) -> Result<usize, String> {
+    let conn = pool.get().map_err(|e| e.to_string())?;
+    models::dataset::clear_training_dataset(&conn).map_err(|e| e.to_string())
+}
+
+
+
+
 
 
 

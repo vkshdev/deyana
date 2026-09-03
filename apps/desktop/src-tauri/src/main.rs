@@ -16,14 +16,16 @@ mod tray;
 mod voice;
 mod window;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 fn main() {
     tauri::Builder::default()
         .manage(process::CoreProcessManager::default())
         .manage(models::LlmState::default())
+        .manage(models::GgufRegistryState::default())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+
             let handle = app.handle().clone();
             settings::ensure_settings_dir(&handle)?;
 
@@ -35,7 +37,8 @@ fn main() {
             let db_pool = db::init_db(&db_path)
                 .map_err(|e| Box::<dyn std::error::Error>::from(e.to_string()))?;
             let daemon_manager = daemon::DaemonManager::spawn(handle.clone(), db_pool.clone());
-            let privacy_state = privacy::PrivacyState::new(db_pool.clone());
+            let privacy_state = privacy::PrivacyState::new(db_pool.clone(), &app_dir);
+            let vault_key = privacy_state.vault_key.clone();
             let connector_state = connectors::ConnectorState::new(db_pool.clone());
             let mut tool_state = tools::ToolState::new(db_pool.clone());
             let mcp_state = mcp::McpState::new(app_dir.clone(), db_pool.clone());
@@ -54,9 +57,11 @@ fn main() {
             };
 
             app.manage(db_pool);
+            app.manage(vault_key);
             app.manage(semantic_cache);
             app.manage(daemon_manager);
             app.manage(privacy_state);
+
             app.manage(connector_state);
             app.manage(tool_state);
             app.manage(mcp_state);
@@ -68,6 +73,9 @@ fn main() {
             tray::create_tray(&handle)?;
             let core_manager = app.state::<process::CoreProcessManager>();
             core_manager.start(&handle)?;
+            let llm_state = app.state::<models::LlmState>();
+            let profile_info = llm_state.router.get_active_profile_info();
+            let _ = handle.emit("core:profile_detected", &profile_info);
             process::record_desktop_ready(&handle)?;
             Ok(())
         })
@@ -93,6 +101,24 @@ fn main() {
             commands::generate_response,
             commands::list_models,
             commands::get_model_status,
+            commands::get_active_profile,
+            commands::set_active_profile,
+            commands::start_llamacpp_server,
+            commands::stop_llamacpp_server,
+            commands::get_llamacpp_status,
+            commands::list_hf_gguf_files,
+            commands::download_hf_gguf,
+            commands::list_registered_models,
+            commands::register_local_gguf,
+            commands::delete_registered_model,
+            commands::submit_response_feedback,
+            commands::get_dataset_stats,
+            commands::export_training_dataset,
+            commands::clear_training_dataset,
+
+
+
+
             privacy::commands::evaluate_privacy_policy,
             privacy::commands::get_privacy_audit_logs,
             privacy::commands::get_privacy_status,

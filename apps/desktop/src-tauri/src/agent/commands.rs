@@ -1,12 +1,15 @@
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-
 use crate::db::{self, DbPool};
 use crate::models::{self, LlmState};
 use super::cache::SemanticCache;
-use super::prompt::build_system_prompt;
+use super::prompt::{build_system_prompt, calculate_context_budget};
+use super::react::ReActEngine;
 use super::retrieval::retrieve_memory_context;
+
+
+
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -29,29 +32,25 @@ pub async fn execute_agent_chat(
     }
 
     let sess_id = session_id.unwrap_or_else(|| "default".to_string());
+    let active_n_ctx = state.router.active_n_ctx();
+    let (max_items, _, _) = calculate_context_budget(active_n_ctx);
 
-    // 1. Generate query embedding asynchronously via Ollama
     let query_embedding = state.router.generate_embedding(&prompt).await.ok();
 
-    // 2. Retrieve relevant memory context from SQLite using FTS5 + Vector Cosine Similarity (top-3)
     let conn = pool.get().map_err(|e| e.to_string())?;
     let memory_items = retrieve_memory_context(
         &conn,
         query_embedding.as_deref(),
         &prompt,
-        3,
+        max_items,
     ).unwrap_or_default();
 
-    // 3. Compute memory context hash
     let context_hash = SemanticCache::compute_context_hash(&memory_items);
 
-    // 4. Check Semantic Cache
     if let (Some(cache), Some(ref q_emb)) = (app.try_state::<SemanticCache>(), &query_embedding) {
         if let Some(cached_response) = cache.lookup(q_emb, &context_hash) {
-            // Save user chat message
             let _ = db::save_chat_message(&conn, Some(&sess_id), "user", &prompt, model.as_deref());
 
-            // Emit cached response as a single stream chunk
             let _ = app.emit(
                 "llm:stream_chunk",
                 &models::LlmStreamChunk {
@@ -61,7 +60,6 @@ pub async fn execute_agent_chat(
                 },
             );
 
-            // Save assistant message to SQLite
             let _ = db::save_chat_message(
                 &conn,
                 Some(&sess_id),
@@ -70,10 +68,8 @@ pub async fn execute_agent_chat(
                 Some("semantic_cache"),
             );
 
-            // Emit agent:done
             let _ = app.emit("agent:done", &cached_response);
 
-            // Optional TTS
             if let Some(voice_state) = app.try_state::<crate::voice::VoiceState>() {
                 let settings = voice_state.service.read_settings();
                 if voice_state.service.is_voice_mode_enabled() && settings.tts_enabled && !cached_response.trim().is_empty() {
@@ -93,32 +89,33 @@ pub async fn execute_agent_chat(
         }
     }
 
-    // 5. Save user chat message
     let _ = db::save_chat_message(&conn, Some(&sess_id), "user", &prompt, model.as_deref());
 
-    // 6. Build system prompt with persona + compressed memory context
-    let system_prompt = build_system_prompt(&memory_items, None);
+    let tool_descriptions = ReActEngine::build_tool_descriptions();
+    let system_prompt = build_system_prompt(&memory_items, Some(&tool_descriptions), Some(active_n_ctx));
 
-    // 7. Construct LLM generate request
-    let req = models::LlmGenerateRequest {
-        prompt: prompt.clone(),
-        model: model.clone(),
-        system: Some(system_prompt),
-        temperature: Some(0.7),
-        stream: Some(true),
-    };
+    let engine = ReActEngine::new();
+    let app_handle_step = app.clone();
+    let app_handle_chunk = app.clone();
 
-    let app_handle = app.clone();
-
-    // 8. Generate stream from LLM router emitting stream chunks
-    let assistant_response = state
-        .router
-        .generate_response(&req, move |chunk| {
-            let _ = app_handle.emit("llm:stream_chunk", &chunk);
-        })
+    let output = engine
+        .execute(
+            pool,
+            &state.router,
+            model.as_deref(),
+            &system_prompt,
+            &prompt,
+            move |payload| {
+                let _ = app_handle_step.emit("agent:step", payload);
+            },
+            move |chunk| {
+                let _ = app_handle_chunk.emit("llm:stream_chunk", &chunk);
+            },
+        )
         .await?;
 
-    // 9. Save assistant message to SQLite
+    let assistant_response = output.final_answer;
+
     let _ = db::save_chat_message(
         &conn,
         Some(&sess_id),
@@ -127,15 +124,23 @@ pub async fn execute_agent_chat(
         model.as_deref(),
     );
 
-    // 10. Cache response in Semantic Cache & SQLite
     if let (Some(cache), Some(q_emb)) = (app.try_state::<SemanticCache>(), query_embedding) {
         cache.insert(q_emb, context_hash, assistant_response.clone(), Some(&conn));
     }
 
-    // 11. Emit agent:done event
+    let active_model_name = model.as_deref().unwrap_or("default");
+    let _ = models::dataset::log_interaction(
+        &conn,
+        &prompt,
+        &system_prompt,
+        &assistant_response,
+        active_model_name,
+        None,
+        Some(&sess_id),
+    );
+
     let _ = app.emit("agent:done", &assistant_response);
 
-    // 12. If voice mode is enabled and TTS is enabled, trigger speech playback
     if let Some(voice_state) = app.try_state::<crate::voice::VoiceState>() {
         let settings = voice_state.service.read_settings();
         if voice_state.service.is_voice_mode_enabled() && settings.tts_enabled && !assistant_response.trim().is_empty() {
@@ -152,6 +157,7 @@ pub async fn execute_agent_chat(
     }
 
     Ok(assistant_response)
+
 }
 
 #[tauri::command]
