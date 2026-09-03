@@ -499,6 +499,18 @@ export interface WebSourceReference {
   source: string;
 }
 
+export type AgentStepStatus = "running" | "completed" | "failed";
+
+export interface AgentStep {
+  step: number;
+  thought: string;
+  action: string;
+  actionInput: Record<string, unknown> | string;
+  observation: string;
+  status: AgentStepStatus;
+  durationMs?: number;
+}
+
 export interface ChatMessageItem {
   id: string;
   role: "user" | "assistant";
@@ -506,6 +518,7 @@ export interface ChatMessageItem {
   model?: string | null;
   sourceReferences: MemorySourceReference[];
   webSourceReferences: WebSourceReference[];
+  steps?: AgentStep[];
   createdAt: string;
 }
 
@@ -1215,3 +1228,82 @@ export const DEFAULT_BACKEND_PROCESS_STATUS: BackendProcessStatus = {
   updatedAtMs: 0,
   restartCount: 0
 };
+
+export type ModelSetupTab = "local" | "hf" | "flywheel";
+
+export interface HfGgufFile {
+  filename: string;
+  sizeBytes: number;
+  quantization: string;
+  ramEstimateGb: number;
+  downloadUrl: string;
+  recommendedProfile?: string;
+  estimatedRamGb?: number;
+}
+
+export interface DownloadProgressPayload {
+  repo_id: string;
+  filename: string;
+  bytes_downloaded: number;
+  total_bytes: number;
+  percent: number;
+  repoId?: string;
+  bytesDownloaded?: number;
+  totalBytes?: number;
+}
+
+export interface DatasetStats {
+  totalCount: number;
+  positiveCount: number;
+  negativeCount: number;
+  modelCounts: Record<string, number>;
+  totalSamples?: number;
+  thumbsUpCount?: number;
+  thumbsDownCount?: number;
+  editedSamplesCount?: number;
+  modelsBreakdown?: Record<string, number>;
+}
+
+export interface GgufRegistryEntry {
+  id: string;
+  name: string;
+  filename: string;
+  path: string;
+  sizeBytes: number;
+  quantization: string;
+  ramEstimateGb: number;
+  createdAt: string;
+  displayName?: string;
+  filePath?: string;
+  profileTier?: string;
+  nCtx?: number;
+  source?: string;
+  registeredAt?: string;
+}
+
+export interface ActiveProfileInfo {
+  name: string;
+  tier: string;
+  systemRamGb: number;
+  recommendedContext: number;
+  recommendedQuant: string;
+  profile?: string;
+  ramGb?: number;
+  recommendedChatModel?: string;
+  recommendedEmbeddingModel?: string;
+  nCtxTokens?: number;
+  maxParallelJobs?: number;
+  alwaysOnVoice?: boolean;
+}
+
+export interface LlamaCppServerStatus {
+  running: boolean;
+  port?: number;
+  model?: string;
+  pid?: number;
+  endpoint?: string;
+  modelPath?: string;
+  nCtx?: number;
+  lastError?: string;
+}
+
