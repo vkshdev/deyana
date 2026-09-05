@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use futures_util::StreamExt;
 use reqwest_eventsource::{Event, EventSource};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use super::hardware::HardwareProfileDetector;
 use super::types::{
@@ -30,25 +30,6 @@ impl Default for LlamaCppEngine {
     fn default() -> Self {
         Self::new(None)
     }
-}
-
-#[derive(Debug, Serialize)]
-struct LlamaCppCompletionPayload<'a> {
-    prompt: &'a str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    temperature: Option<f32>,
-    stream: bool,
-    n_predict: i32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    grammar: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    system_prompt: Option<&'a str>,
-}
-
-#[derive(Debug, Deserialize)]
-struct LlamaCppChunk {
-    content: Option<String>,
-    stop: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -145,6 +126,7 @@ impl LlamaCppEngine {
         model_path: &str,
         n_ctx: Option<u32>,
         port: Option<u16>,
+        chat_template: Option<&str>,
     ) -> Result<LlamaCppServerStatus, String> {
         if !Path::new(model_path).exists() {
             let err = format!("Model GGUF file not found at path: {model_path}");
@@ -175,8 +157,16 @@ impl LlamaCppEngine {
             .arg("--host")
             .arg("127.0.0.1")
             .arg("-np")
-            .arg("1")
-            .stdout(std::process::Stdio::null())
+            .arg("1");
+
+        // Pass the model family's chat template so llama-server formats prompts correctly.
+        // Without this, instruction-tuned models (Llama3, Mistral, Gemma, etc.) produce
+        // garbled outputs because the default template may not match the model's training format.
+        if let Some(template) = chat_template {
+            cmd.arg("--chat-template").arg(template);
+        }
+
+        cmd.stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null());
 
         #[cfg(windows)]
@@ -293,7 +283,12 @@ impl LlamaCppEngine {
         models
     }
 
-    /// Stream completion from llama-server `/completion` endpoint
+    /// Stream completion from llama-server using the OpenAI-compatible `/v1/chat/completions` endpoint.
+    ///
+    /// Using the chat completions endpoint delegates all prompt formatting to llama-server,
+    /// which applies the `--chat-template` set at server startup. This is the only correct way
+    /// to support multiple model families (Llama3, Mistral, Qwen, Gemma, etc.) without
+    /// maintaining hardcoded per-model prompt templates in Deyana's codebase.
     pub async fn generate_stream<F>(
         &self,
         req: &LlmGenerateRequest,
@@ -302,23 +297,22 @@ impl LlamaCppEngine {
     where
         F: FnMut(LlmStreamChunk) + Send,
     {
-        let url = format!("{}/completion", self.endpoint);
+        let url = format!("{}/v1/chat/completions", self.endpoint);
 
-        // Build prompt with system instructions if provided
-        let full_prompt = if let Some(ref sys) = req.system {
-            format!("<|im_start|>system\n{sys}<|im_end|>\n<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n", req.prompt)
-        } else {
-            req.prompt.clone()
-        };
+        // Build the messages array in OpenAI format
+        let mut messages: Vec<serde_json::Value> = Vec::new();
+        if let Some(ref sys) = req.system {
+            messages.push(serde_json::json!({"role": "system", "content": sys}));
+        }
+        messages.push(serde_json::json!({"role": "user", "content": req.prompt}));
 
-        let payload = LlamaCppCompletionPayload {
-            prompt: &full_prompt,
-            temperature: req.temperature,
-            stream: true,
-            n_predict: 2048,
-            grammar: req.grammar.as_deref(),
-            system_prompt: req.system.as_deref(),
-        };
+        let payload = serde_json::json!({
+            "model": req.model.as_deref().unwrap_or("local"),
+            "messages": messages,
+            "temperature": req.temperature.unwrap_or(0.7),
+            "max_tokens": 2048,
+            "stream": true,
+        });
 
         let request = self.http_client.post(&url).json(&payload);
 
@@ -330,23 +324,40 @@ impl LlamaCppEngine {
         while let Some(event_result) = event_source.next().await {
             match event_result {
                 Ok(Event::Message(message)) => {
-                    if let Ok(chunk) = serde_json::from_str::<LlamaCppChunk>(&message.data) {
-                        if let Some(content) = chunk.content {
-                            full_response.push_str(&content);
+                    // llama-server sends "[DONE]" as the final SSE data value
+                    if message.data.trim() == "[DONE]" {
+                        break;
+                    }
+                    if let Ok(chunk) = serde_json::from_str::<serde_json::Value>(&message.data) {
+                        if let Some(content) = chunk
+                            .get("choices")
+                            .and_then(|c| c.get(0))
+                            .and_then(|c| c.get("delta"))
+                            .and_then(|d| d.get("content"))
+                            .and_then(|v| v.as_str())
+                        {
+                            full_response.push_str(content);
                             callback(LlmStreamChunk {
-                                response: content,
+                                response: content.to_string(),
                                 done: false,
                                 model: Some("llama.cpp".to_string()),
                             });
                         }
-                        if chunk.stop == Some(true) {
+                        // Check for finish_reason to detect end of stream
+                        if chunk
+                            .get("choices")
+                            .and_then(|c| c.get(0))
+                            .and_then(|c| c.get("finish_reason"))
+                            .and_then(|v| v.as_str())
+                            .map_or(false, |r| r == "stop" || r == "length")
+                        {
                             break;
                         }
                     }
                 }
                 Ok(Event::Open) => {}
                 Err(err) => {
-                    // Check if we already received content (stream completed normally)
+                    // If we already received content, treat as graceful end
                     if !full_response.is_empty() {
                         break;
                     }
