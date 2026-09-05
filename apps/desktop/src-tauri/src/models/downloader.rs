@@ -200,7 +200,7 @@ impl HfDownloader {
             size_bytes: final_size,
             profile_tier,
             n_ctx: 4096,
-            chat_template: None,
+            chat_template: infer_chat_template(filename),
             source: format!("huggingface:{repo_id}"),
             registered_at: chrono::Utc::now().to_rfc3339(),
         };
@@ -259,6 +259,59 @@ pub fn estimate_ram_from_quant(filename: &str, quant: &str) -> f32 {
 
     let model_gb: f32 = (param_b * bits_per_weight) / 8.0;
     (model_gb * 1.25 * 10.0).round() / 10.0
+}
+
+
+/// Infer the llama-server `--chat-template` value from a GGUF filename.
+///
+/// llama-server accepts a template name (not a raw template string) corresponding to the model
+/// family. An incorrect template causes malformed outputs on instruction-tuned models.
+/// Returns `None` for unknown models so llama-server auto-detects from GGUF metadata.
+pub fn infer_chat_template(filename: &str) -> Option<String> {
+    let lower = filename.to_lowercase();
+
+    // Llama 3 / Llama 3.1 / Llama 3.3 — Meta's custom Llama3 format
+    if lower.contains("llama-3") || lower.contains("llama3") {
+        return Some("llama3".to_string());
+    }
+
+    // Qwen 2 / 2.5 / 3 — ChatML
+    if lower.contains("qwen") {
+        return Some("chatml".to_string());
+    }
+
+    // Mistral / Mixtral — Mistral instruction format
+    if lower.contains("mistral") || lower.contains("mixtral") {
+        return Some("mistral".to_string());
+    }
+
+    // Gemma 2 / 3 — Gemma instruction format
+    if lower.contains("gemma") {
+        return Some("gemma".to_string());
+    }
+
+    // Phi-3 / Phi-4 — Phi format
+    if lower.contains("phi-3") || lower.contains("phi-4") || lower.contains("phi3") || lower.contains("phi4") {
+        return Some("phi3".to_string());
+    }
+
+    // DeepSeek — DeepSeek instruction format
+    if lower.contains("deepseek") {
+        return Some("deepseek".to_string());
+    }
+
+    // Command-R (Cohere)
+    if lower.contains("command-r") || lower.contains("command_r") {
+        return Some("command-r".to_string());
+    }
+
+    // Falcon
+    if lower.contains("falcon") {
+        return Some("falcon".to_string());
+    }
+
+    // Unknown — let llama-server read the template from GGUF metadata
+    None
 }
 
 
