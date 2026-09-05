@@ -1,208 +1,435 @@
-# DEYANA System Architecture Specification
+# DEYANA System Architecture Specification (v2.0 Full-Stack AI Edition)
 
-This document details the system design, subsystem contracts, memory boundaries, and execution models of **Deyana** — a privacy-enforced, local-first desktop AI assistant built in native Rust (Tauri 2) with a React 18 frontend.
+This document provides the definitive architectural specification, subsystem contracts, mathematical execution models, and data security boundaries of **Deyana** — an on-device, privacy-enforced, local-first personal and workspace AI assistant.
+
+Deyana is implemented as a single compiled native Rust binary (`apps/desktop/src-tauri`) with a high-performance React 18 / TypeScript floating holographic HUD.
 
 ---
 
 ## 1. Executive Architectural Overview
 
-Deyana is designed to serve as an on-device personal and workspace assistant operating over sensitive user context (local codebases, personal notes, chat history, and active window states).
+Deyana operates directly over sensitive user context — local source code repositories, personal markdown notes, encrypted chat transcripts, active desktop window focus states, and authorized workplace connectors (Gmail, GitHub, Slack, Notion, Jira, Linear) — without transmitting private data to cloud AI services.
 
-### Non-Negotiable System Invariants
+### 1.1 Non-Negotiable System Invariants
 
-1. **Zero External AI Egress:** Private context (files, chat history, vector embeddings, vault notes, voice transcripts, and active window titles) must never be transmitted to cloud AI services or external LLM APIs.
-2. **Single-Binary Process Lifecycle:** All business logic, state management, retrieval indexing, background daemons, and protocol handlers reside in a single compiled Rust binary (`apps/desktop/src-tauri`). There are no Python runtimes, Node.js background services, or loopback HTTP servers for internal communication.
-3. **Hardware-Aware Execution:** System subsystems auto-profile host hardware, maintaining a sub-100MB idle RAM footprint and ensuring low CPU overhead on dual-core low-spec Windows devices.
-4. **Deterministic Policy Enforcement:** Network calls to external APIs pass through a pre-execution privacy policy evaluator with cryptographic SHA-256 audit logging.
+1. **Zero External AI Egress:** Private context (files, chat history, vector embeddings, vault notes, voice transcripts, and active window titles) is strictly blocked from external cloud AI APIs.
+2. **Single-Binary Process Lifecycle:** All business logic, state management, retrieval indexing, background daemons, and protocol handlers reside in a single compiled Rust binary (`deyana-desktop.exe`). There are no Python runtimes, Node.js background services, or loopback HTTP servers for internal communication.
+3. **Hardware-Aware Execution:** Subsystems automatically detect host hardware capabilities, maintaining a sub-100MB idle RAM footprint and adapting context windows from 2,048 tokens on low-spec laptops up to 128,000 tokens on multi-GPU workstations.
+4. **Hardware-Backed Encryption:** All sensitive database records (chat history, personal notes, semantic cache) are encrypted at rest using AES-256-GCM with keys protected by the OS (Windows DPAPI).
+5. **Continuous Fine-Tuning Flywheel:** High-quality local interactions are automatically logged with regex PII masking and can be exported with 1 click into ShareGPT or DPO preference JSONL for local model training.
 
-### High-Level System Architecture
+### 1.2 High-Level System Architecture
 
 ```mermaid
 flowchart TD
-    subgraph UI["React 18 Desktop HUD (WebView)"]
-        HUD["Holographic Glass Overlay"]
+    subgraph UI["React 18 Desktop HUD (WebView2 Shell)"]
+        HUD["Holographic Glass Floating Panel<br/>(Framer Motion + TailwindCSS)"]
+        ChatUI["LocalChat & Expandable Scratchpad<br/>(AgentStepBadge.tsx)"]
+        ModelUI["Unified ModelSetupPanel<br/>(Runtimes | GGUF Hub | Flywheel)"]
         VoiceViz["Voice Waveform & Status Ring"]
         ProactiveUI["Proactive Context Cards"]
-        McpUI["MCP Management Panel"]
     end
 
-    subgraph Rust["Tauri 2 Rust Native Core Process"]
-        Agent["agent/<br/>Dual-Mode Memory RAG<br/>Streaming Token Pipeline"]
+    subgraph Rust["Tauri 2 Rust Native Core Process (deyana-desktop.exe)"]
+        ReAct["agent::react<br/>Autonomous ReAct Engine<br/>(Thought ➔ Action ➔ Observation)"]
+        Grammar["agent::grammar<br/>GBNF Grammar Engine<br/>Token-Level Tool Constraints"]
+        Dispatcher["agent::dispatcher<br/>Native Tool Dispatcher<br/>(Memory, Git, Web, Notes)"]
+        Retrieval["agent::retrieval<br/>Hybrid Dual-Mode RAG<br/>FTS5 BM25 + Cosine Similarity"]
+        Cache["agent::cache<br/>Semantic LRU Cache<br/>Embedding + Context Hash"]
+        
+        LlamaCpp["models::llamacpp<br/>Managed llama-server Supervisor<br/>(SSE Streaming & Subprocess Control)"]
+        Ollama["models::ollama<br/>Ollama Native Client<br/>(Port 11434 HTTP Bridge)"]
+        Downloader["models::downloader<br/>HuggingFace GGUF Downloader<br/>RAM Estimator & Streamer"]
+        Flywheel["models::dataset<br/>Continuous Fine-Tuning Flywheel<br/>PII Masker & JSONL Exporter"]
+        Hardware["models::hardware<br/>Hardware Auto-Detector<br/>4-Tier Profile Mapper (sysinfo)"]
+        
+        Privacy["privacy::firewall<br/>Deterministic Firewall<br/>SHA-256 Audit Trail"]
+        Crypto["privacy::crypto & vault_key<br/>Windows DPAPI + AES-256-GCM<br/>Field-Level Encryption"]
+        
+        DB["db/<br/>SQLite WAL Mode Engine<br/>FTS5 + Vector + Encrypted Repos"]
         Daemon["daemon/<br/>Proactive Sentinel Daemon<br/>Win32 Active Window Poller"]
-        Voice["voice/<br/>Always-On Voice Pipeline<br/>rustpotter Wake + VAD + TTS"]
-        MCP["mcp/<br/>MCP Client & Axum SSE Server<br/>Tool Registry Bridge"]
-        Models["models/<br/>LLM Inference Router<br/>Ollama & llama.cpp"]
-        Privacy["privacy/<br/>Deterministic Firewall<br/>SHA-256 Audit Trail"]
-        DB["db/<br/>SQLite Engine<br/>FTS5 Keyword + Vector Store"]
+        Voice["voice/<br/>Always-On Voice Pipeline<br/>rustpotter Wake + VAD + Windows TTS"]
+        MCP["mcp/<br/>Dual MCP Client & Axum Server<br/>Tool Registry Bridge"]
     end
 
-    subgraph External["External Environment"]
-        Ollama["Local Ollama Service<br/>(port 11434)"]
-        McpServers["External MCP Tool Servers<br/>(stdio / SSE transports)"]
-        Connectors["OAuth External APIs<br/>(Gmail, GitHub, Slack, etc.)"]
+    subgraph HostEnv["Host Operating System & Services"]
+        LlamaServerBin["llama-server.exe<br/>(Spawned Subprocess)"]
+        OllamaService["Ollama Service<br/>(System Background Service)"]
+        Win32API["Windows APIs<br/>(DPAPI, Win32 Window, SAPI TTS)"]
+        McpServers["External MCP Servers<br/>(stdio / SSE transports)"]
+        Connectors["OAuth External APIs<br/>(Gmail, GitHub, etc.)"]
     end
 
-    UI <-->|"Tauri IPC Commands & Events"| Agent
-    UI <-->|"proactive:context_card"| Daemon
-    UI <-->|"voice:wake / voice:transcript"| Voice
-    UI <-->|"mcp:*"| MCP
-
-    Agent --> DB
-    Agent --> Models
-    Agent --> Privacy
+    UI <-->|"Tauri IPC (Commands & agent:step Events)"| ReAct
+    UI <-->|"Tauri IPC (model management & flywheel)"| ModelUI
+    
+    ReAct --> Grammar
+    ReAct --> Dispatcher
+    ReAct --> Retrieval
+    ReAct --> Cache
+    ReAct --> LlamaCpp
+    ReAct --> Ollama
+    
+    LlamaCpp <-->|"HTTP / SSE"| LlamaServerBin
+    Ollama <-->|"HTTP API"| OllamaService
+    Downloader -->|"HTTPS (HuggingFace Hub)"| Privacy
+    
+    Flywheel --> DB
+    Retrieval --> DB
+    Crypto <-->|"CryptProtectData / CryptUnprotectData"| Win32API
+    DB --> Crypto
+    
+    Voice <-->|"WASAPI / SAPI"| Win32API
+    Daemon <-->|"GetForegroundWindow"| Win32API
     MCP <--> McpServers
-    Models --> Ollama
-    Agent -.->|"Firewall approved calls"| Connectors
+    Dispatcher -.->|"Approved Calls"| Connectors
 ```
 
 ---
 
 ## 2. Process Topology & Concurrency Model
 
-Deyana uses an event-driven asynchronous execution model built on top of Tokio and the Tauri 2 process architecture.
+Deyana utilizes a multi-threaded, asynchronous runtime architecture powered by Tokio and Tauri 2:
 
 ```mermaid
 flowchart TD
-    subgraph OS_Process["OS Process Space: deyana-desktop.exe"]
-        
-        subgraph MainThread["Main OS Thread (GUI Lifecycle)"]
-            WinMain["Tauri Event Loop<br/>Window Position / System Tray / Win32 Bounds"]
+    subgraph Process["OS Process Space: deyana-desktop.exe"]
+        subgraph MainThread["Main OS Thread"]
+            WinMain["Tauri GUI Event Loop<br/>Frameless Transparent Window Management<br/>System Tray & Win32 Window Snapping"]
         end
 
-        subgraph AudioThread["Dedicated Audio Thread (std::thread)"]
-            WASAPI["cpal WASAPI Engine<br/>Continuous 16kHz Audio Ring Buffer"]
-            VAD["rustpotter VAD<br/>Neural Template Matcher & Silence Endpointer"]
+        subgraph AudioThread["Dedicated Real-Time Audio Thread (std::thread)"]
+            WASAPI["cpal WASAPI Stream Engine<br/>Continuous 16kHz Mono Ring Buffer"]
+            VAD["rustpotter Wake Detector & SilenceEndpointer<br/>Energy RMS Voice Activity Detection"]
             WASAPI --> VAD
         end
 
-        subgraph TokioRuntime["Tokio Asynchronous Multithreaded Runtime"]
-            direction TB
-            
-            subgraph Tasks["Concurrent Tokio Tasks"]
-                AgentTask["agent::task<br/>Chat Loop & Context Compression"]
-                DaemonTask["daemon::task<br/>60s Win32 Active Window Poller"]
-                McpTask["mcp::task<br/>Axum SSE Server & Subprocess Manager"]
-                PrivacyTask["privacy::task<br/>Policy Gatekeeper & Audit Engine"]
-            end
-
-            subgraph StorageEngines["Persistence & Subsystem Repositories"]
-                DBPool["db::ConnectionPool<br/>SQLite WAL Mode + FTS5 Index"]
-                VectorStore["db::VectorStore<br/>384-dim Cosine Similarity Embeddings"]
-            end
-
-            AgentTask --> DBPool
-            AgentTask --> VectorStore
-            PrivacyTask --> DBPool
+        subgraph TokioPool["Tokio Asynchronous Multi-Threaded Runtime Pool"]
+            ReActTask["agent::react<br/>ReAct Loop Task (Max 5 Steps)"]
+            LlamaSupervisor["models::llamacpp<br/>llama-server Process Supervisor"]
+            HFDownloader["models::downloader<br/>Chunked HTTP Streaming Task"]
+            DaemonTask["daemon::poller<br/>60s Active Window Poller"]
+            McpAxum["mcp::server<br/>Axum SSE Server Task"]
+            DBPool["db::pool<br/>r2d2 SQLite WAL Connection Pool"]
         end
     end
 
-    WinMain <-->|"Tauri IPC (invoke / listen)"| TokioRuntime
-    VAD -->|"mpsc::channel (voice:wake / voice:transcript)"| AgentTask
+    WinMain <-->|"IPC Messages"| TokioPool
+    VAD -->|"mpsc::channel (wake/speech)"| ReActTask
+    LlamaSupervisor <-->|"Stdio & HTTP Health"| LlamaServerBin
 ```
 
-### Threading & Subsystem Isolation
-
-- **Main UI Thread:** Owns the OS window lifecycle, system tray integration, and native Win32 window positioning.
-- **Tokio Asynchronous Runtime:** Handles concurrent task execution including agent chat loops, MCP server requests, SQLite transactions, and connector synchronization runs.
-- **Dedicated Audio Thread:** Isolates continuous microphone capture (`cpal` WASAPI backend) on a dedicated native OS thread to prevent audio buffer underruns during heavy LLM inference.
+### Threading & Subsystem Isolation Guarantees
+- **UI Responsiveness:** Heavy LLM inference, embedding generation, and GGUF downloads never block the main GUI thread.
+- **Audio Protection:** Microphone sampling and neural wake word detection execute on a dedicated native OS thread (`std::thread`), completely insulated from Tokio runtime task preemption.
+- **Database Concurrency:** SQLite operates in Write-Ahead Logging (`PRAGMA journal_mode=WAL;`) with an `r2d2` thread pool, allowing concurrent readers alongside writes.
 
 ---
 
 ## 3. Subsystem Specifications
 
-### 3.1 Agent Brain & Retrieval Pipeline (`agent/`, `db/`)
+### 3.1 Autonomous Multi-Turn ReAct Agent Engine (`agent/react.rs`)
 
-The agent brain orchestrates conversation state and memory retrieval.
+Deyana features a full **Reasoning + Acting (ReAct)** autonomous agent engine that enables iterative problem solving:
 
-- **Hybrid Dual-Mode RAG:**
-  - **Lexical Search:** SQLite FTS5 index performing BM25 keyword scoring over structured memory items and Markdown vault notes.
-  - **Dense Vector Search:** Generates 384-dimensional embeddings via local Ollama models (`all-minilm`) stored in SQLite, executed using cosine similarity scoring.
-  - **Rank Fusion:** Combines lexical and vector candidate sets to construct the optimal context payload.
-- **Context Window Management:** Performs sliding-window context compression, budgeting tokens based on active LLM profile limits (e.g. 2,048 tokens on low-spec hardware up to 16,384 tokens on Ultra profiles).
-- **Streaming Pipeline:** Streams generation tokens asynchronously back to the React HUD using `tauri::Emitter` on the `llm:stream_chunk` channel.
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant HUD as React HUD (LocalChat)
+    participant Engine as ReActEngine (Rust)
+    participant Grammar as GBNF Grammar Generator
+    participant Router as LLM Router (LlamaCpp / Ollama)
+    participant Dispatcher as Tool Dispatcher
+    participant DB as Encrypted SQLite Store
 
-### 3.2 Proactive Sentinel Daemon (`daemon/`)
+    User->>HUD: "Check git status and summarize recent memory notes"
+    HUD->>Engine: agent_chat(prompt, context)
+    
+    loop ReAct Loop (Up to MAX_REACT_STEPS = 5)
+        Engine->>Grammar: Build tool whitelist grammar
+        Engine->>Router: Generate with Scratchpad context
+        Router-->>Engine: LLM Output (Thought + ToolCall OR FinalAnswer)
+        
+        alt Model Emits Tool Call
+            Engine->>HUD: emit("agent:step", { type: "tool_call", name, args })
+            Engine->>Dispatcher: dispatch(tool_name, args)
+            Dispatcher-->>Engine: ToolRunResponse (Observation)
+            Engine->>HUD: emit("agent:step", { type: "observation", content })
+            Engine->>Engine: Append Thought + Action + Observation to Scratchpad
+        else Model Emits Final Answer OR Max Steps (5) Exceeded
+            Engine->>HUD: emit("agent:step", { type: "final_answer", content })
+            Engine->>DB: Log conversation turn to training_dataset (PII masked)
+            Engine-->>HUD: Return synthesized Final Answer
+        end
+    end
+```
 
-The sentinel daemon operates as an autonomous background observer monitoring user desktop state.
-
-- **Win32 Window Focus Poller:** Queries `GetForegroundWindow` and `GetWindowTextW` every 60 seconds to track active applications and workspace context.
-- **Context Synthesis:** Cross-references active window titles with upcoming calendar events and unread triage items.
-- **Card Dispatch:** Emits non-intrusive `proactive:context_card` events to the UI HUD containing actionable suggestions with priority scoping (`normal`, `urgent`).
-
-### 3.3 Audio & Voice Subsystem (`voice/`)
-
-Provides continuous hands-free voice interaction.
-
-- **Wake Word Engine:** Runs `rustpotter` neural template matching over a continuous 16kHz audio input ring buffer managed by `cpal` (WASAPI backend).
-- **Speech End-Pointer:** Implements energy-based Voice Activity Detection (VAD) with a configurable 1.5-second silence threshold.
-- **Native Speech Synthesis:** Utilizes the OS-native Windows Speech API (via the `tts` crate) for zero-latency local speech playback without external model dependencies.
-
-### 3.4 MCP Runtime Architecture (`mcp/`)
-
-Deyana implements a full Model Context Protocol (MCP) environment in dual client/server configuration.
-
-- **MCP Client Manager:**
-  - Subprocess supervisor for external MCP tool servers (stdio and SSE transports).
-  - Compatible with standard `claude_desktop_config.json` configuration formats.
-  - Dynamically registers external MCP tool definitions into Deyana's unified tool registry.
-- **MCP Local Server:**
-  - Hosts a local Axum SSE endpoint exposing memory query tools (`search_deyana_memory`, `read_vault_note`, `create_vault_note`).
-  - Allows authorized external IDE plugins (Claude Desktop, Cursor, Antigravity) to query Deyana's memory without data leaving the machine.
-
-### 3.5 Privacy Firewall & Cryptographic Audit (`privacy/`)
-
-All external network operations are intercepted by the deterministic privacy firewall.
-
-- **Policy Classification:** Outbound requests are evaluated against destination domains, payload data categories, and user permission states.
-- **Deterministic Egress Gatekeeping:** Private user data is strictly blocked from external transmission.
-- **Cryptographic Audit Logger:** Every firewall decision (allowed or blocked) generates an append-only log record in SQLite featuring a SHA-256 hash of the request payload and evaluation metadata.
+#### ReAct Execution Invariants
+- **Step Bound:** Hard-capped at `MAX_REACT_STEPS = 5` to prevent infinite execution loops.
+- **Grammar-Constrained Schema:** The GBNF engine ensures that tool calls strictly adhere to the schema:
+  ```json
+  {"thought": "reasoning...", "tool_call": {"name": "tool_name", "arguments": {}}}
+  ```
+- **Robust Recovery:** If the LLM generates malformed JSON or invokes an invalid tool, the engine synthesizes an error observation (e.g. `"Tool 'xyz' not found. Available: [...]"`) and feeds it back to the model for self-correction.
 
 ---
 
-## 4. Data Persistence & Vault Storage
+### 3.2 Dual-Mode Memory & Context Engineering (`agent/retrieval.rs`, `agent/cache.rs`, `db/`)
 
-### 4.1 SQLite Database Schema (`db/`)
+Memory retrieval balances speed and semantic depth through hybrid rank fusion:
 
-The primary relational data store operates in SQLite WAL (Write-Ahead Logging) mode for concurrent read-write performance.
+```mermaid
+flowchart LR
+    Query["User Query"] --> FTS["SQLite FTS5<br/>BM25 Lexical Scoring"]
+    Query --> Embed["Ollama / llama.cpp<br/>384-dim Embedding"]
+    Embed --> Vector["SQLite Vector Store<br/>Cosine Similarity Scan"]
+    
+    FTS --> Fusion["Reciprocal Rank Fusion<br/>Score = RRF(BM25) + RRF(Vector)"]
+    Vector --> Fusion
+    Fusion --> Context["Compressed Context Payload<br/>(budgeted to active model n_ctx)"]
+```
 
-| Table Name | Primary Indices | Purpose |
-|---|---|---|
-| `memory_items` | `id`, `category`, `created_at` | Structured memory entries |
-| `memory_fts` | FTS5 Index (`title`, `content`) | Full-text search virtual table |
-| `memory_embeddings` | `memory_id` | Vector embedding storage for cosine similarity |
-| `chat_messages` | `session_id`, `created_at` | Session-scoped chat message logs |
-| `audit_logs` | `id`, `timestamp`, `hash` | Append-only SHA-256 privacy audit logs |
-| `connector_sync_runs` | `connector_id`, `status` | Sync history and record statistics |
-
-### 4.2 Local Markdown Vault Mirroring
-
-Memory entries and connector summaries are bi-directionally synchronized to a local Markdown vault directory chosen by the user. Files are stored as plain UTF-8 Markdown (`.md`) with YAML frontmatter metadata, remaining fully accessible and editable outside of Deyana.
+#### Mathematical Retrieval Models
+1. **Vector Cosine Similarity:**
+   $$\text{sim}(\mathbf{u}, \mathbf{v}) = \frac{\mathbf{u} \cdot \mathbf{v}}{\|\mathbf{u}\|_2 \|\mathbf{v}\|_2} = \frac{\sum_{i=1}^d u_i v_i}{\sqrt{\sum_{i=1}^d u_i^2} \sqrt{\sum_{i=1}^d v_i^2}}$$
+2. **Semantic Cache Lookup:**
+   In-memory LRU + SQLite cache keyed by query vector and context hash. If cosine distance $\ge 0.96$, the cached answer returns with zero LLM inference latency.
 
 ---
 
-## 5. IPC Interface Specification
+### 3.3 Inference Engine & Hardware Auto-Detection (`models/`)
 
-### Core Tauri Commands
+Deyana supports dual inference runtimes:
+1. **Managed llama.cpp Engine (`models/llamacpp.rs`):** Launches and monitors `llama-server.exe` as a supervised child process with real-time SSE streaming.
+2. **Ollama Client (`models/ollama.rs`):** HTTP connection to local Ollama on port `11434`.
+
+#### Hardware Auto-Detection Profiles (`models/hardware.rs`)
+Host RAM is probed via `sysinfo` on startup and mapped to four operational profiles:
+
+| Profile | RAM Threshold | Recommended Models | Max Context Window | Quantization |
+|---|---|---|---|---|
+| **Balanced** | 8 – 16 GB | `qwen3:1.7b`, `llama3.2:3b` | 4,096 tokens | `Q4_K_M` |
+| **Standard** | 16 – 32 GB | `llama3.3:8b`, `qwen2.5-coder:7b` | 8,192 tokens | `Q4_K_M` / `Q5_K_M` |
+| **Power** | 32 – 64 GB | `qwen2.5:14b`, `deepseek-r1:14b` | 16,384 tokens | `Q5_K_M` / `Q8_0` |
+| **Ultra** | 64+ GB / Multi-GPU | `qwen2.5:32b`, `llama3.3:70b` | 32,768 – 128,000 tokens | `Q4_K_M` / `Q8_0` |
+
+#### KV-Cache & Host RAM Estimation Formula (`models/downloader.rs`)
+Before downloading GGUF files from HuggingFace Hub, Deyana calculates the exact memory required to run the model safely:
+
+$$\text{RAM}_{\text{req}} = \text{Model Weight Size (Bytes)} + \text{KV Cache Size} \times 1.25$$
+
+Where the KV-Cache memory is computed as:
+$$\text{KV Cache Size} = 2 \times n_{\text{layers}} \times n_{\text{heads}} \times d_{\text{head}} \times n_{\text{ctx}} \times \text{bytes per element}$$
+
+---
+
+### 3.4 Hardware-Backed Cryptographic Security (`privacy/`)
+
+To protect user confidentiality against physical disk theft and unauthorized local process inspection:
+
+```mermaid
+flowchart TD
+    Raw["Plaintext Record<br/>(Chat Message / Memory Note)"]
+    DPAPI["Windows DPAPI<br/>(CryptProtectData via user logon credentials)"]
+    MasterKey["32-Byte Master Key<br/>(in-memory VaultKeyState)"]
+    AES["AES-256-GCM Cipher<br/>(Unique 12-byte CSPRNG Nonce)"]
+    Envelope["ENC::<nonce_hex>::<ciphertext_hex>"]
+    Disk["SQLite Database File<br/>(deyana.db)"]
+
+    DPAPI -->|Unwraps on startup| MasterKey
+    Raw --> AES
+    MasterKey --> AES
+    AES --> Envelope
+    Envelope --> Disk
+```
+
+#### Cryptographic Specifications
+- **Master Key Security:** Wrapped via Windows Data Protection API (DPAPI) and persisted to disk. Unwrapping requires the active user's Windows logon session.
+- **Cipher:** AES-256-GCM with a fresh, cryptographically secure random 12-byte nonce per encryption operation.
+- **Envelope Format:** `ENC::<12_BYTE_HEX_NONCE>::<CIPHERTEXT_AND_TAG_HEX>`. Unencrypted legacy records pass through seamlessly during migration.
+
+---
+
+### 3.5 Continuous Fine-Tuning Flywheel (`models/dataset.rs`)
+
+Deyana includes a built-in data flywheel that logs interactions to create custom fine-tuning datasets:
+
+```mermaid
+flowchart LR
+    Interaction["Chat Turn / ReAct Step"] --> PII["Regex PII Scrubber<br/>([EMAIL], [PHONE], [API_KEY], [JWT])"]
+    PII --> DB["training_dataset Table"]
+    
+    DB --> ExportShareGPT["1-Click Export:<br/>ShareGPT Multi-Turn JSONL"]
+    DB --> ExportDPO["1-Click Export:<br/>DPO Chosen/Rejected JSONL"]
+    
+    ExportShareGPT --> Training["Local Fine-Tuning<br/>(Unsloth / LoRA / Ollama Modelfile)"]
+    ExportDPO --> Training
+```
+
+#### Supported Dataset Formats
+1. **ShareGPT Format:** Multi-turn conversational JSONL (`conversations: [{from: "human", value: ...}, {from: "gpt", value: ...}]`).
+2. **DPO / ORPO Format:** Direct Preference Optimization pairs (`prompt`, `chosen`, `rejected`) using user-edited responses as chosen targets.
+
+---
+
+## 4. Desktop Frontend Architecture
+
+The user interface is a frameless, holographic floating overlay built in React 18, TailwindCSS, and Framer Motion:
+
+```mermaid
+flowchart TD
+    subgraph Frontend["React 18 Desktop HUD (apps/desktop/src/)"]
+        App["App.tsx<br/>Shell & MotionConfig"]
+        FloatingPanel["components/floating/FloatingPanel.tsx<br/>Holographic Glass Surface"]
+        
+        LocalChat["components/floating/LocalChat.tsx<br/>Streaming Chat Stream"]
+        StepBadge["components/chat/AgentStepBadge.tsx<br/>Animated ReAct Step Badges"]
+        
+        ModelSetup["components/floating/ModelSetupPanel.tsx<br/>Segmented 3-Tab Controller"]
+        RuntimesTab["Tab 1: Local Runtimes<br/>Ollama / llama.cpp status"]
+        GgufHubTab["Tab 2: HuggingFace GGUF Hub<br/>RAM Gauge & Chunked Downloader"]
+        FlywheelTab["Tab 3: Fine-Tuning Flywheel<br/>Stats, PII Preview & 1-Click Export"]
+        
+        Store["stores/assistantStore.ts<br/>Zustand-like Reactive State Manager"]
+    end
+
+    App --> FloatingPanel
+    FloatingPanel --> LocalChat
+    LocalChat --> StepBadge
+    FloatingPanel --> ModelSetup
+    ModelSetup --> RuntimesTab
+    ModelSetup --> GgufHubTab
+    ModelSetup --> FlywheelTab
+    Store <-->|"Tauri IPC Events (agent:step, llm:stream_chunk)"| Frontend
+```
+
+---
+
+## 5. Data Persistence & SQLite WAL Schema
+
+Primary relational storage is managed by SQLite in WAL mode:
+
+```sql
+-- Memory Items (AES-256-GCM encrypted content)
+CREATE TABLE memory_items (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    category TEXT NOT NULL,
+    content_markdown TEXT NOT NULL,  -- ENC::<nonce>::<ciphertext>
+    tags_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- Full-Text Search Virtual Table (FTS5)
+CREATE VIRTUAL TABLE memory_fts USING fts5(
+    title,
+    content,
+    content='memory_items',
+    content_rowid='rowid'
+);
+
+-- Vector Embeddings for Cosine Similarity
+CREATE TABLE memory_embeddings (
+    memory_id TEXT PRIMARY KEY,
+    embedding_json TEXT NOT NULL,
+    model TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(memory_id) REFERENCES memory_items(id) ON DELETE CASCADE
+);
+
+-- Encrypted Chat History
+CREATE TABLE chat_messages (
+    id TEXT PRIMARY KEY,
+    session_id TEXT,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,           -- ENC::<nonce>::<ciphertext>
+    metadata_json TEXT,
+    created_at TEXT NOT NULL
+);
+
+-- Continuous Fine-Tuning Dataset
+CREATE TABLE training_dataset (
+    id TEXT PRIMARY KEY,
+    instruction TEXT NOT NULL,
+    input_context TEXT NOT NULL,
+    output TEXT NOT NULL,
+    user_edit TEXT,
+    quality_score REAL DEFAULT 1.0,
+    created_at TEXT NOT NULL
+);
+
+-- Encrypted OAuth Connector Tokens
+CREATE TABLE connector_tokens (
+    connector_id TEXT PRIMARY KEY,
+    encrypted_token TEXT NOT NULL,
+    nonce TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- Semantic Cache Entries (Encrypted)
+CREATE TABLE semantic_cache (
+    id TEXT PRIMARY KEY,
+    query_hash TEXT NOT NULL,
+    embedding_json TEXT NOT NULL,
+    response_content TEXT NOT NULL,  -- ENC::<nonce>::<ciphertext>
+    created_at TEXT NOT NULL
+);
+```
+
+---
+
+## 6. IPC Interface Specification
+
+### 6.1 Core Tauri Commands
 
 | Command Signature | Subsystem | Return Type | Description |
 |---|---|---|---|
-| `agent_chat(prompt, session_id)` | agent | `Result<ChatMessageResponse, String>` | Initiates agent execution loop and streams response tokens |
-| `get_agent_status()` | agent | `Result<AgentStatusResponse, String>` | Returns active model, persona state, and memory status |
-| `evaluate_privacy_policy(target, category)` | privacy | `Result<PrivacyEvaluation, String>` | Evaluates outbound request parameters against active policy |
-| `get_privacy_audit_logs(limit)` | privacy | `Result<Vec<AuditLogEntry>, String>` | Fetches append-only SHA-256 privacy audit records |
-| `start_wake_listener()` | voice | `Result<(), String>` | Activates continuous background audio capture and wake detection |
-| `transcribe_audio(buffer)` | voice | `Result<String, String>` | Converts recorded PCM audio buffer to text via local STT |
-| `speak_text(text)` | voice | `Result<(), String>` | Synthesizes local audio output via native Windows TTS |
-| `mcp_connect_server(name, config)` | mcp | `Result<McpServerStatus, String>` | Launches and handshakes with an external MCP tool server |
-| `mcp_call_tool(server_id, tool_name, args)` | mcp | `Result<McpToolResponse, String>` | Executes a tool on a connected MCP server |
-| `sync_connector(connector_id)` | connectors | `Result<SyncRunSummary, String>` | Triggers an incremental fetch cycle for an authorized connector |
+| `agent_chat(prompt, session_id)` | agent | `Result<ChatMessageResponse, String>` | Executes multi-turn ReAct loop with `agent:step` streaming |
+| `get_hardware_profile()` | models | `Result<HardwareProfile, String>` | Returns system RAM tier, CPU cores, and model profile |
+| `list_hf_gguf_files(repo_id)` | models | `Result<Vec<HfGgufFile>, String>` | Queries HuggingFace Hub API and calculates RAM compatibility |
+| `download_hf_gguf(repo_id, file)` | models | `Result<GgufRegistryEntry, String>` | Streams chunked download with progress reporting |
+| `get_dataset_stats()` | models | `Result<DatasetStats, String>` | Returns count of logged samples and PII mask stats |
+| `export_training_dataset(fmt, path)` | models | `Result<usize, String>` | Exports dataset into ShareGPT or DPO JSONL format |
+| `clear_training_dataset()` | models | `Result<usize, String>` | Purges logged training samples |
+| `start_wake_listener()` | voice | `Result<(), String>` | Starts WASAPI ring buffer and wake word detector |
+| `interrupt_speech()` | voice | `Result<VoiceInterruptResponse, String>` | Kills active speech output process immediately |
+| `mcp_list_tools()` | mcp | `Result<Vec<McpToolItem>, String>` | Aggregates tools across all connected MCP servers |
 
-### Tauri Event Subscriptions
+### 6.2 Real-Time Tauri Event Channels
 
-| Event Channel | Payload Type | Dispatch Frequency | Subsystem Origin |
+| Channel | Payload Type | Trigger Frequency | Purpose |
 |---|---|---|---|
-| `llm:stream_chunk` | `String` (Token Chunk) | Real-time during inference | `agent::commands` |
-| `proactive:context_card` | `ProactiveContextCard` | On 60s context shift | `daemon::mod` |
-| `voice:wake` | `WakeEventData` | On "Deyana" wake word match | `voice::detector` |
-| `voice:transcript` | `TranscriptionResult` | On speech VAD end-point | `voice::service` |
-| `core:status` | `CoreStatusData` | On subsystem state change | `main::process` |
+| `agent:step` | `AgentStepPayload` | Per ReAct step | Streams thought, action, observation, and duration to chat |
+| `llm:stream_chunk` | `String` | Per token chunk | Streams generation text during final answer synthesis |
+| `voice:wake` | `WakeEventData` | On "Deyana" match | Shifts floating HUD state to `LISTENING` |
+| `voice:speaking_done` | `VoiceSpeakingPayload`| On TTS completion | Returns HUD state to `IDLE` |
+| `proactive:context_card` | `ProactiveCard` | On context shift | Displays unobtrusive active window recommendations |
+
+---
+
+## 7. Testing Architecture & Verification Integrity
+
+Deyana adheres to a decoupled test organization:
+
+```text
+apps/desktop/src-tauri/
+  src/
+    agent/
+      react.rs
+      tests/
+        react_tests.rs           <-- Domain-co-located unit tests
+    models/
+      tests/
+        downloader_tests.rs      <-- Dedicated unit tests
+  tests/
+    react_loop_integration_tests.rs  <-- Root integration test suite
+    empirical_m1_challenger_tests.rs <-- Adversarial boundary tests
+```
+
+### Verification Status: 100% Green
+- **Unit Tests:** 101 passed; 0 failed (`cargo test --bin deyana-desktop`).
+- **Integration Tests:** 7 passed; 0 failed (`cargo test --test react_loop_integration_tests`).
+- **Challenger Tests:** 4 passed; 0 failed (`cargo test --test empirical_m1_challenger_tests`).
+- **Frontend Build:** 0 type errors; production bundle built cleanly via Vite (`pnpm run build`).
