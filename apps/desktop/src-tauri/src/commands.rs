@@ -279,14 +279,31 @@ pub fn set_active_profile(
 #[tauri::command]
 pub async fn start_llamacpp_server(
     state: State<'_, models::LlmState>,
+    registry_state: State<'_, models::GgufRegistryState>,
     model_path: String,
     n_ctx: Option<u32>,
     port: Option<u16>,
+    chat_template: Option<String>,
 ) -> Result<models::LlamaCppServerStatus, String> {
+    // Resolve chat template: use the explicit override, or look it up from the registry
+    // based on the model_path matching a registered entry.
+    let resolved_template = chat_template.or_else(|| {
+        registry_state
+            .inner
+            .read()
+            .ok()
+            .and_then(|reg| {
+                reg.list()
+                    .into_iter()
+                    .find(|e| e.file_path == model_path)
+                    .and_then(|e| e.chat_template)
+            })
+    });
+
     state
         .router
         .llamacpp_engine()
-        .start_server(&model_path, n_ctx, port)
+        .start_server(&model_path, n_ctx, port, resolved_template.as_deref())
         .await
 }
 
