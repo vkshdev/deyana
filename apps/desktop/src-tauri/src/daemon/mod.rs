@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 use tokio::sync::mpsc;
 use tokio::time::{interval, Duration};
 
@@ -87,6 +87,8 @@ impl DaemonManager {
             let mut health_ticker = interval(Duration::from_secs(30));
             let mut window_ticker = interval(Duration::from_secs(5));
             let mut context_ticker = interval(Duration::from_secs(60));
+            let mut affective_decay_ticker = interval(Duration::from_secs(60));
+            let mut proactive_thought_ticker = interval(Duration::from_secs(45 * 60));
             let mut last_window_title: Option<String> = None;
 
             println!("[Daemon] Background daemon loop started.");
@@ -210,6 +212,28 @@ impl DaemonManager {
                                     };
                                     let _ = app_emitter.emit("proactive:context_card", &insight_card);
                                 }
+                            }
+                        });
+                    }
+                    _ = affective_decay_ticker.tick() => {
+                        if let Some(cognition_state) = app_handle_loop.try_state::<crate::cognition::CognitionState>() {
+                            let mut affective = cognition_state.affective.write().unwrap();
+                            if let Some(decayed_state) = affective.apply_idle_decay() {
+                                let _ = app_handle_loop.emit("cognition:affective_state_changed", &decayed_state);
+                            }
+                        }
+                    }
+                    _ = proactive_thought_ticker.tick() => {
+                        let app_handle_thought = app_handle_loop.clone();
+                        let pool_thought = db_pool.clone();
+                        tokio::spawn(async move {
+                            if let Some(llm_state) = app_handle_thought.try_state::<crate::models::LlmState>() {
+                                let _ = crate::cognition::proactive::ProactiveThoughtGenerator::execute_cycle(
+                                    &app_handle_thought,
+                                    &pool_thought,
+                                    &llm_state.router,
+                                    "interval_45min",
+                                ).await;
                             }
                         });
                     }
