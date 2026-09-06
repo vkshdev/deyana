@@ -157,12 +157,65 @@ pub fn get_memory_items(
 pub fn save_memory_item(
     pool: State<'_, db::DbPool>,
     vault_key: State<'_, crate::privacy::VaultKeyState>,
+    cache: State<'_, crate::agent::cache::SemanticCache>,
     content: String,
     source: String,
     tags: Option<Vec<String>>,
 ) -> Result<db::MemoryItem, String> {
     let conn = pool.get().map_err(|e| e.to_string())?;
-    db::save_memory_item_encrypted(&conn, &content, &source, tags, vault_key.key()).map_err(|e| e.to_string())
+    let item = db::save_memory_item_encrypted(&conn, &content, &source, tags, vault_key.key())
+        .map_err(|e| e.to_string())?;
+    cache.clear(Some(&conn));
+    Ok(item)
+}
+
+#[tauri::command]
+pub fn create_memory_link(
+    pool: State<'_, db::DbPool>,
+    cache: State<'_, crate::agent::cache::SemanticCache>,
+    source_id: String,
+    target_id: String,
+    relation_type: String,
+    weight: Option<f32>,
+    metadata: Option<serde_json::Value>,
+) -> Result<db::MemoryLink, String> {
+    let conn = pool.get().map_err(|e| e.to_string())?;
+    let rel_type = db::MemoryRelationType::from_str(&relation_type)?;
+    let link = db::create_memory_link(
+        &conn,
+        &source_id,
+        &target_id,
+        rel_type,
+        weight.unwrap_or(1.0),
+        metadata,
+    )
+    .map_err(|e| e.to_string())?;
+
+    cache.clear(Some(&conn));
+    Ok(link)
+}
+
+#[tauri::command]
+pub fn get_memory_links(
+    pool: State<'_, db::DbPool>,
+    memory_id: String,
+) -> Result<Vec<db::MemoryLink>, String> {
+    let conn = pool.get().map_err(|e| e.to_string())?;
+    db::get_memory_links_for_item(&conn, &memory_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_memory_link(
+    pool: State<'_, db::DbPool>,
+    cache: State<'_, crate::agent::cache::SemanticCache>,
+    link_id: String,
+) -> Result<bool, String> {
+    let conn = pool.get().map_err(|e| e.to_string())?;
+    let deleted = db::delete_memory_link(&conn, &link_id).map_err(|e| e.to_string())?;
+    if deleted {
+        cache.clear(Some(&conn));
+    }
+    Ok(deleted)
 }
 
 #[tauri::command]
