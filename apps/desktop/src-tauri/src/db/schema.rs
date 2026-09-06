@@ -58,6 +58,21 @@ CREATE TABLE IF NOT EXISTS memory_insights (
   FOREIGN KEY (memory_id) REFERENCES memory_items(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS memory_links (
+  id TEXT PRIMARY KEY,
+  source_id TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  relation_type TEXT NOT NULL CHECK (relation_type IN ('related_to', 'depends_on', 'contradicts', 'same_entity')),
+  weight REAL NOT NULL DEFAULT 1.0 CHECK (weight >= 0.0 AND weight <= 1.0),
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  CHECK (source_id != target_id),
+  UNIQUE (source_id, target_id, relation_type),
+  FOREIGN KEY (source_id) REFERENCES memory_items(id) ON DELETE CASCADE,
+  FOREIGN KEY (target_id) REFERENCES memory_items(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS triage_inbox (
   id TEXT PRIMARY KEY,
   platform TEXT NOT NULL,
@@ -255,11 +270,78 @@ CREATE TABLE IF NOT EXISTS browser_contact_tones (
   PRIMARY KEY (adapter_id, contact_label)
 );
 
+CREATE TABLE IF NOT EXISTS memory_save_suggestions (
+  id TEXT PRIMARY KEY,
+  session_id TEXT,
+  fact_text TEXT NOT NULL,
+  entities_json TEXT NOT NULL DEFAULT '[]',
+  category TEXT NOT NULL,
+  importance INTEGER NOT NULL DEFAULT 3,
+  rationale TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'dismissed', 'auto_committed')),
+  created_memory_id TEXT,
+  created_at TEXT NOT NULL,
+  resolved_at TEXT,
+  FOREIGN KEY (created_memory_id) REFERENCES memory_items(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS cognition_self_model (
+  id TEXT PRIMARY KEY,
+  identity_statement TEXT NOT NULL,
+  core_values_json TEXT NOT NULL DEFAULT '[]',
+  intellectual_interests_json TEXT NOT NULL DEFAULT '[]',
+  self_observations_json TEXT NOT NULL DEFAULT '[]',
+  user_observations_json TEXT NOT NULL DEFAULT '[]',
+  version INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS cognition_self_model_audit_log (
+  id TEXT PRIMARY KEY,
+  version INTEGER NOT NULL,
+  field_changed TEXT NOT NULL,
+  operation TEXT NOT NULL,
+  old_value_json TEXT,
+  new_value_json TEXT NOT NULL,
+  rationale TEXT NOT NULL,
+  triggered_by TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS cognition_reflections (
+  id TEXT PRIMARY KEY,
+  session_id TEXT,
+  turn_prompt TEXT NOT NULL,
+  turn_response TEXT NOT NULL,
+  accuracy_score REAL NOT NULL,
+  completeness_score REAL NOT NULL,
+  confidence_score REAL NOT NULL,
+  missed_opportunities TEXT NOT NULL DEFAULT '',
+  correction_guidance TEXT NOT NULL DEFAULT '',
+  flagged_for_correction INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS cognition_proactive_thoughts (
+  id TEXT PRIMARY KEY,
+  trigger_reason TEXT NOT NULL,
+  thought_summary TEXT NOT NULL,
+  hypotheses_json TEXT NOT NULL DEFAULT '[]',
+  source_memory_ids_json TEXT NOT NULL DEFAULT '[]',
+  insight_id TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (insight_id) REFERENCES memory_insights(id) ON DELETE SET NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_memory_items_deleted_at ON memory_items(deleted_at);
 CREATE INDEX IF NOT EXISTS idx_memory_items_updated_at ON memory_items(updated_at);
 CREATE INDEX IF NOT EXISTS idx_memory_items_type ON memory_items(type);
 CREATE INDEX IF NOT EXISTS idx_memory_entities_name ON memory_entities(name);
 CREATE INDEX IF NOT EXISTS idx_memory_insights_type ON memory_insights(type);
+CREATE INDEX IF NOT EXISTS idx_memory_links_source ON memory_links(source_id);
+CREATE INDEX IF NOT EXISTS idx_memory_links_target ON memory_links(target_id);
+CREATE INDEX IF NOT EXISTS idx_memory_links_relation ON memory_links(relation_type);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_created_at ON chat_messages(created_at);
 CREATE INDEX IF NOT EXISTS idx_triage_inbox_status ON triage_inbox(status);
 CREATE INDEX IF NOT EXISTS idx_privacy_audit_logs_created_at ON privacy_audit_logs(created_at);
@@ -268,6 +350,13 @@ CREATE INDEX IF NOT EXISTS idx_connector_sync_runs_started_at ON connector_sync_
 CREATE INDEX IF NOT EXISTS idx_connector_items_connector_id ON connector_items(connector_id);
 CREATE INDEX IF NOT EXISTS idx_browser_audit_created_at ON browser_audit_events(created_at);
 CREATE INDEX IF NOT EXISTS idx_browser_action_plans_updated_at ON browser_action_plans(updated_at);
+CREATE INDEX IF NOT EXISTS idx_memory_suggestions_status ON memory_save_suggestions(status);
+CREATE INDEX IF NOT EXISTS idx_memory_suggestions_created ON memory_save_suggestions(created_at);
+CREATE INDEX IF NOT EXISTS idx_cognition_audit_created ON cognition_self_model_audit_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_cognition_audit_field ON cognition_self_model_audit_log(field_changed);
+CREATE INDEX IF NOT EXISTS idx_cognition_reflections_created ON cognition_reflections(created_at);
+CREATE INDEX IF NOT EXISTS idx_cognition_reflections_confidence ON cognition_reflections(confidence_score);
+CREATE INDEX IF NOT EXISTS idx_cognition_thoughts_created ON cognition_proactive_thoughts(created_at);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
   memory_id UNINDEXED,
