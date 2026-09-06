@@ -23,6 +23,16 @@ impl ToolDispatcher {
         tool_name: &str,
         arguments: &Value,
     ) -> Result<String, String> {
+        Self::dispatch_with_cache(conn, tool_name, arguments, None)
+    }
+
+    /// Execute a tool invocation by name and argument payload with optional semantic cache invalidation
+    pub fn dispatch_with_cache(
+        conn: &Connection,
+        tool_name: &str,
+        arguments: &Value,
+        cache: Option<&crate::agent::cache::SemanticCache>,
+    ) -> Result<String, String> {
         match tool_name {
             "search_memory" => {
                 let query = arguments
@@ -58,6 +68,12 @@ impl ToolDispatcher {
 
                 let item = db::save_memory_item(conn, content, "agent_tool", tags)
                     .map_err(|e| format!("Failed to save note: {e}"))?;
+
+                if let Some(c) = cache {
+                    c.clear(Some(conn));
+                } else {
+                    let _ = db::clear_all_cache_entries(conn);
+                }
 
                 Ok(format!(
                     "Successfully saved note '{}' with ID {}",
