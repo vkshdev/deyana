@@ -43,7 +43,11 @@ export function CompactCommandBar({ snapshot }: CompactCommandBarProps) {
       >
         <div className="command-bar-drag-region" data-tauri-drag-region onPointerDown={startWindowDrag}>
           <FloatingDockHandle />
-          <FloatingStatusRing state={snapshot.assistantState} compact />
+          <FloatingStatusRing
+            state={snapshot.assistantState}
+            affectiveState={snapshot.affectiveState}
+            compact
+          />
         </div>
         
         <div className="command-bar-input">

@@ -20,6 +20,7 @@ import { ReleaseQualityPanel } from "./ReleaseQualityPanel";
 import { ToolPanel } from "./ToolPanel";
 import { VoicePanel } from "./VoicePanel";
 import { ProactiveAlertCards } from "./ProactiveAlertCards";
+import { MindCognitionPanel } from "../cognition/MindCognitionPanel";
 import { startWindowDrag } from "../../utils/windowDrag";
 
 interface FloatingPanelProps {
@@ -43,7 +44,7 @@ export function FloatingPanel({ snapshot }: FloatingPanelProps) {
       <header className="panel-header" data-tauri-drag-region onPointerDown={startWindowDrag}>
         <FloatingDockHandle />
         <div className="brand-mark" data-tauri-drag-region>
-          <FloatingStatusRing state={snapshot.assistantState} />
+          <FloatingStatusRing state={snapshot.assistantState} affectiveState={snapshot.affectiveState} />
           <div data-tauri-drag-region>
             <strong style={{ color: "#d8b978" }}>{productIdentity.brand}</strong>
             <span style={{ color: "#83a9d4" }}>{snapshot.assistantState.replaceAll("_", " ")}</span>
@@ -105,6 +106,7 @@ export function FloatingPanel({ snapshot }: FloatingPanelProps) {
 
         <QuickActions actions={snapshot.quickActions} />
         <ToolPanel snapshot={snapshot} />
+        <MindCognitionPanel snapshot={snapshot} />
         <MemoryBrowser snapshot={snapshot} />
         <ConnectorStatusList snapshot={snapshot} />
       </div>

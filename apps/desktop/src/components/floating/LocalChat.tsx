@@ -1,10 +1,12 @@
 import { useEffect, useRef } from "react";
+import { AnimatePresence } from "framer-motion";
 import type { AssistantSnapshot } from "../../stores/assistantStore";
 import type { MemorySourceReference, WebSourceReference } from "@deyana/schemas";
 import { MessageSquare, Trash2 } from "lucide-react";
 import { assistantStore } from "../../stores/assistantStore";
 import { ChatInput } from "../chat/ChatInput";
 import { AgentStepBadge } from "../chat/AgentStepBadge";
+import { MemorySaveCard } from "../chat/MemorySaveCard";
 
 interface LocalChatProps {
   snapshot: AssistantSnapshot;
@@ -25,7 +27,8 @@ export function LocalChat({ snapshot }: LocalChatProps) {
     snapshot.chatMessages,
     snapshot.activeAgentSteps,
     snapshot.streamingResponse,
-    snapshot.chatBusy
+    snapshot.chatBusy,
+    snapshot.pendingMemorySaves
   ]);
 
   return (
@@ -87,6 +90,18 @@ export function LocalChat({ snapshot }: LocalChatProps) {
           <article className="message message-assistant">
             <span>{emptyMessage}</span>
           </article>
+        ) : null}
+
+        {snapshot.pendingMemorySaves && snapshot.pendingMemorySaves.length > 0 ? (
+          <div className="pending-memory-saves-stream" aria-label="Extracted memory suggestions">
+            <AnimatePresence>
+              {snapshot.pendingMemorySaves
+                .filter((s) => s.status === "pending")
+                .map((suggestion) => (
+                  <MemorySaveCard key={suggestion.id} suggestion={suggestion} />
+                ))}
+            </AnimatePresence>
+          </div>
         ) : null}
 
         {snapshot.chatBusy ? (

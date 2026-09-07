@@ -1,8 +1,9 @@
-import type { AssistantState } from "@deyana/schemas";
+import type { AffectiveState, AffectiveStateRecord, AssistantState } from "@deyana/schemas";
 import { DeyanaMark } from "../brand/DeyanaMark";
 
 interface FloatingStatusRingProps {
   state: AssistantState;
+  affectiveState?: AffectiveStateRecord | AffectiveState | null;
   compact?: boolean;
 }
 
@@ -20,10 +21,25 @@ const stateClass: Partial<Record<AssistantState, string>> = {
   MODEL_MISSING: "status-error"
 };
 
-export function FloatingStatusRing({ state, compact = false }: FloatingStatusRingProps) {
+export function FloatingStatusRing({
+  state,
+  affectiveState,
+  compact = false
+}: FloatingStatusRingProps) {
+  const discrete: AffectiveState =
+    typeof affectiveState === "string"
+      ? affectiveState
+      : affectiveState?.discrete ?? "NEUTRAL";
+
+  const auraClass = `affective-aura aura-${discrete.toLowerCase()}`;
+
   return (
-    <div className={compact ? "status-ring status-ring-compact" : "status-ring"}>
+    <div
+      className={compact ? "status-ring status-ring-compact" : "status-ring"}
+      title={`State: ${state} • Mood: ${discrete}`}
+    >
       <div className={`status-ring-inner ${stateClass[state] ?? "status-idle"}`} />
+      <div className={auraClass} aria-hidden="true" />
       <DeyanaMark className="status-core-mark" />
     </div>
   );
