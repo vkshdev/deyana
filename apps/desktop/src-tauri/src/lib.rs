@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod browser;
+pub mod cognition;
 pub mod commands;
 pub mod connectors;
 pub mod daemon;

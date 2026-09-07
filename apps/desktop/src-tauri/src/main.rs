@@ -2,6 +2,7 @@
 
 mod agent;
 mod browser;
+mod cognition;
 mod commands;
 mod connectors;
 mod daemon;
@@ -49,6 +50,10 @@ fn main() {
             let voice_state = voice::VoiceState::new(app_dir.clone(), db_pool.clone());
             voice_state.service.set_app_handle(handle.clone());
             let browser_state = browser::BrowserState::new(app_dir.clone(), db_pool.clone());
+            let cognition_state = cognition::CognitionState::default();
+            if let Ok(conn) = db_pool.get() {
+                let _ = db::seed_self_model_if_empty(&conn);
+            }
 
             let semantic_cache = if let Ok(conn) = db_pool.get() {
                 agent::cache::SemanticCache::load_from_db(&conn)
@@ -61,6 +66,7 @@ fn main() {
             app.manage(semantic_cache);
             app.manage(daemon_manager);
             app.manage(privacy_state);
+            app.manage(cognition_state);
 
             app.manage(connector_state);
             app.manage(tool_state);
@@ -94,6 +100,9 @@ fn main() {
             commands::open_vault_folder,
             commands::get_memory_items,
             commands::save_memory_item,
+            commands::create_memory_link,
+            commands::get_memory_links,
+            commands::delete_memory_link,
             commands::get_triage_inbox,
             commands::resolve_triage_item,
             commands::save_chat_message,
@@ -199,7 +208,16 @@ fn main() {
             agent::commands::agent_chat,
             agent::commands::get_agent_status,
             agent::commands::clear_semantic_cache,
-            agent::commands::get_semantic_cache_stats
+            agent::commands::get_semantic_cache_stats,
+            agent::commands::get_mind_state,
+            agent::commands::get_self_model,
+            agent::commands::update_self_model,
+            agent::commands::get_self_model_audit_log,
+            agent::commands::get_affective_state,
+            agent::commands::trigger_proactive_thought,
+            agent::commands::list_pending_memory_saves,
+            agent::commands::approve_memory_save,
+            agent::commands::dismiss_memory_save
         ])
         .build(tauri::generate_context!())
         .expect("failed to build DEYANA desktop shell")
