@@ -74,3 +74,48 @@ fn test_sqlite_hydration_and_persistence() {
     let hit = hydrated.lookup(&emb, &ctx_hash);
     assert_eq!(hit, Some(resp));
 }
+
+#[test]
+fn test_cache_invalidation_on_link_and_memory_writes() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute_batch(INIT_SQL).unwrap();
+
+    let cache = SemanticCache::new(10, 30, 0.92);
+    let emb = vec![1.0, 0.0, 0.0];
+    let ctx_hash = "ctx_graph_sync".to_string();
+    let resp = "Cached graph answer".to_string();
+
+    cache.insert(emb.clone(), ctx_hash.clone(), resp.clone(), Some(&conn));
+
+    assert_eq!(cache.lookup(&emb, &ctx_hash), Some(resp.clone()));
+    let count: i64 = conn.query_row("SELECT COUNT(*) FROM semantic_cache", [], |r| r.get(0)).unwrap();
+    assert_eq!(count, 1);
+
+    // Direct cache invalidation as done during link creation/deletion
+    cache.clear(Some(&conn));
+
+    assert_eq!(cache.lookup(&emb, &ctx_hash), None);
+    let count_cleared: i64 = conn.query_row("SELECT COUNT(*) FROM semantic_cache", [], |r| r.get(0)).unwrap();
+    assert_eq!(count_cleared, 0);
+
+    // Re-insert and verify ToolDispatcher save_note invalidates cache
+    cache.insert(emb.clone(), ctx_hash.clone(), resp, Some(&conn));
+    assert!(cache.lookup(&emb, &ctx_hash).is_some());
+
+    let args = serde_json::json!({
+        "content": "Newly extracted memory note during conversation",
+        "tags": ["memory", "fact"]
+    });
+
+    let dispatch_res = crate::agent::dispatcher::ToolDispatcher::dispatch_with_cache(
+        &conn,
+        "save_note",
+        &args,
+        Some(&cache),
+    );
+    assert!(dispatch_res.is_ok());
+
+    assert_eq!(cache.lookup(&emb, &ctx_hash), None, "Cache must be invalidated by save_note");
+    let count_after_tool: i64 = conn.query_row("SELECT COUNT(*) FROM semantic_cache", [], |r| r.get(0)).unwrap();
+    assert_eq!(count_after_tool, 0, "SQLite cache table must be cleared");
+}
