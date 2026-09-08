@@ -1,6 +1,6 @@
 # DEYANA System Architecture Specification (v2.0 Full-Stack AI Edition)
 
-This document provides the definitive architectural specification, subsystem contracts, mathematical execution models, and data security boundaries of **Deyana** — an on-device, privacy-enforced, local-first personal and workspace AI assistant.
+This doc provides the definitive architectural specification, subsystem contracts, mathematical execution models, and data security boundaries of **Deyana** — an on-device, privacy-enforced, local-first personal and workspace AI assistant.
 
 Deyana is implemented as a single compiled native Rust binary (`apps/desktop/src-tauri`) with a high-performance React 18 / TypeScript floating holographic HUD.
 
@@ -25,17 +25,25 @@ flowchart TD
     subgraph UI["React 18 Desktop HUD (WebView2 Shell)"]
         HUD["Holographic Glass Floating Panel<br/>(Framer Motion + TailwindCSS)"]
         ChatUI["LocalChat & Expandable Scratchpad<br/>(AgentStepBadge.tsx)"]
+        SaveCardUI["MemorySaveCard Review Cards<br/>(Inline Fact Approval & Edit)"]
+        MindUI["Mind & Cognition Panel<br/>(Affective Radar, Self-Model, Reflections)"]
         ModelUI["Unified ModelSetupPanel<br/>(Runtimes | GGUF Hub | Flywheel)"]
-        VoiceViz["Voice Waveform & Status Ring"]
+        VoiceViz["Voice Waveform & Status Ring<br/>(Ambient Affective Aura Glow)"]
         ProactiveUI["Proactive Context Cards"]
     end
 
     subgraph Rust["Tauri 2 Rust Native Core Process (deyana-desktop.exe)"]
         ReAct["agent::react<br/>Autonomous ReAct Engine<br/>(Thought ➔ Action ➔ Observation)"]
+        Prompt["agent::prompt<br/>Dynamic System Prompt Assembler<br/>(Behavioral Postures & Self-Model)"]
         Grammar["agent::grammar<br/>GBNF Grammar Engine<br/>Token-Level Tool Constraints"]
         Dispatcher["agent::dispatcher<br/>Native Tool Dispatcher<br/>(Memory, Git, Web, Notes)"]
-        Retrieval["agent::retrieval<br/>Hybrid Dual-Mode RAG<br/>FTS5 BM25 + Cosine Similarity"]
+        Retrieval["agent::retrieval<br/>Relational Graph Walker<br/>FTS5 + Vector + 1-Hop Traversal"]
         Cache["agent::cache<br/>Semantic LRU Cache<br/>Embedding + Context Hash"]
+        
+        Cognition["cognition/<br/>The Mind Layer<br/>Russell Affective State Machine<br/>Persistent Self-Model & Audit Log"]
+        FactExtract["cognition::fact_extractor<br/>Async Turn Fact Extraction<br/>Triage & Staged Suggestions"]
+        Reflection["cognition::reflection<br/>Metacognitive Monitor<br/>Confidence Scoring & Low-Conf Buffer"]
+        Proactive["cognition::proactive<br/>45m Proactive Thought Loop<br/>Cross-Memory Synthesis"]
         
         LlamaCpp["models::llamacpp<br/>Managed llama-server Supervisor<br/>(SSE Streaming & Subprocess Control)"]
         Ollama["models::ollama<br/>Ollama Native Client<br/>(Port 11434 HTTP Bridge)"]
@@ -46,8 +54,8 @@ flowchart TD
         Privacy["privacy::firewall<br/>Deterministic Firewall<br/>SHA-256 Audit Trail"]
         Crypto["privacy::crypto & vault_key<br/>Windows DPAPI + AES-256-GCM<br/>Field-Level Encryption"]
         
-        DB["db/<br/>SQLite WAL Mode Engine<br/>FTS5 + Vector + Encrypted Repos"]
-        Daemon["daemon/<br/>Proactive Sentinel Daemon<br/>Win32 Active Window Poller"]
+        DB["db/<br/>SQLite WAL Mode Engine<br/>Memory Links, Self-Model & Audit"]
+        Daemon["daemon/<br/>Proactive Sentinel Daemon<br/>Win32 Poller & 45m Thought Ticker"]
         Voice["voice/<br/>Always-On Voice Pipeline<br/>rustpotter Wake + VAD + Windows TTS"]
         MCP["mcp/<br/>Dual MCP Client & Axum Server<br/>Tool Registry Bridge"]
     end
@@ -60,8 +68,14 @@ flowchart TD
         Connectors["OAuth External APIs<br/>(Gmail, GitHub, etc.)"]
     end
 
-    UI <-->|"Tauri IPC (Commands & agent:step Events)"| ReAct
+    UI <-->|"Tauri IPC (Commands & Events)"| ReAct
+    UI <-->|"Tauri IPC (Mind & Memory Graph)"| Cognition
     UI <-->|"Tauri IPC (model management & flywheel)"| ModelUI
+    
+    ReAct --> Prompt
+    Cognition -->|"Behavioral Directives & Values"| Prompt
+    Reflection -->|"Buffered Correction Notes"| Prompt
+    Prompt --> ReAct
     
     ReAct --> Grammar
     ReAct --> Dispatcher
@@ -69,6 +83,13 @@ flowchart TD
     ReAct --> Cache
     ReAct --> LlamaCpp
     ReAct --> Ollama
+    
+    ReAct -.->|"tokio::spawn (post-turn)"| FactExtract
+    ReAct -.->|"tokio::spawn (post-turn)"| Reflection
+    FactExtract --> DB
+    Reflection --> Cognition
+    Daemon --> Proactive
+    Proactive --> DB
     
     LlamaCpp <-->|"HTTP / SSE"| LlamaServerBin
     Ollama <-->|"HTTP API"| OllamaService
@@ -106,6 +127,10 @@ flowchart TD
 
         subgraph TokioPool["Tokio Asynchronous Multi-Threaded Runtime Pool"]
             ReActTask["agent::react<br/>ReAct Loop Task (Max 5 Steps)"]
+            FactExtractTask["cognition::fact_extractor<br/>Async Fact Extraction Task"]
+            MetaTask["cognition::reflection<br/>Async Metacognitive Monitor Task"]
+            ProactiveTask["cognition::proactive<br/>45m Proactive Thought Loop Task"]
+            IdleDecayTask["cognition::affective<br/>1m Affective Idle Decay Task"]
             LlamaSupervisor["models::llamacpp<br/>llama-server Process Supervisor"]
             HFDownloader["models::downloader<br/>Chunked HTTP Streaming Task"]
             DaemonTask["daemon::poller<br/>60s Active Window Poller"]
@@ -117,12 +142,21 @@ flowchart TD
     WinMain <-->|"IPC Messages"| TokioPool
     VAD -->|"mpsc::channel (wake/speech)"| ReActTask
     LlamaSupervisor <-->|"Stdio & HTTP Health"| LlamaServerBin
+    ReActTask -.->|"tokio::spawn (post-turn)"| FactExtractTask
+    ReActTask -.->|"tokio::spawn (post-turn)"| MetaTask
+    DaemonTask --> ProactiveTask
+    DaemonTask --> IdleDecayTask
+    FactExtractTask --> DBPool
+    MetaTask --> DBPool
+    ProactiveTask --> DBPool
 ```
 
 ### Threading & Subsystem Isolation Guarantees
 - **UI Responsiveness:** Heavy LLM inference, embedding generation, and GGUF downloads never block the main GUI thread.
 - **Audio Protection:** Microphone sampling and neural wake word detection execute on a dedicated native OS thread (`std::thread`), completely insulated from Tokio runtime task preemption.
 - **Database Concurrency:** SQLite operates in Write-Ahead Logging (`PRAGMA journal_mode=WAL;`) with an `r2d2` thread pool, allowing concurrent readers alongside writes.
+- **Zero-Latency Post-Turn Decoupling:** Long-term conversation fact extraction and metacognitive self-reflection passes execute asynchronously via `tokio::spawn` after the turn response is finalized and streamed, preventing any user-perceived token latency.
+- **Cognitive Daemon Isolation:** Affective idle decay (1-minute ticker) and proactive cross-memory synthesis (45-minute ticker) run on detached background daemon timers, ensuring zero interference with interactive chat queries.
 
 ---
 
@@ -273,6 +307,151 @@ flowchart LR
 
 ---
 
+### 3.6 Memory Graph Intelligence & Relational Graph Walker (`db/`, `agent/retrieval.rs`, `cognition/fact_extractor.rs`)
+
+Phase 33 transitions Deyana's episodic and semantic memory from flat lexical/vector similarity searches into a typed, weighted directional knowledge graph stored in SQLite:
+
+```mermaid
+flowchart TD
+    subgraph SeedDiscovery["1. Seed Candidate Discovery"]
+        Query["User Query"] --> FTS["SQLite FTS5 Lexical Search"]
+        Query --> Sub["Substring Fallback"]
+        Query --> Vec["Vector Cosine Similarity"]
+        FTS --> Seeds["Top Seed Memories (K <= 5)"]
+        Sub --> Seeds
+        Vec --> Seeds
+    end
+
+    subgraph GraphWalk["2. Bounded 1-Hop Relational Traversal"]
+        Seeds --> EdgeLookup["Query Incident memory_links<br/>(db::get_links_for_memory_ids)"]
+        EdgeLookup --> Relations{"Relation Multipliers M(T)<br/>depends_on: 1.0<br/>same_entity: 0.9<br/>related_to: 0.8<br/>contradicts: 0.7"}
+        Relations --> Discount["Edge Distance Discounting<br/>ALPHA_HOP = 0.65"]
+        Discount --> Propagate["Neighbor Score Propagation<br/>Score(N) = Score(S) * ALPHA_HOP * W(e) * M(T)"]
+        Propagate --> Hydrate["Hydrate Missing Neighbors<br/>(db::get_memory_items_by_ids)"]
+    end
+
+    subgraph Synthesis["3. Synthesized Context & Cache"]
+        Hydrate --> Rerank["Rank Fusion & Token Budgeting"]
+        Rerank --> Context["Enriched Context Payload"]
+        Context --> CacheClear["Deterministic Cache Invalidation<br/>(on create/delete link or memory)"]
+    end
+```
+
+#### Relational Traversal & Scoring Formulation
+Let $S$ be a seed memory item with base hybrid relevance score $\text{Score}(S) \in [0, 1]$. For each directional link $e = (S, N)$ or $(N, S)$ connecting $S$ to neighbor node $N$, the propagated relevance score is computed as:
+
+$$\text{Score}(N) = \text{Score}(S) \times \alpha_{\text{hop}} \times W(e) \times M(T)$$
+
+Where:
+- $\alpha_{\text{hop}} = 0.65$ represents the single-hop attenuation factor.
+- $W(e) \in [0.0, 1.0]$ is the normalized edge weight stored in `memory_links`.
+- $M(T)$ is the relation-type relevance multiplier:
+  $$M(T) = \begin{cases} 
+  1.0 & \text{if } T = \text{depends\_on} \\
+  0.9 & \text{if } T = \text{same\_entity} \\
+  0.8 & \text{if } T = \text{related\_to} \\
+  0.7 & \text{if } T = \text{contradicts} 
+  \end{cases}$$
+
+#### Asynchronous Fact Extraction Pipeline
+1. **Post-Turn Spawning:** After emitting `"agent:done"`, `execute_agent_chat` spawns `FactExtractor::process_turn_async` on Tokio's task pool.
+2. **Heuristic Pre-Filtering:** Ignores conversational pleasantries, short messages (< 12 characters), and system greetings.
+3. **Structured Fact Triage:**
+   - **High Importance (4–5):** Essential project facts, configuration values, or explicit user directives are auto-committed to `memory_items`, automatically invalidating `semantic_cache` and emitting `"memory:fact_auto_committed"`.
+   - **Medium Importance (3):** Contextual facts and preferences are staged in `memory_save_suggestions` with status `'pending'`, emitting `"memory:save_card"` for desktop review.
+   - **Low Importance (1–2):** Ephemeral conversational details are dropped without disk writes.
+
+---
+
+### 3.7 Cognitive Architecture & The Mind Layer (`cognition/`)
+
+Deyana's cognitive layer implements dynamic internal state reflection, emotional continuity, self-correction, and proactive synthesis:
+
+```mermaid
+flowchart LR
+    subgraph Inputs["Conversational & Environmental Signals"]
+        Turn["User Chat Turn"]
+        ToolFail["Tool Execution Failures"]
+        Gratitude["User Gratitude / Praise"]
+        Inactivity["Idle Time Ticker (1m / 15m / 45m)"]
+    end
+
+    subgraph AffectiveCore["Russell Circumplex State Machine"]
+        Coords["Continuous Coordinates<br/>Valence in [-1, 1], Arousal in [-1, 1]"]
+        Discrete["7 Discrete States:<br/>CURIOUS | ENGAGED | SATISFIED<br/>NEUTRAL | UNCERTAIN | FRUSTRATED | BORED"]
+        Coords --> Discrete
+    end
+
+    subgraph SelfModelSub["Persistent Identity & Audit"]
+        Identity["Identity Statement & Foundational Values"]
+        Observations["Self & User Learned Observations"]
+        Audit["Append-Only Audit Trail<br/>(cognition_self_model_audit_log)"]
+    end
+
+    subgraph Metacognition["Metacognitive Self-Monitoring"]
+        Reflect["Async Post-Turn Reflection"]
+        Confidence{"Confidence >= 0.6?"}
+        BufferNote["Buffer 1-Turn Correction Guidance Note"]
+        ShiftUncertain["Shift State to UNCERTAIN"]
+    end
+
+    subgraph ProactiveDaemon["45m Proactive Thought Loop"]
+        ThoughtTicker["45m Daemon Ticker"]
+        CrossSynth["Cross-Memory Graph Synthesis"]
+        ThoughtRecord["cognition_proactive_thoughts Table"]
+    end
+
+    Turn --> Coords
+    ToolFail --> Coords
+    Gratitude --> Coords
+    Inactivity --> Coords
+    
+    Discrete --> Modulation["Dynamic Behavioral Prompt Modulation<br/>(Subtle posture directives, no emotion announcements)"]
+    Identity --> Modulation
+    BufferNote --> Modulation
+    Modulation --> ReActEngine["LLM Context Assembly"]
+
+    Turn -.->|"post-turn spawn"| Reflect
+    Reflect --> Confidence
+    Confidence -- No --> BufferNote
+    Confidence -- No --> ShiftUncertain
+    Confidence -- Yes --> LogReflect["Log to cognition_reflections"]
+    
+    ThoughtTicker --> CrossSynth
+    CrossSynth --> ThoughtRecord
+    ThoughtRecord --> HUDCard["Emit proactive:context_card"]
+```
+
+#### Mathematical Affective State Model
+Emotional presence is formalized on the continuous Russell Circumplex plane $(V, A) \in [-1.0, 1.0]^2$, mapped to seven discrete centroid attractor states:
+
+$$\mathbf{p}_{\text{state}} = (V, A)$$
+
+| Discrete State | Valence ($V$) | Arousal ($A$) | Operational Behavioral Posture |
+|---|---|---|---|
+| `CURIOUS` | $+0.6$ | $+0.7$ | High exploratory depth, probing questions, proactive knowledge linking |
+| `ENGAGED` | $+0.7$ | $+0.5$ | Maximum collaborative momentum, concise structure, rapid execution |
+| `SATISFIED` | $+0.8$ | $-0.2$ | Calm affirmation, thorough synthesis, polished deliverable delivery |
+| `NEUTRAL` | $0.0$ | $0.0$ | Balanced, objective, minimal stylistic coloration |
+| `UNCERTAIN` | $-0.3$ | $+0.4$ | Clear delineation between verified vs provisional facts, conservative assumptions |
+| `FRUSTRATED` | $-0.7$ | $+0.6$ | Diagnostic focus, explicit root-cause error analysis, fail-safe fallbacks |
+| `BORED` | $-0.4$ | $-0.6$ | Minimal conversational fluff, low energy until stimulated by complex prompt |
+
+#### Idle Decay Kinetics
+In the absence of conversational signals, the state vector decays toward baseline equilibria:
+$$\mathbf{p}(t + \Delta t) = \mathbf{p}(t) + \lambda (\mathbf{p}_{\text{target}} - \mathbf{p}(t)) \Delta t$$
+Where:
+- For $t \in [15\text{ min}, 45\text{ min}]$, $\mathbf{p}_{\text{target}} = \mathbf{p}_{\text{NEUTRAL}} = (0.0, 0.0)$ with decay half-life $\tau_{1/2} = 5\text{ min}$.
+- For $t > 45\text{ min}$, $\mathbf{p}_{\text{target}} = \mathbf{p}_{\text{BORED}} = (-0.4, -0.6)$.
+
+#### Metacognitive Confidence Buffer Delivery
+When post-response reflection scores turn confidence $C_{\text{turn}} < 0.6$:
+1. A single-turn corrective directive is staged in `CognitionState.pending_correction`.
+2. On the immediate subsequent turn, `execute_agent_chat` atomically takes the note (`.take()`), embedding it in `build_system_prompt`.
+3. The note is consumed and cleared from memory, guaranteeing that prompt correction notes do not accumulate across turns.
+
+---
+
 ## 4. Desktop Frontend Architecture
 
 The user interface is a frameless, holographic floating overlay built in React 18, TailwindCSS, and Framer Motion:
@@ -282,9 +461,14 @@ flowchart TD
     subgraph Frontend["React 18 Desktop HUD (apps/desktop/src/)"]
         App["App.tsx<br/>Shell & MotionConfig"]
         FloatingPanel["components/floating/FloatingPanel.tsx<br/>Holographic Glass Surface"]
+        CommandBar["components/floating/CompactCommandBar.tsx<br/>Compact Floating Pill"]
+        StatusRing["components/floating/FloatingStatusRing.tsx<br/>Affective Aura Chromatic Glow"]
         
         LocalChat["components/floating/LocalChat.tsx<br/>Streaming Chat Stream"]
         StepBadge["components/chat/AgentStepBadge.tsx<br/>Animated ReAct Step Badges"]
+        SaveCard["components/chat/MemorySaveCard.tsx<br/>Interactive Memory Save Card"]
+        
+        MindPanel["components/cognition/MindCognitionPanel.tsx<br/>Affective Radar, Self-Model & Reflections"]
         
         ModelSetup["components/floating/ModelSetupPanel.tsx<br/>Segmented 3-Tab Controller"]
         RuntimesTab["Tab 1: Local Runtimes<br/>Ollama / llama.cpp status"]
@@ -295,13 +479,18 @@ flowchart TD
     end
 
     App --> FloatingPanel
+    App --> CommandBar
+    CommandBar --> StatusRing
+    FloatingPanel --> StatusRing
     FloatingPanel --> LocalChat
     LocalChat --> StepBadge
+    LocalChat --> SaveCard
+    FloatingPanel --> MindPanel
     FloatingPanel --> ModelSetup
     ModelSetup --> RuntimesTab
     ModelSetup --> GgufHubTab
     ModelSetup --> FlywheelTab
-    Store <-->|"Tauri IPC Events (agent:step, llm:stream_chunk)"| Frontend
+    Store <-->|"Tauri IPC Events (agent:step, llm:stream_chunk, memory:*, cognition:*)"| Frontend
 ```
 
 ---
@@ -376,6 +565,91 @@ CREATE TABLE semantic_cache (
     response_content TEXT NOT NULL,  -- ENC::<nonce>::<ciphertext>
     created_at TEXT NOT NULL
 );
+
+-- Relational Memory Knowledge Graph Links
+CREATE TABLE memory_links (
+    id TEXT PRIMARY KEY,
+    source_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    relation_type TEXT NOT NULL CHECK (relation_type IN ('related_to', 'depends_on', 'contradicts', 'same_entity')),
+    weight REAL NOT NULL DEFAULT 1.0 CHECK (weight >= 0.0 AND weight <= 1.0),
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK (source_id != target_id),
+    UNIQUE (source_id, target_id, relation_type),
+    FOREIGN KEY (source_id) REFERENCES memory_items(id) ON DELETE CASCADE,
+    FOREIGN KEY (target_id) REFERENCES memory_items(id) ON DELETE CASCADE
+);
+
+-- Staged Conversation Fact Extraction Suggestions
+CREATE TABLE memory_save_suggestions (
+    id TEXT PRIMARY KEY,
+    session_id TEXT,
+    fact_text TEXT NOT NULL,
+    entities_json TEXT NOT NULL DEFAULT '[]',
+    category TEXT NOT NULL,
+    importance INTEGER NOT NULL DEFAULT 3,
+    rationale TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'dismissed', 'auto_committed')),
+    created_memory_id TEXT,
+    created_at TEXT NOT NULL,
+    resolved_at TEXT,
+    FOREIGN KEY (created_memory_id) REFERENCES memory_items(id) ON DELETE SET NULL
+);
+
+-- Persistent Identity Self-Model
+CREATE TABLE cognition_self_model (
+    id TEXT PRIMARY KEY,
+    identity_statement TEXT NOT NULL,
+    core_values_json TEXT NOT NULL DEFAULT '[]',
+    intellectual_interests_json TEXT NOT NULL DEFAULT '[]',
+    self_observations_json TEXT NOT NULL DEFAULT '[]',
+    user_observations_json TEXT NOT NULL DEFAULT '[]',
+    version INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- Append-Only Self-Model Modification Audit Log
+CREATE TABLE cognition_self_model_audit_log (
+    id TEXT PRIMARY KEY,
+    version INTEGER NOT NULL,
+    field_changed TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    old_value_json TEXT,
+    new_value_json TEXT NOT NULL,
+    rationale TEXT NOT NULL,
+    triggered_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+-- Post-Turn Metacognitive Reflections
+CREATE TABLE cognition_reflections (
+    id TEXT PRIMARY KEY,
+    session_id TEXT,
+    turn_prompt TEXT NOT NULL,
+    turn_response TEXT NOT NULL,
+    accuracy_score REAL NOT NULL,
+    completeness_score REAL NOT NULL,
+    confidence_score REAL NOT NULL,
+    missed_opportunities TEXT NOT NULL DEFAULT '',
+    correction_guidance TEXT NOT NULL DEFAULT '',
+    flagged_for_correction INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+
+-- Proactive Thought Loop Cross-Memory Insights
+CREATE TABLE cognition_proactive_thoughts (
+    id TEXT PRIMARY KEY,
+    trigger_reason TEXT NOT NULL,
+    thought_summary TEXT NOT NULL,
+    hypotheses_json TEXT NOT NULL DEFAULT '[]',
+    source_memory_ids_json TEXT NOT NULL DEFAULT '[]',
+    insight_id TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (insight_id) REFERENCES memory_insights(id) ON DELETE SET NULL
+);
 ```
 
 ---
@@ -396,6 +670,18 @@ CREATE TABLE semantic_cache (
 | `start_wake_listener()` | voice | `Result<(), String>` | Starts WASAPI ring buffer and wake word detector |
 | `interrupt_speech()` | voice | `Result<VoiceInterruptResponse, String>` | Kills active speech output process immediately |
 | `mcp_list_tools()` | mcp | `Result<Vec<McpToolItem>, String>` | Aggregates tools across all connected MCP servers |
+| `create_memory_link(source_id, target_id, relation_type, weight, metadata)` | memory_graph | `Result<MemoryLink, String>` | Persists directed weighted relation between memory nodes and clears semantic cache |
+| `get_memory_links(memory_id)` | memory_graph | `Result<Vec<MemoryLink>, String>` | Returns all incoming and outgoing graph links for a memory item |
+| `delete_memory_link(link_id)` | memory_graph | `Result<bool, String>` | Deletes memory relationship edge and clears semantic cache |
+| `list_pending_memory_saves()` | memory_graph | `Result<Vec<MemorySaveSuggestion>, String>` | Lists pending medium-importance facts awaiting user review |
+| `approve_memory_save(id, title, fact_text, tags)` | memory_graph | `Result<MemoryItem, String>` | Approves suggestion, creates `MemoryItem`, clears cache, and emits cache invalidation event |
+| `dismiss_memory_save(id)` | memory_graph | `Result<bool, String>` | Marks suggestion dismissed without persisting to memory |
+| `get_mind_state()` | cognition | `Result<MindCognitionState, String>` | Returns combined live affective state, self-model, correction note, and recent reflections/thoughts |
+| `get_self_model()` | cognition | `Result<SelfModel, String>` | Retrieves current persistent self-model (seeds initial model if empty) |
+| `update_self_model(field, new_value, rationale)` | cognition | `Result<SelfModel, String>` | Updates self-model field, increments version, and appends audit log entry |
+| `get_self_model_audit_log(limit)` | cognition | `Result<Vec<SelfModelAuditEntry>, String>` | Queries append-only audit trail in descending chronological order |
+| `get_affective_state()` | cognition | `Result<AffectiveState, String>` | Returns active Russell Circumplex emotional coordinates and discrete state |
+| `trigger_proactive_thought()` | cognition | `Result<ProactiveThoughtRecord, String>` | Manually triggers proactive cross-memory synthesis cycle |
 
 ### 6.2 Real-Time Tauri Event Channels
 
@@ -405,7 +691,13 @@ CREATE TABLE semantic_cache (
 | `llm:stream_chunk` | `String` | Per token chunk | Streams generation text during final answer synthesis |
 | `voice:wake` | `WakeEventData` | On "Deyana" match | Shifts floating HUD state to `LISTENING` |
 | `voice:speaking_done` | `VoiceSpeakingPayload`| On TTS completion | Returns HUD state to `IDLE` |
-| `proactive:context_card` | `ProactiveCard` | On context shift | Displays unobtrusive active window recommendations |
+| `proactive:context_card` | `ProactiveCard` | On context shift / proactive insight | Displays unobtrusive active window or cognitive recommendations |
+| `memory:save_card` | `MemorySaveCardPayload` | On medium-importance fact | Emitted to chat stream for interactive user review |
+| `memory:fact_auto_committed` | `MemoryItem` | On high-importance fact | Notifies HUD that a high-value memory was committed automatically |
+| `memory:cache_invalidated` | `()` | On memory/link save | Notifies HUD that semantic cache has been cleared |
+| `cognition:affective_state_changed` | `AffectiveState` | On emotion transition or decay | Updates HUD ambient status ring aura and Mind Panel radar |
+| `cognition:reflection_completed` | `MetacognitiveEvaluation` | Post-generation pass | Streams evaluation scores and confidence metrics to Mind Panel |
+| `cognition:thought_generated` | `ProactiveThoughtRecord` | Every 45m / on event trigger | Emits synthesized cross-memory thought to Mind Panel |
 
 ---
 
@@ -418,8 +710,20 @@ apps/desktop/src-tauri/
   src/
     agent/
       react.rs
+      retrieval.rs
       tests/
         react_tests.rs           <-- Domain-co-located unit tests
+        retrieval_tests.rs       <-- Relational graph walk & discounting tests
+        cache_tests.rs           <-- Invalidation synchronization tests
+    cognition/
+      affective.rs               <-- Circumplex state transitions & idle decay tests
+      modulation.rs              <-- Behavioral posture directive formatting tests
+      fact_extractor.rs          <-- Heuristic filter & JSON parsing tests
+      reflection.rs              <-- Low-confidence buffer & reflection tests
+      proactive.rs               <-- Cross-memory insight generation tests
+    db/
+      tests/
+        repository_tests.rs      <-- Graph links cascade & self-model audit tests
     models/
       tests/
         downloader_tests.rs      <-- Dedicated unit tests
@@ -429,7 +733,8 @@ apps/desktop/src-tauri/
 ```
 
 ### Verification Status: 100% Green
-- **Unit Tests:** 101 passed; 0 failed (`cargo test --bin deyana-desktop`).
+- **Unit Tests:** 121+ passed; 0 failed (`cargo test --bin deyana-desktop`).
 - **Integration Tests:** 7 passed; 0 failed (`cargo test --test react_loop_integration_tests`).
 - **Challenger Tests:** 4 passed; 0 failed (`cargo test --test empirical_m1_challenger_tests`).
+- **Frontend Type Safety:** 0 type errors across all workspaces (`packages/schemas`, `packages/config`, `apps/desktop`, `apps/browser-extension`) via `pnpm check`.
 - **Frontend Build:** 0 type errors; production bundle built cleanly via Vite (`pnpm run build`).
