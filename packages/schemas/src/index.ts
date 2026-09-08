@@ -1096,6 +1096,162 @@ export type Phase13CoreEvent =
   | TtsFailedEvent;
 export type Phase15CoreEvent = ReleaseLocalDataDeletedEvent;
 
+// Phase 33: Memory Graph & Cognitive Mind Layer
+export type MemoryGraphRelationType =
+  | "related_to"
+  | "depends_on"
+  | "contradicts"
+  | "same_entity";
+
+export interface MemoryGraphLink {
+  id: string;
+  sourceId: string;
+  targetId: string;
+  relationType: MemoryGraphRelationType;
+  weight: number;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MemoryGraphLinkWithNeighbor extends MemoryGraphLink {
+  neighborItem?: MemoryItem;
+  direction: "outgoing" | "incoming";
+}
+
+export interface MemorySaveEntity {
+  name: string;
+  entityType: string;
+}
+
+export interface MemorySaveSuggestion {
+  id: string;
+  sessionId?: string;
+  factText: string;
+  fact?: string;
+  entities: Array<{ name: string; entityType: string }>;
+  category: string;
+  importance: number;
+  rationale: string;
+  status: "pending" | "approved" | "dismissed" | "auto_committed";
+  createdMemoryId?: string;
+  createdAt: string;
+  resolvedAt?: string;
+}
+
+export type AffectiveState =
+  | "CURIOUS"
+  | "ENGAGED"
+  | "SATISFIED"
+  | "NEUTRAL"
+  | "UNCERTAIN"
+  | "FRUSTRATED"
+  | "BORED";
+
+export interface AffectiveCoordinates {
+  valence: number;
+  arousal: number;
+}
+
+export interface AffectiveStateRecord {
+  discrete: AffectiveState;
+  valence: number;
+  arousal: number;
+  transitionReason: string;
+  updatedAt: string;
+}
+
+export interface SelfModel {
+  id: string;
+  identityStatement: string;
+  coreValues: string[];
+  intellectualInterests: string[];
+  selfObservations: string[];
+  userObservations: string[];
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SelfModelAuditEntry {
+  id: string;
+  version: number;
+  fieldChanged: string;
+  operation: string;
+  oldValueJson?: string;
+  newValueJson: string;
+  oldValue?: unknown;
+  newValue?: unknown;
+  rationale: string;
+  triggeredBy: string;
+  createdAt: string;
+}
+
+export interface ReflectionRecord {
+  id: string;
+  sessionId?: string;
+  turnPrompt: string;
+  turnResponse: string;
+  accuracyScore: number;
+  completenessScore: number;
+  confidenceScore: number;
+  missedOpportunities: string;
+  correctionGuidance: string;
+  flaggedForCorrection: boolean;
+  createdAt: string;
+}
+
+export interface ProactiveThoughtRecord {
+  id: string;
+  triggerReason: string;
+  thoughtSummary: string;
+  hypotheses: string[];
+  sourceMemoryIds: string[];
+  insightId?: string;
+  createdAt: string;
+}
+
+export interface MindCognitionState {
+  affective: AffectiveStateRecord;
+  affectiveState?: AffectiveStateRecord;
+  selfModel: SelfModel;
+  pendingCorrectionNote?: string;
+  recentReflections: ReflectionRecord[];
+  recentProactiveThoughts: ProactiveThoughtRecord[];
+}
+
+export type MemorySaveCardEvent = BackendEvent<
+  "memory.save_card",
+  MemorySaveSuggestion
+>;
+
+export type MemoryFactAutoCommittedEvent = BackendEvent<
+  "memory.fact_auto_committed",
+  MemoryItem
+>;
+
+export type CognitionAffectiveStateChangedEvent = BackendEvent<
+  "cognition.affective_state_changed",
+  AffectiveStateRecord
+>;
+
+export type CognitionReflectionCompletedEvent = BackendEvent<
+  "cognition.reflection_completed",
+  ReflectionRecord
+>;
+
+export type CognitionThoughtGeneratedEvent = BackendEvent<
+  "cognition.thought_generated",
+  ProactiveThoughtRecord
+>;
+
+export type Phase33CoreEvent =
+  | MemorySaveCardEvent
+  | MemoryFactAutoCommittedEvent
+  | CognitionAffectiveStateChangedEvent
+  | CognitionReflectionCompletedEvent
+  | CognitionThoughtGeneratedEvent;
+
 export type AppCoreEvent =
   | CoreWebSocketEvent
   | Phase3CoreEvent
@@ -1106,6 +1262,7 @@ export type AppCoreEvent =
   | Phase11CoreEvent
   | Phase13CoreEvent
   | Phase15CoreEvent
+  | Phase33CoreEvent
   | BrowserCoreEvent;
 
 export interface FloatingWindowPosition {
