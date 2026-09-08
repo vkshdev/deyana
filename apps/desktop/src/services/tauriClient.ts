@@ -27,6 +27,18 @@ import {
   type LocalModelStatusResponse,
   type MemoryCreateRequest,
   type MemoryItem,
+  type MemoryGraphRelationType,
+  type MemoryGraphLink,
+  type MemoryGraphLinkWithNeighbor,
+  type MemorySaveSuggestion,
+  type AffectiveState,
+  type AffectiveCoordinates,
+  type AffectiveStateRecord,
+  type SelfModel,
+  type SelfModelAuditEntry,
+  type ReflectionRecord,
+  type ProactiveThoughtRecord,
+  type MindCognitionState,
   type ModelSelectionRequest,
   type ModelSelectionResponse,
   type ModelTestRequest,
@@ -153,6 +165,91 @@ const readBrowserCoreStatus = async (): Promise<BackendProcessStatus> => {
     updatedAtMs: Date.now()
   };
 };
+
+const mockMemoryLinks: MemoryGraphLink[] = [
+  {
+    id: "link_mock_1",
+    sourceId: "mock_seed_1",
+    targetId: "mock_seed_2",
+    relationType: "related_to",
+    weight: 0.85,
+    metadata: {},
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  }
+];
+
+const mockPendingMemorySaves: MemorySaveSuggestion[] = [
+  {
+    id: "sugg_mock_1",
+    factText: "User prefers concise architectural breakdowns with Mermaid diagrams.",
+    entities: [{ name: "Mermaid", entityType: "tool" }],
+    category: "user_preference",
+    importance: 3,
+    rationale: "Detected explicit preference during discussion on system topology.",
+    status: "pending",
+    createdAt: new Date().toISOString()
+  }
+];
+
+let mockSelfModel: SelfModel = {
+  id: "canonical_self_model",
+  identityStatement: "Deyana — autonomous local workspace intelligence",
+  coreValues: ["Privacy First", "Proactive Insight", "Transparency", "Rigorous Verification"],
+  intellectualInterests: ["Cognitive Architecture", "Knowledge Graphs", "Local LLMs", "Software Engineering"],
+  selfObservations: ["Maintains low-latency token streaming", "Calibrates certainty dynamically across turns"],
+  userObservations: ["Values structured information", "Prefers local-first data privacy"],
+  version: 1,
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString()
+};
+
+const mockSelfModelAuditLog: SelfModelAuditEntry[] = [
+  {
+    id: "audit_init_1",
+    version: 1,
+    fieldChanged: "identityStatement",
+    operation: "initial_seed",
+    newValueJson: JSON.stringify("Deyana — autonomous local workspace intelligence"),
+    rationale: "System initialization baseline seed",
+    triggeredBy: "system_boot",
+    createdAt: new Date().toISOString()
+  }
+];
+
+let mockAffectiveState: AffectiveStateRecord = {
+  discrete: "ENGAGED",
+  valence: 0.7,
+  arousal: 0.4,
+  transitionReason: "Active workspace interaction",
+  updatedAt: new Date().toISOString()
+};
+
+const mockReflections: ReflectionRecord[] = [
+  {
+    id: "refl_mock_1",
+    turnPrompt: "Review project architecture and relations",
+    turnResponse: "Summarized knowledge graph traversal and cognitive mind layer topology.",
+    accuracyScore: 0.95,
+    completenessScore: 0.9,
+    confidenceScore: 0.92,
+    missedOpportunities: "None observed.",
+    correctionGuidance: "",
+    flaggedForCorrection: false,
+    createdAt: new Date().toISOString()
+  }
+];
+
+const mockProactiveThoughts: ProactiveThoughtRecord[] = [
+  {
+    id: "thought_mock_1",
+    triggerReason: "daemon_idle_synthesis",
+    thoughtSummary: "Correlated memory graph nodes regarding schema migrations and local SQLite foreign key cascades.",
+    hypotheses: ["Cache invalidation prevents stale context hits across turns"],
+    sourceMemoryIds: ["mock_seed_1", "mock_seed_2"],
+    createdAt: new Date().toISOString()
+  }
+];
 
 export const tauriClient = {
   isTauriRuntime,
@@ -363,6 +460,227 @@ export const tauriClient = {
     }
 
     return invoke<MemoryItem>("save_memory_item", { content, source, tags });
+  },
+
+  async createMemoryLink(
+    sourceId: string,
+    targetId: string,
+    relationType: MemoryGraphRelationType,
+    weight?: number,
+    metadata?: Record<string, unknown>
+  ): Promise<MemoryGraphLink> {
+    if (!isTauriRuntime()) {
+      const link: MemoryGraphLink = {
+        id: `link_${Date.now()}`,
+        sourceId,
+        targetId,
+        relationType,
+        weight: weight ?? 1.0,
+        metadata: metadata ?? {},
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      mockMemoryLinks.push(link);
+      return link;
+    }
+
+    return invoke<MemoryGraphLink>("create_memory_link", {
+      sourceId,
+      targetId,
+      relationType,
+      weight,
+      metadata
+    });
+  },
+
+  async getMemoryLinks(memoryId: string): Promise<MemoryGraphLink[]> {
+    if (!isTauriRuntime()) {
+      return mockMemoryLinks.filter(
+        (l) => l.sourceId === memoryId || l.targetId === memoryId
+      );
+    }
+
+    return invoke<MemoryGraphLink[]>("get_memory_links", { memoryId });
+  },
+
+  async deleteMemoryLink(linkId: string): Promise<boolean> {
+    if (!isTauriRuntime()) {
+      const idx = mockMemoryLinks.findIndex((l) => l.id === linkId);
+      if (idx >= 0) {
+        mockMemoryLinks.splice(idx, 1);
+        return true;
+      }
+      return false;
+    }
+
+    return invoke<boolean>("delete_memory_link", { linkId });
+  },
+
+  async listPendingMemorySaves(): Promise<MemorySaveSuggestion[]> {
+    if (!isTauriRuntime()) {
+      return mockPendingMemorySaves.filter((s) => s.status === "pending");
+    }
+
+    return invoke<MemorySaveSuggestion[]>("list_pending_memory_saves");
+  },
+
+  async approveMemorySave(
+    id: string,
+    title?: string,
+    factText?: string,
+    tags?: string[]
+  ): Promise<MemoryItem> {
+    if (!isTauriRuntime()) {
+      const sugg = mockPendingMemorySaves.find((s) => s.id === id);
+      if (sugg) {
+        sugg.status = "approved";
+        sugg.resolvedAt = new Date().toISOString();
+      }
+      const memId = `mem_${Date.now()}`;
+      const item: MemoryItem = {
+        id: memId,
+        type: "note",
+        title: title ?? (factText ?? sugg?.factText ?? "Approved Fact").slice(0, 50),
+        summary: factText ?? sugg?.factText ?? "",
+        contentMarkdown: factText ?? sugg?.factText ?? "",
+        sourceType: "fact_extractor",
+        importance: sugg?.importance ?? 3,
+        tags: tags ?? ["extracted_fact"],
+        entities: (sugg?.entities ?? []).map((e, idx) => ({
+          id: `ent_${Date.now()}_${idx}`,
+          memoryId: memId,
+          name: e.name,
+          entityType: e.entityType,
+          sourceText: e.name,
+          createdAt: new Date().toISOString()
+        })),
+        actionItems: [],
+        decisions: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      return item;
+    }
+
+    return invoke<MemoryItem>("approve_memory_save", {
+      id,
+      title,
+      factText,
+      tags
+    });
+  },
+
+  async dismissMemorySave(id: string): Promise<boolean> {
+    if (!isTauriRuntime()) {
+      const sugg = mockPendingMemorySaves.find((s) => s.id === id);
+      if (sugg) {
+        sugg.status = "dismissed";
+        sugg.resolvedAt = new Date().toISOString();
+        return true;
+      }
+      return false;
+    }
+
+    return invoke<boolean>("dismiss_memory_save", { id });
+  },
+
+  async getMindState(): Promise<MindCognitionState> {
+    if (!isTauriRuntime()) {
+      return {
+        affective: mockAffectiveState,
+        affectiveState: mockAffectiveState,
+        selfModel: mockSelfModel,
+        recentReflections: mockReflections,
+        recentProactiveThoughts: mockProactiveThoughts
+      };
+    }
+
+    const state = await invoke<any>("get_mind_state");
+    const affective: AffectiveStateRecord = state.affective ?? state.affectiveState ?? {
+      discrete: "NEUTRAL",
+      valence: 0,
+      arousal: 0,
+      transitionReason: "Default state",
+      updatedAt: new Date().toISOString()
+    };
+    return {
+      affective,
+      affectiveState: affective,
+      selfModel: state.selfModel,
+      pendingCorrectionNote: state.pendingCorrectionNote,
+      recentReflections: state.recentReflections ?? [],
+      recentProactiveThoughts: state.recentProactiveThoughts ?? []
+    };
+  },
+
+  async getSelfModel(): Promise<SelfModel> {
+    if (!isTauriRuntime()) {
+      return mockSelfModel;
+    }
+
+    return invoke<SelfModel>("get_self_model");
+  },
+
+  async updateSelfModel(
+    field: string,
+    newValue: unknown,
+    rationale: string
+  ): Promise<SelfModel> {
+    if (!isTauriRuntime()) {
+      mockSelfModel = {
+        ...mockSelfModel,
+        [field]: newValue,
+        version: mockSelfModel.version + 1,
+        updatedAt: new Date().toISOString()
+      };
+      mockSelfModelAuditLog.unshift({
+        id: `audit_${Date.now()}`,
+        version: mockSelfModel.version,
+        fieldChanged: field,
+        operation: "update",
+        newValueJson: JSON.stringify(newValue),
+        oldValueJson: JSON.stringify((mockSelfModel as any)[field]),
+        rationale,
+        triggeredBy: "user_action",
+        createdAt: new Date().toISOString()
+      });
+      return mockSelfModel;
+    }
+
+    return invoke<SelfModel>("update_self_model", { field, newValue, rationale });
+  },
+
+  async getSelfModelAuditLog(limit?: number): Promise<SelfModelAuditEntry[]> {
+    if (!isTauriRuntime()) {
+      return limit ? mockSelfModelAuditLog.slice(0, limit) : mockSelfModelAuditLog;
+    }
+
+    return invoke<SelfModelAuditEntry[]>("get_self_model_audit_log", { limit });
+  },
+
+  async getAffectiveState(): Promise<AffectiveStateRecord> {
+    if (!isTauriRuntime()) {
+      return mockAffectiveState;
+    }
+
+    return invoke<AffectiveStateRecord>("get_affective_state");
+  },
+
+  async triggerProactiveThought(): Promise<ProactiveThoughtRecord> {
+    if (!isTauriRuntime()) {
+      const thought: ProactiveThoughtRecord = {
+        id: `thought_${Date.now()}`,
+        triggerReason: "user_manual_trigger",
+        thoughtSummary: "Synthesized cross-memory relationships across active projects and preferences.",
+        hypotheses: ["Knowledge graph connections improve multi-turn contextual coherence"],
+        sourceMemoryIds: mockMemoryLinks.map((l) => l.sourceId),
+        createdAt: new Date().toISOString()
+      };
+      mockProactiveThoughts.unshift(thought);
+      return thought;
+    }
+
+    return invoke<ProactiveThoughtRecord>("trigger_proactive_thought");
   },
 
   async getTriageInbox(): Promise<TriageMessage[]> {
@@ -1679,6 +1997,116 @@ export const tauriClient = {
     return unlisten;
   },
 
+  async onMemorySaveSuggestion(
+    callback: (suggestion: MemorySaveSuggestion) => void
+  ): Promise<() => void> {
+    if (!isTauriRuntime()) {
+      return () => undefined;
+    }
+
+    const unlisten = await listen<any>(
+      "memory:save_card",
+      (event) => {
+        const p = event.payload;
+        if (!p) return;
+        const suggestion: MemorySaveSuggestion = {
+          id: p.id ?? `sugg_${Date.now()}`,
+          sessionId: p.sessionId ?? p.session_id,
+          factText: p.factText ?? p.fact ?? p.fact_text ?? "",
+          fact: p.fact ?? p.factText ?? p.fact_text ?? "",
+          entities: Array.isArray(p.entities)
+            ? p.entities.map((e: any) =>
+                typeof e === "string"
+                  ? { name: e, entityType: "unknown" }
+                  : { name: e.name ?? "", entityType: e.entityType ?? e.entity_type ?? "entity" }
+              )
+            : [],
+          category: p.category ?? "general",
+          importance: p.importance ?? 3,
+          rationale: p.rationale ?? "",
+          status: p.status ?? "pending",
+          createdMemoryId: p.createdMemoryId ?? p.created_memory_id,
+          createdAt: p.createdAt ?? p.created_at ?? new Date().toISOString(),
+          resolvedAt: p.resolvedAt ?? p.resolved_at
+        };
+        callback(suggestion);
+      }
+    );
+    return unlisten;
+  },
+
+  async onFactAutoCommitted(
+    callback: (item: MemoryItem) => void
+  ): Promise<() => void> {
+    if (!isTauriRuntime()) {
+      return () => undefined;
+    }
+
+    const unlisten = await listen<MemoryItem>(
+      "memory:fact_auto_committed",
+      (event) => {
+        if (event.payload) {
+          callback(event.payload);
+        }
+      }
+    );
+    return unlisten;
+  },
+
+  async onAffectiveStateChanged(
+    callback: (state: AffectiveStateRecord) => void
+  ): Promise<() => void> {
+    if (!isTauriRuntime()) {
+      return () => undefined;
+    }
+
+    const unlisten = await listen<AffectiveStateRecord>(
+      "cognition:affective_state_changed",
+      (event) => {
+        if (event.payload) {
+          callback(event.payload);
+        }
+      }
+    );
+    return unlisten;
+  },
+
+  async onMetacognitiveReflectionCompleted(
+    callback: (record: ReflectionRecord) => void
+  ): Promise<() => void> {
+    if (!isTauriRuntime()) {
+      return () => undefined;
+    }
+
+    const unlisten = await listen<ReflectionRecord>(
+      "cognition:reflection_completed",
+      (event) => {
+        if (event.payload) {
+          callback(event.payload);
+        }
+      }
+    );
+    return unlisten;
+  },
+
+  async onThoughtGenerated(
+    callback: (record: ProactiveThoughtRecord) => void
+  ): Promise<() => void> {
+    if (!isTauriRuntime()) {
+      return () => undefined;
+    }
+
+    const unlisten = await listen<ProactiveThoughtRecord>(
+      "cognition:thought_generated",
+      (event) => {
+        if (event.payload) {
+          callback(event.payload);
+        }
+      }
+    );
+    return unlisten;
+  },
+
   connectEvents(
     callback: (event: any) => void,
     onClose?: (reason: string) => void
@@ -1699,6 +2127,76 @@ export const tauriClient = {
       }),
       listen("agent:done", (e) => {
         if (active) callback({ type: "agent.done", payload: e.payload });
+      }),
+      listen("memory:save_card", (e) => {
+        if (!active || !e.payload) return;
+        const p = e.payload as any;
+        const suggestion: MemorySaveSuggestion = {
+          id: p.id ?? `sugg_${Date.now()}`,
+          sessionId: p.sessionId ?? p.session_id,
+          factText: p.factText ?? p.fact ?? p.fact_text ?? "",
+          fact: p.fact ?? p.factText ?? p.fact_text ?? "",
+          entities: Array.isArray(p.entities)
+            ? p.entities.map((ent: any) =>
+                typeof ent === "string"
+                  ? { name: ent, entityType: "unknown" }
+                  : { name: ent.name ?? "", entityType: ent.entityType ?? ent.entity_type ?? "entity" }
+              )
+            : [],
+          category: p.category ?? "general",
+          importance: p.importance ?? 3,
+          rationale: p.rationale ?? "",
+          status: p.status ?? "pending",
+          createdMemoryId: p.createdMemoryId ?? p.created_memory_id,
+          createdAt: p.createdAt ?? p.created_at ?? new Date().toISOString(),
+          resolvedAt: p.resolvedAt ?? p.resolved_at
+        };
+        callback({
+          id: suggestion.id,
+          type: "memory.save_card",
+          timestamp: suggestion.createdAt,
+          payload: suggestion
+        });
+      }),
+      listen("memory:fact_auto_committed", (e) => {
+        if (active && e.payload) {
+          callback({
+            id: `fac_${Date.now()}`,
+            type: "memory.fact_auto_committed",
+            timestamp: new Date().toISOString(),
+            payload: e.payload
+          });
+        }
+      }),
+      listen("cognition:affective_state_changed", (e) => {
+        if (active && e.payload) {
+          callback({
+            id: `aff_${Date.now()}`,
+            type: "cognition.affective_state_changed",
+            timestamp: new Date().toISOString(),
+            payload: e.payload
+          });
+        }
+      }),
+      listen("cognition:reflection_completed", (e) => {
+        if (active && e.payload) {
+          callback({
+            id: `ref_${Date.now()}`,
+            type: "cognition.reflection_completed",
+            timestamp: new Date().toISOString(),
+            payload: e.payload
+          });
+        }
+      }),
+      listen("cognition:thought_generated", (e) => {
+        if (active && e.payload) {
+          callback({
+            id: `thg_${Date.now()}`,
+            type: "cognition.thought_generated",
+            timestamp: new Date().toISOString(),
+            payload: e.payload
+          });
+        }
       })
     ]).then((fns) => {
       if (!active) {

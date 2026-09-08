@@ -40,6 +40,13 @@ import {
   type MemoryEntity,
   type MemoryInsight,
   type MemoryItem,
+  type MemorySaveSuggestion,
+  type MindCognitionState,
+  type AffectiveStateRecord,
+  type SelfModel,
+  type SelfModelAuditEntry,
+  type ReflectionRecord,
+  type ProactiveThoughtRecord,
   type ModelSelectionRequest,
   type ModelProfile,
   type ModelTestResponse,
@@ -136,6 +143,9 @@ export interface AssistantSnapshot {
     contentMarkdown: string;
   };
   memoryBusy: boolean;
+  pendingMemorySaves: MemorySaveSuggestion[];
+  mindState: MindCognitionState | null;
+  affectiveState: AffectiveStateRecord | null;
   memoryExportedAt?: string;
   modelStatusDetail?: LocalModelStatusResponse;
   modelTestBusy: boolean;
@@ -280,6 +290,9 @@ const initialSnapshot: AssistantSnapshot = {
     contentMarkdown: ""
   },
   memoryBusy: false,
+  pendingMemorySaves: [],
+  mindState: null,
+  affectiveState: null,
   modelTestBusy: false,
   chatMessages: [],
   chatDraft: "",
@@ -377,6 +390,8 @@ class AssistantStore {
       await this.subscribeToCoreStatus();
       await this.initProactiveListener();
       await this.initDownloadProgressListener();
+      await this.initCognitionListeners();
+      await this.refreshMindState();
       await this.refreshBackendStatus();
       this.connectBackendEvents();
       this.hydrated = true;
@@ -888,6 +903,91 @@ class AssistantStore {
         memoryBusy: false,
         error: error instanceof Error ? error.message : "Unable to export memory"
       });
+    }
+  };
+
+  approveMemorySave = async (
+    id: string,
+    title?: string,
+    factText?: string,
+    tags?: string[]
+  ) => {
+    try {
+      const savedItem = await tauriClient.approveMemorySave(id, title, factText, tags);
+      this.setSnapshot({
+        pendingMemorySaves: this.snapshot.pendingMemorySaves.filter((s) => s.id !== id),
+        memoryItems: mergeMemoryItem(this.snapshot.memoryItems, savedItem)
+      });
+    } catch (error) {
+      this.setSnapshot({
+        error: error instanceof Error ? error.message : "Failed to approve memory save"
+      });
+    }
+  };
+
+  dismissMemorySave = async (id: string) => {
+    try {
+      await tauriClient.dismissMemorySave(id);
+      this.setSnapshot({
+        pendingMemorySaves: this.snapshot.pendingMemorySaves.filter((s) => s.id !== id)
+      });
+    } catch (error) {
+      this.setSnapshot({
+        error: error instanceof Error ? error.message : "Failed to dismiss memory save"
+      });
+    }
+  };
+
+  updateSelfModelField = async (field: string, newValue: unknown, rationale: string) => {
+    try {
+      const updatedSelfModel = await tauriClient.updateSelfModel(field, newValue, rationale);
+      if (this.snapshot.mindState) {
+        this.setSnapshot({
+          mindState: {
+            ...this.snapshot.mindState,
+            selfModel: updatedSelfModel
+          }
+        });
+      }
+    } catch (error) {
+      this.setSnapshot({
+        error: error instanceof Error ? error.message : "Failed to update self model"
+      });
+    }
+  };
+
+  triggerProactiveThought = async () => {
+    try {
+      const thought = await tauriClient.triggerProactiveThought();
+      if (this.snapshot.mindState) {
+        const thoughts = [thought, ...this.snapshot.mindState.recentProactiveThoughts.filter((t) => t.id !== thought.id)].slice(0, 30);
+        this.setSnapshot({
+          mindState: {
+            ...this.snapshot.mindState,
+            recentProactiveThoughts: thoughts
+          }
+        });
+      }
+    } catch (error) {
+      this.setSnapshot({
+        error: error instanceof Error ? error.message : "Failed to trigger proactive thought"
+      });
+    }
+  };
+
+  refreshMindState = async () => {
+    try {
+      const [mindState, pendingSaves] = await Promise.all([
+        tauriClient.getMindState(),
+        tauriClient.listPendingMemorySaves()
+      ]);
+      this.setSnapshot({
+        mindState,
+        affectiveState: mindState.affective ?? mindState.affectiveState ?? null,
+        pendingMemorySaves: pendingSaves
+      });
+    } catch {
+      // Backend may be starting or offline
     }
   };
 
@@ -1994,6 +2094,65 @@ class AssistantStore {
     }
   };
 
+  private memorySaveUnlisten?: () => void;
+  private factAutoCommitUnlisten?: () => void;
+  private affectiveStateUnlisten?: () => void;
+  private reflectionUnlisten?: () => void;
+  private thoughtUnlisten?: () => void;
+
+  initCognitionListeners = async () => {
+    if (tauriClient.isTauriRuntime()) {
+      if (!this.memorySaveUnlisten) {
+        this.memorySaveUnlisten = await tauriClient.onMemorySaveSuggestion((suggestion) => {
+          const existing = this.snapshot.pendingMemorySaves.filter((s) => s.id !== suggestion.id);
+          this.setSnapshot({
+            pendingMemorySaves: [suggestion, ...existing]
+          });
+        });
+      }
+      if (!this.factAutoCommitUnlisten) {
+        this.factAutoCommitUnlisten = await tauriClient.onFactAutoCommitted((item) => {
+          this.setSnapshot({
+            memoryItems: mergeMemoryItem(this.snapshot.memoryItems, item)
+          });
+        });
+      }
+      if (!this.affectiveStateUnlisten) {
+        this.affectiveStateUnlisten = await tauriClient.onAffectiveStateChanged((state) => {
+          const currentMind = this.snapshot.mindState;
+          this.setSnapshot({
+            affectiveState: state,
+            mindState: currentMind
+              ? { ...currentMind, affective: state, affectiveState: state }
+              : null
+          });
+        });
+      }
+      if (!this.reflectionUnlisten) {
+        this.reflectionUnlisten = await tauriClient.onMetacognitiveReflectionCompleted((record) => {
+          const currentMind = this.snapshot.mindState;
+          if (currentMind) {
+            const recentReflections = [record, ...currentMind.recentReflections.filter((r) => r.id !== record.id)].slice(0, 30);
+            this.setSnapshot({
+              mindState: { ...currentMind, recentReflections }
+            });
+          }
+        });
+      }
+      if (!this.thoughtUnlisten) {
+        this.thoughtUnlisten = await tauriClient.onThoughtGenerated((record) => {
+          const currentMind = this.snapshot.mindState;
+          if (currentMind) {
+            const recentProactiveThoughts = [record, ...currentMind.recentProactiveThoughts.filter((t) => t.id !== record.id)].slice(0, 30);
+            this.setSnapshot({
+              mindState: { ...currentMind, recentProactiveThoughts }
+            });
+          }
+        });
+      }
+    }
+  };
+
 
   private connectBackendEvents = () => {
     this.disconnectBackendEvents();
@@ -2388,6 +2547,81 @@ class AssistantStore {
         syncStatus: deriveSyncStatus(connectors),
         lastBackendEventType: event.type
       });
+      return;
+    }
+
+    if (event.type === "memory.save_card") {
+      const suggestion = event.payload;
+      const existing = this.snapshot.pendingMemorySaves.filter((s) => s.id !== suggestion.id);
+      this.setSnapshot({
+        pendingMemorySaves: [suggestion, ...existing],
+        lastBackendEventType: event.type
+      });
+      return;
+    }
+
+    if (event.type === "memory.fact_auto_committed") {
+      const item = event.payload;
+      this.setSnapshot({
+        memoryItems: mergeMemoryItem(this.snapshot.memoryItems, item),
+        lastBackendEventType: event.type
+      });
+      return;
+    }
+
+    if (event.type === "cognition.affective_state_changed") {
+      const affective = event.payload;
+      const currentMind = this.snapshot.mindState;
+      const updatedMind: MindCognitionState = currentMind
+        ? { ...currentMind, affective, affectiveState: affective }
+        : {
+            affective,
+            affectiveState: affective,
+            selfModel: {
+              id: "canonical_self_model",
+              identityStatement: "Deyana — autonomous local workspace intelligence",
+              coreValues: ["Privacy First", "Proactive Insight", "Transparency"],
+              intellectualInterests: ["Cognitive Architecture", "Knowledge Graphs", "Local LLMs"],
+              selfObservations: [],
+              userObservations: [],
+              version: 1,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            },
+            recentReflections: [],
+            recentProactiveThoughts: []
+          };
+      this.setSnapshot({
+        affectiveState: affective,
+        mindState: updatedMind,
+        lastBackendEventType: event.type
+      });
+      return;
+    }
+
+    if (event.type === "cognition.reflection_completed") {
+      const reflection = event.payload;
+      const currentMind = this.snapshot.mindState;
+      if (currentMind) {
+        const recentReflections = [reflection, ...currentMind.recentReflections.filter((r) => r.id !== reflection.id)].slice(0, 30);
+        this.setSnapshot({
+          mindState: { ...currentMind, recentReflections },
+          lastBackendEventType: event.type
+        });
+      }
+      return;
+    }
+
+    if (event.type === "cognition.thought_generated") {
+      const thought = event.payload;
+      const currentMind = this.snapshot.mindState;
+      if (currentMind) {
+        const recentProactiveThoughts = [thought, ...currentMind.recentProactiveThoughts.filter((t) => t.id !== thought.id)].slice(0, 30);
+        this.setSnapshot({
+          mindState: { ...currentMind, recentProactiveThoughts },
+          lastBackendEventType: event.type
+        });
+      }
       return;
     }
 
@@ -3037,6 +3271,26 @@ class AssistantStore {
     if (this.proactiveUnlisten) {
       this.proactiveUnlisten();
       this.proactiveUnlisten = undefined;
+    }
+    if (this.memorySaveUnlisten) {
+      this.memorySaveUnlisten();
+      this.memorySaveUnlisten = undefined;
+    }
+    if (this.factAutoCommitUnlisten) {
+      this.factAutoCommitUnlisten();
+      this.factAutoCommitUnlisten = undefined;
+    }
+    if (this.affectiveStateUnlisten) {
+      this.affectiveStateUnlisten();
+      this.affectiveStateUnlisten = undefined;
+    }
+    if (this.reflectionUnlisten) {
+      this.reflectionUnlisten();
+      this.reflectionUnlisten = undefined;
+    }
+    if (this.thoughtUnlisten) {
+      this.thoughtUnlisten();
+      this.thoughtUnlisten = undefined;
     }
   };
 
